@@ -1,0 +1,21 @@
+{
+    "name": "AIFarm.EditModeTests",
+    "rootNamespace": "AIFarm.Tests.EditMode",
+    "references": [
+        "AIFarm.Domain"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false,
+    "optionalUnityReferences": [
+        "TestAssemblies"
+    ]
+}
