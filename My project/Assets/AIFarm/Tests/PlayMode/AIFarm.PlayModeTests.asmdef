@@ -1,15 +1,13 @@
 {
-    "name": "AIFarm.EditModeTests",
-    "rootNamespace": "AIFarm.Tests.EditMode",
+    "name": "AIFarm.PlayModeTests",
+    "rootNamespace": "AIFarm.Tests.PlayMode",
     "references": [
         "AIFarm.Domain",
         "AIFarm.Presentation",
-        "AIFarm.Editor",
-        "Unity.AI.Navigation"
+        "Unity.AI.Navigation",
+        "UnityEngine.UI"
     ],
-    "includePlatforms": [
-        "Editor"
-    ],
+    "includePlatforms": [],
     "excludePlatforms": [],
     "allowUnsafeCode": false,
     "overrideReferences": false,

@@ -7,6 +7,7 @@ namespace AIFarm.Core
         InvalidState,
         InsufficientResource,
         MissingGrowthCondition,
-        CapacityExceeded
+        CapacityExceeded,
+        NavigationFailed
     }
 }

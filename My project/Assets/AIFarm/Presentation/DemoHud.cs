@@ -1,0 +1,215 @@
+using AIFarm.Core;
+using AIFarm.Inventory;
+using AIFarm.Npc;
+using UnityEngine;
+using UnityEngine.UI;
+
+namespace AIFarm.Presentation
+{
+    [DisallowMultipleComponent]
+    public sealed class DemoHud : MonoBehaviour
+    {
+        [SerializeField]
+        private GameBootstrap bootstrap;
+
+        [SerializeField]
+        private Text timeText;
+
+        [SerializeField]
+        private Text inventoryText;
+
+        [SerializeField]
+        private Text goalText;
+
+        [SerializeField]
+        private Text actionText;
+
+        [SerializeField]
+        private InputField commandInput;
+
+        [SerializeField]
+        private Button submitButton;
+
+        [SerializeField]
+        private NpcPlanExecutor planExecutor;
+
+        private string idleSubmissionMessage = string.Empty;
+
+        public void Configure(
+            GameBootstrap gameBootstrap,
+            Text timeLabel,
+            Text inventoryLabel,
+            Text goalLabel,
+            Text actionLabel,
+            InputField input,
+            Button button,
+            NpcPlanExecutor executor = null)
+        {
+            bootstrap = gameBootstrap;
+            timeText = timeLabel;
+            inventoryText = inventoryLabel;
+            goalText = goalLabel;
+            actionText = actionLabel;
+            commandInput = input;
+            submitButton = button;
+            planExecutor = executor;
+        }
+
+        private void Start()
+        {
+            if (submitButton != null)
+            {
+                submitButton.onClick.AddListener(HandleSubmit);
+            }
+
+            RefreshFromDomain();
+            RefreshFromExecutor();
+        }
+
+        private void Update()
+        {
+            RefreshFromDomain();
+            RefreshFromExecutor();
+        }
+
+        private void OnDestroy()
+        {
+            if (submitButton != null)
+            {
+                submitButton.onClick.RemoveListener(HandleSubmit);
+            }
+        }
+
+        private void RefreshFromDomain()
+        {
+            if (bootstrap == null || !bootstrap.IsInitialized)
+            {
+                return;
+            }
+
+            if (timeText != null)
+            {
+                timeText.text = FormatGameTime(bootstrap.Clock.ElapsedGameSeconds);
+            }
+
+            if (inventoryText != null)
+            {
+                inventoryText.text =
+                    $"Seeds: {bootstrap.Inventory.GetCount(InventoryItem.CarrotSeed)}\n" +
+                    $"Water: {bootstrap.Inventory.GetCount(InventoryItem.Water)}\n" +
+                    $"Fertilizer: {bootstrap.Inventory.GetCount(InventoryItem.Fertilizer)}\n" +
+                    $"Carrots: {bootstrap.Inventory.GetCount(InventoryItem.Carrot)}";
+            }
+        }
+
+        public ActionResult SubmitCommand(string command)
+        {
+            if (planExecutor == null)
+            {
+                ActionResult unavailable = ActionResult.Failure(
+                    ActionFailureReason.InvalidState,
+                    "The NPC executor is not connected to the HUD.");
+                SetSubmissionFailure(unavailable);
+                return unavailable;
+            }
+
+            ActionResult parsed = NpcActionCommandParser.TryParse(command, out INpcAction action);
+            if (parsed.Failed)
+            {
+                SetSubmissionFailure(parsed);
+                return parsed;
+            }
+
+            ActionResult queued = planExecutor.Enqueue(action);
+            if (queued.Failed)
+            {
+                SetSubmissionFailure(queued);
+                return queued;
+            }
+
+            idleSubmissionMessage = string.Empty;
+            if (goalText != null)
+            {
+                goalText.text = $"Goal: Atomic command - {action.DisplayName}";
+            }
+
+            if (actionText != null)
+            {
+                actionText.text = $"Action: Pending - {action.DisplayName}";
+            }
+
+            if (commandInput != null)
+            {
+                commandInput.text = string.Empty;
+            }
+
+            return queued;
+        }
+
+        private void HandleSubmit()
+        {
+            string command = commandInput == null ? string.Empty : commandInput.text;
+            SubmitCommand(command);
+        }
+
+        private void RefreshFromExecutor()
+        {
+            if (actionText == null || planExecutor == null)
+            {
+                return;
+            }
+
+            if (planExecutor.Status == NpcExecutionStatus.Failed)
+            {
+                actionText.text = $"Action: Failed - {planExecutor.LastFailureReason}";
+                return;
+            }
+
+            if (planExecutor.CurrentAction != null)
+            {
+                actionText.text =
+                    $"Action: {planExecutor.Status} - {planExecutor.CurrentAction.DisplayName}";
+                return;
+            }
+
+            if (planExecutor.IsBusy)
+            {
+                actionText.text = $"Action: {planExecutor.Status}";
+                return;
+            }
+
+            if (!string.IsNullOrEmpty(idleSubmissionMessage))
+            {
+                actionText.text = idleSubmissionMessage;
+                return;
+            }
+
+            if (planExecutor.LastResult.HasValue && planExecutor.LastResult.Value.Succeeded)
+            {
+                actionText.text = $"Action: Completed - {planExecutor.LastResult.Value.Message}";
+                return;
+            }
+
+            actionText.text = "Action: Idle - try 'sow 1' or '播种 1'";
+        }
+
+        private void SetSubmissionFailure(ActionResult failure)
+        {
+            idleSubmissionMessage = $"Action: Rejected - {failure.Message}";
+            if (actionText != null)
+            {
+                actionText.text = idleSubmissionMessage;
+            }
+        }
+
+        private static string FormatGameTime(double elapsedGameSeconds)
+        {
+            int totalMinutes = (int)(elapsedGameSeconds / 60d);
+            int day = totalMinutes / (24 * 60) + 1;
+            int minuteOfDay = totalMinutes % (24 * 60);
+            int hour = minuteOfDay / 60;
+            int minute = minuteOfDay % 60;
+            return $"Day {day}  {hour:00}:{minute:00}";
+        }
+    }
+}

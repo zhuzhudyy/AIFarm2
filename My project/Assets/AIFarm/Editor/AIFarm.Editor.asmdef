@@ -1,11 +1,12 @@
 {
-    "name": "AIFarm.EditModeTests",
-    "rootNamespace": "AIFarm.Tests.EditMode",
+    "name": "AIFarm.Editor",
+    "rootNamespace": "AIFarm.Editor",
     "references": [
         "AIFarm.Domain",
         "AIFarm.Presentation",
-        "AIFarm.Editor",
-        "Unity.AI.Navigation"
+        "Unity.AI.Navigation",
+        "UnityEngine.UI",
+        "Unity.InputSystem"
     ],
     "includePlatforms": [
         "Editor"
@@ -17,8 +18,5 @@
     "autoReferenced": true,
     "defineConstraints": [],
     "versionDefines": [],
-    "noEngineReferences": false,
-    "optionalUnityReferences": [
-        "TestAssemblies"
-    ]
+    "noEngineReferences": false
 }
