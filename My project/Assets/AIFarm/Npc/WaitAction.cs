@@ -23,7 +23,12 @@ namespace AIFarm.Npc
 
         protected override ActionResult ApplyCompletion(NpcActionContext context)
         {
-            return context.Clock.Advance(DurationSeconds);
+            if (context.Simulation == null)
+            {
+                return context.Clock.Advance(DurationSeconds);
+            }
+
+            return ActionResult.Success("Wait completed; world time advanced continuously.");
         }
     }
 }

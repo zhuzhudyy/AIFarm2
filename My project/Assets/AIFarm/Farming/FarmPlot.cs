@@ -6,6 +6,7 @@ namespace AIFarm.Farming
     public sealed class FarmPlot
     {
         public const int RequiredWaterLevel = 1;
+        public const int MaximumWaterLevel = 2;
         public const int RequiredGrowth = 100;
 
         public FarmPlot(int plotNumber = 1)
@@ -80,11 +81,11 @@ namespace AIFarm.Farming
                     "Only a growing crop can be watered.");
             }
 
-            if (WaterLevel >= RequiredWaterLevel)
+            if (WaterLevel >= MaximumWaterLevel)
             {
                 return ActionResult.Failure(
                     ActionFailureReason.InvalidState,
-                    "This plot already has enough water.");
+                    "This plot is already fully watered.");
             }
 
             ActionResult consumption = inventory.TryRemove(InventoryItem.Water);
@@ -93,8 +94,35 @@ namespace AIFarm.Farming
                 return consumption;
             }
 
-            WaterLevel += 1;
+            WaterLevel = MaximumWaterLevel;
             return ActionResult.Success("Plot watered.");
+        }
+
+        public ActionResult DecreaseWater(int amount = 1)
+        {
+            if (amount <= 0)
+            {
+                return ActionResult.Failure(
+                    ActionFailureReason.InvalidArgument,
+                    "Water decrease must be positive.");
+            }
+
+            if (State != PlotState.Growing)
+            {
+                return ActionResult.Failure(
+                    ActionFailureReason.InvalidState,
+                    "Only a growing crop can lose water.");
+            }
+
+            if (WaterLevel < amount)
+            {
+                return ActionResult.Failure(
+                    ActionFailureReason.InvalidState,
+                    "The plot does not contain enough water for that decrease.");
+            }
+
+            WaterLevel -= amount;
+            return ActionResult.Success("Plot water decreased.");
         }
 
         public ActionResult Fertilize(FarmInventory inventory)
@@ -104,11 +132,11 @@ namespace AIFarm.Farming
                 return InvalidInventory();
             }
 
-            if (State != PlotState.Growing || WaterLevel < RequiredWaterLevel)
+            if (State != PlotState.Growing)
             {
                 return ActionResult.Failure(
                     ActionFailureReason.InvalidState,
-                    "Only a watered, growing crop can be fertilized.");
+                    "Only a growing crop can be fertilized.");
             }
 
             if (IsFertilized)

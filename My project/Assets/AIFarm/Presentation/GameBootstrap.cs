@@ -21,6 +21,12 @@ namespace AIFarm.Presentation
 
         public GameClock Clock { get; private set; }
 
+        public DemoMode Mode { get; private set; }
+
+        public FarmSimulation Simulation { get; private set; }
+
+        public ActionResult? LastSimulationResult { get; private set; }
+
         public bool IsInitialized { get; private set; }
 
         public void Configure(DemoSceneConfig config)
@@ -52,6 +58,9 @@ namespace AIFarm.Presentation
                 inventoryConfig.Fertilizer,
                 inventoryConfig.Carrots);
             Clock = new GameClock(sceneConfig.InitialElapsedGameSeconds, sceneConfig.TimeScale);
+            Mode = sceneConfig.CreateDemoMode();
+            Simulation = new FarmSimulation(Field, Clock, Mode);
+            LastSimulationResult = null;
             IsInitialized = true;
             return ActionResult.Success("Demo domain state initialized.");
         }
@@ -62,6 +71,22 @@ namespace AIFarm.Presentation
             if (result.Failed)
             {
                 Debug.LogError(result.Message, this);
+            }
+        }
+
+        private void Update()
+        {
+            if (!IsInitialized || Simulation == null ||
+                (LastSimulationResult.HasValue && LastSimulationResult.Value.Failed))
+            {
+                return;
+            }
+
+            ActionResult result = Simulation.Advance(UnityEngine.Time.deltaTime);
+            LastSimulationResult = result;
+            if (result.Failed)
+            {
+                Debug.LogError($"Farm simulation stopped: {result.Message}", this);
             }
         }
     }

@@ -70,7 +70,7 @@ namespace AIFarm.Tests.EditMode
             ActionResult result = plot.Water(inventory);
 
             AssertSuccess(result);
-            Assert.That(plot.WaterLevel, Is.EqualTo(1));
+            Assert.That(plot.WaterLevel, Is.EqualTo(FarmPlot.MaximumWaterLevel));
             Assert.That(inventory.GetCount(InventoryItem.Water), Is.EqualTo(1));
         }
 
@@ -85,7 +85,7 @@ namespace AIFarm.Tests.EditMode
             ActionResult result = plot.Water(inventory);
 
             AssertFailure(result, ActionFailureReason.InvalidState);
-            Assert.That(plot.WaterLevel, Is.EqualTo(1));
+            Assert.That(plot.WaterLevel, Is.EqualTo(FarmPlot.MaximumWaterLevel));
             Assert.That(inventory.GetCount(InventoryItem.Water), Is.EqualTo(1));
         }
 

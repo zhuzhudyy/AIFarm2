@@ -46,6 +46,7 @@ namespace AIFarm.Tests.EditMode
                 GameObject plot = GameObject.Find($"Farm_3x3/Plots_1_to_9/Plot_{plotNumber:00}");
                 Assert.That(plot, Is.Not.Null);
                 Assert.That(plot.GetComponent<NavMeshModifier>().ignoreFromBuild, Is.True);
+                Assert.That(plot.GetComponent<PlotBlockoutView>(), Is.Not.Null);
                 Assert.That(GameObject.Find($"Farm_3x3/Plot_Number_Labels/PlotLabel_{plotNumber:00}"), Is.Not.Null);
 
                 GameObject interactionObject =
@@ -79,12 +80,14 @@ namespace AIFarm.Tests.EditMode
             Assert.That(GameObject.Find("UI_Canvas").GetComponent<Canvas>(), Is.Not.Null);
             Assert.That(GameObject.Find("UI_Canvas/StatusPanel/TimeText"), Is.Not.Null);
             Assert.That(GameObject.Find("UI_Canvas/StatusPanel/InventoryText"), Is.Not.Null);
+            Assert.That(GameObject.Find("UI_Canvas/StatusPanel/ExpressionText"), Is.Not.Null);
             Assert.That(GameObject.Find("UI_Canvas/CommandPanel/CommandInput").GetComponent<InputField>(), Is.Not.Null);
             Assert.That(GameObject.Find("UI_Canvas/CommandPanel/SubmitButton").GetComponent<Button>(), Is.Not.Null);
 
             GameBootstrap bootstrap = GameObject.Find("GameBootstrap").GetComponent<GameBootstrap>();
             Assert.That(bootstrap, Is.Not.Null);
             Assert.That(bootstrap.SceneConfig, Is.Not.Null);
+            Assert.That(bootstrap.GetComponent<ReplanController>(), Is.Not.Null);
 
             DemoInventoryConfig inventoryConfig =
                 AssetDatabase.LoadAssetAtPath<DemoInventoryConfig>(DemoSceneBuilder.InventoryConfigPath);
@@ -98,6 +101,8 @@ namespace AIFarm.Tests.EditMode
                 AssetDatabase.LoadAssetAtPath<DemoSceneConfig>(DemoSceneBuilder.SceneConfigPath);
             Assert.That(sceneConfig, Is.Not.Null);
             Assert.That(sceneConfig.InventoryConfig, Is.SameAs(inventoryConfig));
+            Assert.That(sceneConfig.TimeScale, Is.GreaterThanOrEqualTo(240f));
+            Assert.That(sceneConfig.CreateDemoMode().IsAiServiceRequired, Is.False);
 
             Assert.That(
                 AssetDatabase.FindAssets("t:DemoInventoryConfig", new[] { "Assets/AIFarm/Config" }),

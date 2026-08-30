@@ -26,11 +26,11 @@ namespace AIFarm.Npc
                     $"Water failed: Plot {PlotNumber:00} has no growing crop.");
             }
 
-            if (plot.WaterLevel >= FarmPlot.RequiredWaterLevel)
+            if (plot.WaterLevel >= FarmPlot.MaximumWaterLevel)
             {
                 return ActionResult.Failure(
                     ActionFailureReason.InvalidState,
-                    $"Water failed: Plot {PlotNumber:00} already has enough water.");
+                    $"Water failed: Plot {PlotNumber:00} is already fully watered.");
             }
 
             if (!context.Inventory.Has(InventoryItem.Water))

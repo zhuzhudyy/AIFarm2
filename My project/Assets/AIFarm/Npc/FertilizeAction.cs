@@ -19,11 +19,11 @@ namespace AIFarm.Npc
                 return lookup;
             }
 
-            if (plot.State != PlotState.Growing || plot.WaterLevel < FarmPlot.RequiredWaterLevel)
+            if (plot.State != PlotState.Growing)
             {
                 return ActionResult.Failure(
                     ActionFailureReason.InvalidState,
-                    $"Fertilize failed: Plot {PlotNumber:00} must contain a watered, growing crop.");
+                    $"Fertilize failed: Plot {PlotNumber:00} must contain a growing crop.");
             }
 
             if (plot.IsFertilized)

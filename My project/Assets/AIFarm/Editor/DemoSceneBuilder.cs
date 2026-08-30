@@ -62,16 +62,18 @@ namespace AIFarm.Editor
 
             Scene scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
             CreateEnvironment(groundMaterial);
-            PlotInteractionPoint[] interactionPoints = CreateFarm(sceneConfig, plotMaterial);
+            GameBootstrap bootstrap = CreateBootstrap(sceneConfig);
+            PlotInteractionPoint[] interactionPoints = CreateFarm(sceneConfig, plotMaterial, bootstrap);
             CreateLighting();
             CreateCamera();
-            GameBootstrap bootstrap = CreateBootstrap(sceneConfig);
             NpcPlanExecutor executor = CreateNpc(
                 npcMaterial,
                 plotMaterial,
                 bootstrap,
                 interactionPoints);
-            CreateUi(bootstrap, executor);
+            ReplanController replanController = bootstrap.gameObject.AddComponent<ReplanController>();
+            EnsureSucceeded(replanController.Configure(bootstrap, executor));
+            CreateUi(bootstrap, executor, replanController);
             NavMeshSurface navMeshSurface = CreateNavigation();
             navMeshSurface.BuildNavMesh();
 
@@ -113,9 +115,14 @@ namespace AIFarm.Editor
                 inventoryConfig,
                 day: 1,
                 hour: 8,
-                scale: 60f,
+                scale: 240f,
                 size: 2f,
-                spacing: 0.35f);
+                spacing: 0.35f,
+                waterDecaySeconds: 120f,
+                weedDelaySeconds: 180f,
+                maturitySeconds: 300f,
+                actionSeconds: 0.2f,
+                waitSeconds: 0.2f);
             EditorUtility.SetDirty(config);
             return config;
         }
@@ -159,15 +166,20 @@ namespace AIFarm.Editor
             ground.GetComponent<Renderer>().sharedMaterial = groundMaterial;
         }
 
-        private static PlotInteractionPoint[] CreateFarm(DemoSceneConfig config, Material plotMaterial)
+        private static PlotInteractionPoint[] CreateFarm(
+            DemoSceneConfig config,
+            Material plotMaterial,
+            GameBootstrap bootstrap)
         {
             var farmRoot = new GameObject("Farm_3x3");
             var plotsRoot = new GameObject("Plots_1_to_9");
             var labelsRoot = new GameObject("Plot_Number_Labels");
             var interactionRoot = new GameObject("Plot_Interaction_Points");
+            var stateVisualsRoot = new GameObject("Plot_State_Visuals");
             plotsRoot.transform.SetParent(farmRoot.transform, false);
             labelsRoot.transform.SetParent(farmRoot.transform, false);
             interactionRoot.transform.SetParent(farmRoot.transform, false);
+            stateVisualsRoot.transform.SetParent(farmRoot.transform, false);
 
             float stride = config.PlotSize + config.PlotSpacing;
             var interactionPoints = new PlotInteractionPoint[FarmField.PlotCount];
@@ -186,7 +198,8 @@ namespace AIFarm.Editor
                     plot.transform.SetParent(plotsRoot.transform, false);
                     plot.transform.position = position;
                     plot.transform.localScale = new Vector3(config.PlotSize, 0.28f, config.PlotSize);
-                    plot.GetComponent<Renderer>().sharedMaterial = plotMaterial;
+                    Renderer soilRenderer = plot.GetComponent<Renderer>();
+                    soilRenderer.sharedMaterial = plotMaterial;
                     NavMeshModifier modifier = plot.AddComponent<NavMeshModifier>();
                     modifier.ignoreFromBuild = true;
 
@@ -196,10 +209,55 @@ namespace AIFarm.Editor
                         plot.transform,
                         plotNumber,
                         position + new Vector3(0f, -0.04f, -config.PlotSize * 0.42f));
+                    CreatePlotStateVisuals(
+                        stateVisualsRoot.transform,
+                        plot,
+                        soilRenderer,
+                        plotMaterial,
+                        bootstrap,
+                        plotNumber,
+                        position);
                 }
             }
 
             return interactionPoints;
+        }
+
+        private static void CreatePlotStateVisuals(
+            Transform parent,
+            GameObject plot,
+            Renderer soilRenderer,
+            Material material,
+            GameBootstrap bootstrap,
+            int plotNumber,
+            Vector3 position)
+        {
+            GameObject crop = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            crop.name = $"CropVisual_{plotNumber:00}";
+            crop.transform.SetParent(parent, false);
+            crop.transform.position = position + Vector3.up * 0.55f;
+            crop.transform.localScale = new Vector3(0.55f, 0.85f, 0.55f);
+            Renderer cropRenderer = crop.GetComponent<Renderer>();
+            cropRenderer.sharedMaterial = material;
+            Object.DestroyImmediate(crop.GetComponent<Collider>());
+
+            var weeds = new GameObject($"WeedVisual_{plotNumber:00}");
+            weeds.transform.SetParent(parent, false);
+            weeds.transform.position = position + Vector3.up * 0.36f;
+            for (int index = 0; index < 3; index++)
+            {
+                GameObject blade = GameObject.CreatePrimitive(PrimitiveType.Cube);
+                blade.name = $"WeedBlade_{index + 1:00}";
+                blade.transform.SetParent(weeds.transform, false);
+                blade.transform.localPosition = new Vector3((index - 1) * 0.45f, 0f, (index % 2) * 0.3f);
+                blade.transform.localRotation = Quaternion.Euler(0f, index * 35f, (index - 1) * 18f);
+                blade.transform.localScale = new Vector3(0.12f, 0.65f, 0.12f);
+                blade.GetComponent<Renderer>().sharedMaterial = material;
+                Object.DestroyImmediate(blade.GetComponent<Collider>());
+            }
+
+            PlotBlockoutView view = plot.AddComponent<PlotBlockoutView>();
+            EnsureSucceeded(view.Configure(bootstrap, plotNumber, soilRenderer, crop, cropRenderer, weeds));
         }
 
         private static PlotInteractionPoint CreatePlotInteractionPoint(
@@ -354,7 +412,10 @@ namespace AIFarm.Editor
             return bootstrap;
         }
 
-        private static void CreateUi(GameBootstrap bootstrap, NpcPlanExecutor executor)
+        private static void CreateUi(
+            GameBootstrap bootstrap,
+            NpcPlanExecutor executor,
+            ReplanController replanController)
         {
             Font font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
             GameObject canvasObject = new GameObject(
@@ -381,7 +442,7 @@ namespace AIFarm.Editor
                 new Vector2(0f, 1f),
                 new Vector2(0f, 1f),
                 new Vector2(20f, -20f),
-                new Vector2(380f, 280f));
+                new Vector2(500f, 350f));
 
             Text titleText = CreateText("TitleText", statusPanel.transform, "AI FARM // BLOCKOUT", font, 28, FontStyle.Bold);
             SetTopRow(titleText.rectTransform, -16f, 42f);
@@ -396,14 +457,23 @@ namespace AIFarm.Editor
                 font,
                 21,
                 FontStyle.Normal);
-            SetTopRow(inventoryText.rectTransform, -102f, 108f);
+            SetTopRow(inventoryText.rectTransform, -102f, 138f);
             inventoryText.alignment = TextAnchor.UpperLeft;
 
             Text goalText = CreateText("GoalText", statusPanel.transform, "Goal: Idle", font, 19, FontStyle.Normal);
-            SetTopRow(goalText.rectTransform, -214f, 28f);
+            SetTopRow(goalText.rectTransform, -246f, 28f);
 
             Text actionText = CreateText("ActionText", statusPanel.transform, "Action: Idle", font, 19, FontStyle.Normal);
-            SetTopRow(actionText.rectTransform, -246f, 28f);
+            SetTopRow(actionText.rectTransform, -278f, 28f);
+
+            Text expressionText = CreateText(
+                "ExpressionText",
+                statusPanel.transform,
+                "NPC: 等待你的种田目标。",
+                font,
+                18,
+                FontStyle.Italic);
+            SetTopRow(expressionText.rectTransform, -310f, 28f);
 
             GameObject commandPanel = CreatePanel(
                 "CommandPanel",
@@ -415,7 +485,7 @@ namespace AIFarm.Editor
                 new Vector2(0.5f, 0f),
                 new Vector2(0.5f, 0f),
                 new Vector2(0f, 20f),
-                new Vector2(920f, 92f));
+                new Vector2(1120f, 92f));
 
             InputField commandInput = CreateInputField(commandPanel.transform, font);
             SetRect(
@@ -424,7 +494,7 @@ namespace AIFarm.Editor
                 new Vector2(0f, 0.5f),
                 new Vector2(0f, 0.5f),
                 new Vector2(20f, 0f),
-                new Vector2(680f, 54f));
+                new Vector2(880f, 54f));
 
             Button submitButton = CreateButton(commandPanel.transform, font);
             SetRect(
@@ -444,7 +514,9 @@ namespace AIFarm.Editor
                 actionText,
                 commandInput,
                 submitButton,
-                executor);
+                executor,
+                replanController,
+                expressionText);
 
             var eventSystemObject = new GameObject("EventSystem_InputSystem");
             eventSystemObject.AddComponent<EventSystem>();
@@ -493,7 +565,7 @@ namespace AIFarm.Editor
             Text placeholder = CreateText(
                 "Placeholder",
                 inputObject.transform,
-                "Atomic command: sow 1 / 播种 1 (also water, fertilize, weed, harvest)",
+                "把地种满胡萝卜并照顾到收获。",
                 font,
                 20,
                 FontStyle.Italic);

@@ -91,7 +91,7 @@ namespace AIFarm.Tests.PlayMode
             Assert.That(UnityEngine.Time.realtimeSinceStartup, Is.LessThan(deadline), "HUD command timed out.");
             Assert.That(executor.Status, Is.EqualTo(NpcExecutionStatus.Completed));
             Assert.That(field.GetPlot(1).State, Is.EqualTo(PlotState.Growing));
-            Assert.That(field.GetPlot(1).WaterLevel, Is.EqualTo(FarmPlot.RequiredWaterLevel));
+            Assert.That(field.GetPlot(1).WaterLevel, Is.EqualTo(FarmPlot.MaximumWaterLevel));
             Assert.That(inventory.GetCount(InventoryItem.CarrotSeed), Is.Zero);
             Assert.That(inventory.GetCount(InventoryItem.Water), Is.Zero);
         }
@@ -178,7 +178,7 @@ namespace AIFarm.Tests.PlayMode
             Assert.That(executor.Status, Is.EqualTo(NpcExecutionStatus.Completed));
             Assert.That(Vector3.Distance(npcObject.transform.position, interactionObject.transform.position), Is.LessThan(0.2f));
             Assert.That(field.GetPlot(1).State, Is.EqualTo(PlotState.Growing));
-            Assert.That(field.GetPlot(1).WaterLevel, Is.EqualTo(FarmPlot.RequiredWaterLevel));
+            Assert.That(field.GetPlot(1).WaterLevel, Is.EqualTo(FarmPlot.MaximumWaterLevel));
             Assert.That(field.GetPlot(1).IsFertilized, Is.True);
         }
 
@@ -280,7 +280,7 @@ namespace AIFarm.Tests.PlayMode
             Assert.That(UnityEngine.Time.realtimeSinceStartup, Is.LessThan(deadline), "Executor timed out.");
             Assert.That(executor.Status, Is.EqualTo(NpcExecutionStatus.Completed));
             Assert.That(plot.State, Is.EqualTo(PlotState.Growing));
-            Assert.That(plot.WaterLevel, Is.EqualTo(FarmPlot.RequiredWaterLevel));
+            Assert.That(plot.WaterLevel, Is.EqualTo(FarmPlot.MaximumWaterLevel));
             Assert.That(plot.IsFertilized, Is.True);
             Assert.That(inventory.GetCount(InventoryItem.CarrotSeed), Is.Zero);
             Assert.That(inventory.GetCount(InventoryItem.Water), Is.Zero);

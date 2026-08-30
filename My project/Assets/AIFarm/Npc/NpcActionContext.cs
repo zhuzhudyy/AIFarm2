@@ -7,11 +7,16 @@ namespace AIFarm.Npc
 {
     public sealed class NpcActionContext
     {
-        public NpcActionContext(FarmField field, FarmInventory inventory, GameClock clock)
+        public NpcActionContext(
+            FarmField field,
+            FarmInventory inventory,
+            GameClock clock,
+            FarmSimulation simulation = null)
         {
             Field = field ?? throw new ArgumentNullException(nameof(field));
             Inventory = inventory ?? throw new ArgumentNullException(nameof(inventory));
             Clock = clock ?? throw new ArgumentNullException(nameof(clock));
+            Simulation = simulation;
         }
 
         public FarmField Field { get; }
@@ -19,5 +24,7 @@ namespace AIFarm.Npc
         public FarmInventory Inventory { get; }
 
         public GameClock Clock { get; }
+
+        public FarmSimulation Simulation { get; }
     }
 }

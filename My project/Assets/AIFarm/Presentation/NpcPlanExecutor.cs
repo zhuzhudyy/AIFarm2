@@ -5,6 +5,7 @@ using UnityEngine;
 
 namespace AIFarm.Presentation
 {
+    [DefaultExecutionOrder(-50)]
     [DisallowMultipleComponent]
     public sealed class NpcPlanExecutor : MonoBehaviour
     {
@@ -32,6 +33,10 @@ namespace AIFarm.Presentation
         private ActionResult? lastResult;
 
         public event Action<NpcExecutionStatus> StatusChanged;
+
+        public event Action<INpcAction, ActionResult> ActionCompleted;
+
+        public event Action<INpcAction, ActionResult> ActionFailed;
 
         public ActionQueue Queue => actionQueue;
 
@@ -75,7 +80,11 @@ namespace AIFarm.Presentation
             }
 
             return Initialize(
-                new NpcActionContext(bootstrap.Field, bootstrap.Inventory, bootstrap.Clock),
+                new NpcActionContext(
+                    bootstrap.Field,
+                    bootstrap.Inventory,
+                    bootstrap.Clock,
+                    bootstrap.Simulation),
                 navigator,
                 actionFeedback);
         }
@@ -329,10 +338,12 @@ namespace AIFarm.Presentation
                 return FailCurrent(completion);
             }
 
+            INpcAction completedAction = currentAction;
             lastResult = completion;
             lastFailureReason = string.Empty;
             currentAction = null;
             SetStatus(NpcExecutionStatus.Completed);
+            ActionCompleted?.Invoke(completedAction, completion);
             return completion;
         }
 
@@ -351,6 +362,7 @@ namespace AIFarm.Presentation
             lastFailureReason = failure.Message;
             SetStatus(NpcExecutionStatus.Failed);
             string actionName = currentAction == null ? "Unknown action" : currentAction.DisplayName;
+            ActionFailed?.Invoke(currentAction, failure);
             Debug.LogWarning($"NPC action '{actionName}' failed: {failure.Message}", this);
             return failure;
         }

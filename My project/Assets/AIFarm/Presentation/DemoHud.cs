@@ -33,6 +33,12 @@ namespace AIFarm.Presentation
         [SerializeField]
         private NpcPlanExecutor planExecutor;
 
+        [SerializeField]
+        private ReplanController replanController;
+
+        [SerializeField]
+        private Text expressionText;
+
         private string idleSubmissionMessage = string.Empty;
 
         public void Configure(
@@ -43,7 +49,9 @@ namespace AIFarm.Presentation
             Text actionLabel,
             InputField input,
             Button button,
-            NpcPlanExecutor executor = null)
+            NpcPlanExecutor executor = null,
+            ReplanController controller = null,
+            Text expressionLabel = null)
         {
             bootstrap = gameBootstrap;
             timeText = timeLabel;
@@ -53,6 +61,8 @@ namespace AIFarm.Presentation
             commandInput = input;
             submitButton = button;
             planExecutor = executor;
+            replanController = controller;
+            expressionText = expressionLabel;
         }
 
         private void Start()
@@ -98,12 +108,30 @@ namespace AIFarm.Presentation
                     $"Seeds: {bootstrap.Inventory.GetCount(InventoryItem.CarrotSeed)}\n" +
                     $"Water: {bootstrap.Inventory.GetCount(InventoryItem.Water)}\n" +
                     $"Fertilizer: {bootstrap.Inventory.GetCount(InventoryItem.Fertilizer)}\n" +
-                    $"Carrots: {bootstrap.Inventory.GetCount(InventoryItem.Carrot)}";
+                    $"Carrots: {bootstrap.Inventory.GetCount(InventoryItem.Carrot)}\n" +
+                    $"Moisture drops: {bootstrap.Simulation.WaterDecayEventCount}  " +
+                    $"Weeds: {bootstrap.Simulation.WeedEventCount}";
             }
         }
 
         public ActionResult SubmitCommand(string command)
         {
+            if (replanController != null)
+            {
+                ActionResult goalSubmission = replanController.SubmitGoal(command);
+                if (goalSubmission.Succeeded)
+                {
+                    CompleteSuccessfulSubmission();
+                    return goalSubmission;
+                }
+
+                if (goalSubmission.FailureReason != ActionFailureReason.UnsupportedIntent)
+                {
+                    SetSubmissionFailure(goalSubmission);
+                    return goalSubmission;
+                }
+            }
+
             if (planExecutor == null)
             {
                 ActionResult unavailable = ActionResult.Failure(
@@ -154,6 +182,7 @@ namespace AIFarm.Presentation
 
         private void RefreshFromExecutor()
         {
+            RefreshGoalAndExpression();
             if (actionText == null || planExecutor == null)
             {
                 return;
@@ -190,7 +219,36 @@ namespace AIFarm.Presentation
                 return;
             }
 
-            actionText.text = "Action: Idle - try 'sow 1' or '播种 1'";
+            actionText.text = "Action: Idle - submit an offline full-field goal";
+        }
+
+        private void RefreshGoalAndExpression()
+        {
+            if (replanController == null)
+            {
+                return;
+            }
+
+            if (goalText != null)
+            {
+                goalText.text = $"Goal: {replanController.CurrentGoalText}";
+            }
+
+            if (expressionText != null)
+            {
+                expressionText.text = $"NPC: {replanController.NpcExpression}";
+            }
+        }
+
+        private void CompleteSuccessfulSubmission()
+        {
+            idleSubmissionMessage = string.Empty;
+            if (commandInput != null)
+            {
+                commandInput.text = string.Empty;
+            }
+
+            RefreshGoalAndExpression();
         }
 
         private void SetSubmissionFailure(ActionResult failure)
