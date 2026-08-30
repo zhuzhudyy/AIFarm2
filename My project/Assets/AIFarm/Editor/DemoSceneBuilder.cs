@@ -66,12 +66,13 @@ namespace AIFarm.Editor
             PlotInteractionPoint[] interactionPoints = CreateFarm(sceneConfig, plotMaterial, bootstrap);
             CreateLighting();
             CreateCamera();
+            ReplanController replanController = bootstrap.gameObject.AddComponent<ReplanController>();
             NpcPlanExecutor executor = CreateNpc(
                 npcMaterial,
                 plotMaterial,
                 bootstrap,
-                interactionPoints);
-            ReplanController replanController = bootstrap.gameObject.AddComponent<ReplanController>();
+                interactionPoints,
+                replanController);
             EnsureSucceeded(replanController.Configure(bootstrap, executor));
             CreateUi(bootstrap, executor, replanController);
             NavMeshSurface navMeshSurface = CreateNavigation();
@@ -115,14 +116,16 @@ namespace AIFarm.Editor
                 inventoryConfig,
                 day: 1,
                 hour: 8,
-                scale: 240f,
+                scale: 20f,
                 size: 2f,
                 spacing: 0.35f,
-                waterDecaySeconds: 120f,
-                weedDelaySeconds: 180f,
-                maturitySeconds: 300f,
+                waterDecaySeconds: 10f,
+                weedDelaySeconds: 15f,
+                maturitySeconds: 30f,
                 actionSeconds: 0.2f,
-                waitSeconds: 0.2f);
+                waitSeconds: 0.2f,
+                expressionCooldown: 12f,
+                expressionDisplay: 2.5f);
             EditorUtility.SetDirty(config);
             return config;
         }
@@ -294,7 +297,8 @@ namespace AIFarm.Editor
             Material npcMaterial,
             Material feedbackBackgroundMaterial,
             GameBootstrap bootstrap,
-            PlotInteractionPoint[] interactionPoints)
+            PlotInteractionPoint[] interactionPoints,
+            ReplanController replanController)
         {
             var npc = new GameObject("NPC_Blockout_Capsule");
             npc.name = "NPC_Blockout_Capsule";
@@ -328,6 +332,7 @@ namespace AIFarm.Editor
                 feedbackBackgroundMaterial,
                 out GameObject progressRoot,
                 out Transform progressFill);
+            CreateNpcDialogueBubble(npc.transform, replanController);
 
             NpcNavigator navigator = npc.AddComponent<NpcNavigator>();
             EnsureSucceeded(navigator.Configure(agent, interactionPoints, requireNavMesh: true, movementSpeed: 3.5f));
@@ -338,6 +343,90 @@ namespace AIFarm.Editor
             NpcPlanExecutor executor = npc.AddComponent<NpcPlanExecutor>();
             EnsureSucceeded(executor.Configure(bootstrap, navigator, feedback));
             return executor;
+        }
+
+        private static void CreateNpcDialogueBubble(
+            Transform npc,
+            ReplanController replanController)
+        {
+            Font font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            GameObject bubbleObject = new GameObject(
+                "NPC_DialogueBubble",
+                typeof(RectTransform),
+                typeof(Canvas),
+                typeof(CanvasScaler),
+                typeof(Image));
+            bubbleObject.transform.SetParent(npc, false);
+            RectTransform bubbleRect = bubbleObject.GetComponent<RectTransform>();
+            bubbleRect.localPosition = new Vector3(0f, 3.65f, 0f);
+            bubbleRect.localScale = Vector3.one * 0.006f;
+            bubbleRect.sizeDelta = new Vector2(430f, 150f);
+
+            Canvas canvas = bubbleObject.GetComponent<Canvas>();
+            canvas.renderMode = RenderMode.WorldSpace;
+            canvas.sortingOrder = 20;
+            CanvasScaler scaler = bubbleObject.GetComponent<CanvasScaler>();
+            scaler.dynamicPixelsPerUnit = 20f;
+            bubbleObject.GetComponent<Image>().color = new Color(0.98f, 0.96f, 0.85f, 0.94f);
+
+            Text emojiText = CreateText(
+                "EmojiText",
+                bubbleObject.transform,
+                "…",
+                font,
+                42,
+                FontStyle.Bold);
+            emojiText.color = new Color(0.12f, 0.14f, 0.12f);
+            emojiText.alignment = TextAnchor.MiddleCenter;
+            SetRect(
+                emojiText.rectTransform,
+                new Vector2(0f, 0.5f),
+                new Vector2(0f, 0.5f),
+                new Vector2(0f, 0.5f),
+                new Vector2(12f, 8f),
+                new Vector2(72f, 90f));
+
+            Text dialogueText = CreateText(
+                "DialogueText",
+                bubbleObject.transform,
+                "等待你的种田目标。",
+                font,
+                25,
+                FontStyle.Normal);
+            dialogueText.color = new Color(0.12f, 0.14f, 0.12f);
+            dialogueText.alignment = TextAnchor.MiddleLeft;
+            SetRect(
+                dialogueText.rectTransform,
+                new Vector2(0f, 0.5f),
+                new Vector2(1f, 0.5f),
+                new Vector2(0.5f, 0.5f),
+                new Vector2(38f, 10f),
+                new Vector2(-120f, 92f));
+
+            Text moodText = CreateText(
+                "MoodText",
+                bubbleObject.transform,
+                "Focused",
+                font,
+                18,
+                FontStyle.Italic);
+            moodText.color = new Color(0.28f, 0.35f, 0.28f);
+            SetRect(
+                moodText.rectTransform,
+                new Vector2(0f, 0f),
+                new Vector2(1f, 0f),
+                new Vector2(0.5f, 0f),
+                new Vector2(38f, 10f),
+                new Vector2(-120f, 32f));
+
+            NpcDialogueBubble bubble = bubbleObject.AddComponent<NpcDialogueBubble>();
+            EnsureSucceeded(bubble.Configure(
+                replanController,
+                bubbleObject,
+                dialogueText,
+                emojiText,
+                moodText,
+                bubbleObject.transform));
         }
 
         private static void CreateFeedbackBar(
@@ -435,45 +524,147 @@ namespace AIFarm.Editor
             GameObject statusPanel = CreatePanel(
                 "StatusPanel",
                 canvasObject.transform,
-                new Color(0.04f, 0.07f, 0.06f, 0.88f));
+                new Color(0.04f, 0.07f, 0.06f, 0.9f));
             SetRect(
                 statusPanel.GetComponent<RectTransform>(),
                 new Vector2(0f, 1f),
                 new Vector2(0f, 1f),
                 new Vector2(0f, 1f),
                 new Vector2(20f, -20f),
-                new Vector2(500f, 350f));
+                new Vector2(560f, 180f));
 
-            Text titleText = CreateText("TitleText", statusPanel.transform, "AI FARM // BLOCKOUT", font, 28, FontStyle.Bold);
-            SetTopRow(titleText.rectTransform, -16f, 42f);
+            Text titleText = CreateText("TitleText", statusPanel.transform, "AI FARM // OFFLINE", font, 27, FontStyle.Bold);
+            SetTopRow(titleText.rectTransform, -10f, 38f);
 
-            Text timeText = CreateText("TimeText", statusPanel.transform, "Day 1  08:00", font, 24, FontStyle.Bold);
-            SetTopRow(timeText.rectTransform, -62f, 34f);
+            Text emojiText = CreateText("EmojiText", statusPanel.transform, "…", font, 36, FontStyle.Bold);
+            emojiText.alignment = TextAnchor.MiddleCenter;
+            SetRect(
+                emojiText.rectTransform,
+                new Vector2(1f, 1f),
+                new Vector2(1f, 1f),
+                new Vector2(1f, 1f),
+                new Vector2(-16f, -10f),
+                new Vector2(64f, 42f));
 
+            Text timeText = CreateText(
+                "TimeText",
+                statusPanel.transform,
+                "Day 1  08:00  [20x]",
+                font,
+                23,
+                FontStyle.Bold);
+            SetTopRow(timeText.rectTransform, -50f, 32f);
+
+            Text moodText = CreateText(
+                "MoodText",
+                statusPanel.transform,
+                "Mood: Focused",
+                font,
+                18,
+                FontStyle.Italic);
+            SetTopRow(moodText.rectTransform, -82f, 26f);
+
+            GameObject timeControls = CreateUiObject("TimeControls", statusPanel.transform);
+            SetTopRow(timeControls.GetComponent<RectTransform>(), -116f, 48f);
+            Button pauseButton = CreateControlButton(
+                "PauseButton",
+                "PAUSE",
+                timeControls.transform,
+                font,
+                out Text pauseButtonLabel);
+            SetControlRect(pauseButton.GetComponent<RectTransform>(), 0f, 122f);
+            Button speed1Button = CreateControlButton("Speed1Button", "1x", timeControls.transform, font, out _);
+            SetControlRect(speed1Button.GetComponent<RectTransform>(), 132f, 76f);
+            Button speed5Button = CreateControlButton("Speed5Button", "5x", timeControls.transform, font, out _);
+            SetControlRect(speed5Button.GetComponent<RectTransform>(), 218f, 76f);
+            Button speed20Button = CreateControlButton("Speed20Button", "20x", timeControls.transform, font, out _);
+            SetControlRect(speed20Button.GetComponent<RectTransform>(), 304f, 86f);
+
+            GameObject backpackPanel = CreatePanel(
+                "BackpackPanel",
+                canvasObject.transform,
+                new Color(0.04f, 0.07f, 0.06f, 0.88f));
+            SetRect(
+                backpackPanel.GetComponent<RectTransform>(),
+                new Vector2(0f, 1f),
+                new Vector2(0f, 1f),
+                new Vector2(0f, 1f),
+                new Vector2(20f, -220f),
+                new Vector2(300f, 240f));
+            Text backpackTitle = CreateText("TitleText", backpackPanel.transform, "BACKPACK", font, 22, FontStyle.Bold);
+            SetTopRow(backpackTitle.rectTransform, -12f, 34f);
             Text inventoryText = CreateText(
                 "InventoryText",
-                statusPanel.transform,
-                "Seeds: 9\nWater: 9\nFertilizer: 9\nCarrots: 0",
+                backpackPanel.transform,
+                "Seeds: 9\nWater: 9\nFertilizer: 9\nCarrots: 0\nMoisture drops: 0  Weeds: 0",
                 font,
-                21,
+                20,
                 FontStyle.Normal);
-            SetTopRow(inventoryText.rectTransform, -102f, 138f);
+            SetTopRow(inventoryText.rectTransform, -52f, 172f);
             inventoryText.alignment = TextAnchor.UpperLeft;
 
-            Text goalText = CreateText("GoalText", statusPanel.transform, "Goal: Idle", font, 19, FontStyle.Normal);
-            SetTopRow(goalText.rectTransform, -246f, 28f);
-
-            Text actionText = CreateText("ActionText", statusPanel.transform, "Action: Idle", font, 19, FontStyle.Normal);
-            SetTopRow(actionText.rectTransform, -278f, 28f);
-
+            GameObject goalPanel = CreatePanel(
+                "GoalPanel",
+                canvasObject.transform,
+                new Color(0.04f, 0.07f, 0.06f, 0.88f));
+            SetRect(
+                goalPanel.GetComponent<RectTransform>(),
+                new Vector2(0f, 1f),
+                new Vector2(0f, 1f),
+                new Vector2(0f, 1f),
+                new Vector2(340f, -220f),
+                new Vector2(600f, 270f));
+            Text goalTitle = CreateText("TitleText", goalPanel.transform, "CURRENT GOAL", font, 22, FontStyle.Bold);
+            SetTopRow(goalTitle.rectTransform, -12f, 34f);
+            Text goalText = CreateText("GoalText", goalPanel.transform, "Goal: Idle", font, 19, FontStyle.Normal);
+            SetTopRow(goalText.rectTransform, -50f, 46f);
+            Text actionText = CreateText("ActionText", goalPanel.transform, "Action: Idle", font, 19, FontStyle.Bold);
+            SetTopRow(actionText.rectTransform, -100f, 30f);
+            Text actionReasonText = CreateText(
+                "ActionReasonText",
+                goalPanel.transform,
+                "Reason: waiting for a goal",
+                font,
+                18,
+                FontStyle.Normal);
+            SetTopRow(actionReasonText.rectTransform, -134f, 50f);
             Text expressionText = CreateText(
                 "ExpressionText",
-                statusPanel.transform,
+                goalPanel.transform,
                 "NPC: 等待你的种田目标。",
                 font,
                 18,
                 FontStyle.Italic);
-            SetTopRow(expressionText.rectTransform, -310f, 28f);
+            SetTopRow(expressionText.rectTransform, -190f, 58f);
+
+            GameObject eventsPanel = CreatePanel(
+                "WorldEventsPanel",
+                canvasObject.transform,
+                new Color(0.04f, 0.07f, 0.06f, 0.9f));
+            SetRect(
+                eventsPanel.GetComponent<RectTransform>(),
+                new Vector2(1f, 1f),
+                new Vector2(1f, 1f),
+                new Vector2(1f, 1f),
+                new Vector2(-20f, -20f),
+                new Vector2(700f, 610f));
+            Text eventsTitle = CreateText(
+                "TitleText",
+                eventsPanel.transform,
+                "RECENT WORLD EVENTS // 10",
+                font,
+                22,
+                FontStyle.Bold);
+            SetTopRow(eventsTitle.rectTransform, -12f, 34f);
+            Text worldEventsText = CreateText(
+                "WorldEventsText",
+                eventsPanel.transform,
+                "No world events yet.",
+                font,
+                18,
+                FontStyle.Normal);
+            SetTopRow(worldEventsText.rectTransform, -52f, 540f);
+            worldEventsText.alignment = TextAnchor.UpperLeft;
 
             GameObject commandPanel = CreatePanel(
                 "CommandPanel",
@@ -516,7 +707,16 @@ namespace AIFarm.Editor
                 submitButton,
                 executor,
                 replanController,
-                expressionText);
+                expressionText,
+                actionReasonText,
+                worldEventsText,
+                moodText,
+                emojiText,
+                pauseButton,
+                pauseButtonLabel,
+                speed1Button,
+                speed5Button,
+                speed20Button);
 
             var eventSystemObject = new GameObject("EventSystem_InputSystem");
             eventSystemObject.AddComponent<EventSystem>();
@@ -592,6 +792,36 @@ namespace AIFarm.Editor
             label.alignment = TextAnchor.MiddleCenter;
             StretchRect(label.rectTransform, 4f, 4f);
             return button;
+        }
+
+        private static Button CreateControlButton(
+            string name,
+            string content,
+            Transform parent,
+            Font font,
+            out Text label)
+        {
+            GameObject buttonObject = CreateUiObject(name, parent);
+            Image image = buttonObject.AddComponent<Image>();
+            image.color = new Color(0.20f, 0.48f, 0.30f, 1f);
+            Button button = buttonObject.AddComponent<Button>();
+            button.targetGraphic = image;
+
+            label = CreateText("Label", buttonObject.transform, content, font, 17, FontStyle.Bold);
+            label.alignment = TextAnchor.MiddleCenter;
+            StretchRect(label.rectTransform, 4f, 4f);
+            return button;
+        }
+
+        private static void SetControlRect(RectTransform rect, float x, float width)
+        {
+            SetRect(
+                rect,
+                new Vector2(0f, 0.5f),
+                new Vector2(0f, 0.5f),
+                new Vector2(0f, 0.5f),
+                new Vector2(x, 0f),
+                new Vector2(width, 40f));
         }
 
         private static GameObject CreateUiObject(string name, Transform parent)

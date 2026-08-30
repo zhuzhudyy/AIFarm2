@@ -25,6 +25,8 @@ namespace AIFarm.Presentation
 
         public FarmSimulation Simulation { get; private set; }
 
+        public WorldEventLog Events { get; private set; }
+
         public ActionResult? LastSimulationResult { get; private set; }
 
         public bool IsInitialized { get; private set; }
@@ -59,7 +61,12 @@ namespace AIFarm.Presentation
                 inventoryConfig.Carrots);
             Clock = new GameClock(sceneConfig.InitialElapsedGameSeconds, sceneConfig.TimeScale);
             Mode = sceneConfig.CreateDemoMode();
-            Simulation = new FarmSimulation(Field, Clock, Mode);
+            Events = new WorldEventLog();
+            Simulation = new FarmSimulation(Field, Clock, Mode, Events);
+            Events.Record(
+                Clock.ElapsedGameSeconds,
+                WorldEventKind.System,
+                "离线演示已启动；本地规划与表达服务可用。");
             LastSimulationResult = null;
             IsInitialized = true;
             return ActionResult.Success("Demo domain state initialized.");

@@ -11,7 +11,7 @@ namespace AIFarm.Npc
 
         protected override ActionResult CheckActionPreconditions(NpcActionContext context)
         {
-            if (context.Clock.IsPaused)
+            if (context.Clock.IsPaused && context.Simulation == null)
             {
                 return ActionResult.Failure(
                     ActionFailureReason.InvalidState,

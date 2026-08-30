@@ -34,6 +34,8 @@ namespace AIFarm.Presentation
 
         public event Action<NpcExecutionStatus> StatusChanged;
 
+        public event Action<INpcAction> ActionStarted;
+
         public event Action<INpcAction, ActionResult> ActionCompleted;
 
         public event Action<INpcAction, ActionResult> ActionFailed;
@@ -84,7 +86,8 @@ namespace AIFarm.Presentation
                     bootstrap.Field,
                     bootstrap.Inventory,
                     bootstrap.Clock,
-                    bootstrap.Simulation),
+                    bootstrap.Simulation,
+                    bootstrap.Events),
                 navigator,
                 actionFeedback);
         }
@@ -273,6 +276,13 @@ namespace AIFarm.Presentation
                 return FailCurrent(preconditions);
             }
 
+            actionContext.EventLog?.Record(
+                actionContext.Clock.ElapsedGameSeconds,
+                WorldEventKind.ActionStarted,
+                $"开始动作：{currentAction.DisplayName}。",
+                currentAction.TargetPlotNumber);
+            ActionStarted?.Invoke(currentAction);
+
             if (!currentAction.TargetPlotNumber.HasValue)
             {
                 return BeginActing();
@@ -339,6 +349,11 @@ namespace AIFarm.Presentation
             }
 
             INpcAction completedAction = currentAction;
+            actionContext.EventLog?.Record(
+                actionContext.Clock.ElapsedGameSeconds,
+                WorldEventKind.ActionCompleted,
+                $"完成动作：{completedAction.DisplayName}。",
+                completedAction.TargetPlotNumber);
             lastResult = completion;
             lastFailureReason = string.Empty;
             currentAction = null;
@@ -362,6 +377,11 @@ namespace AIFarm.Presentation
             lastFailureReason = failure.Message;
             SetStatus(NpcExecutionStatus.Failed);
             string actionName = currentAction == null ? "Unknown action" : currentAction.DisplayName;
+            actionContext?.EventLog?.Record(
+                actionContext.Clock.ElapsedGameSeconds,
+                WorldEventKind.ActionFailed,
+                $"动作失败：{actionName}；{failure.Message}",
+                currentAction?.TargetPlotNumber);
             ActionFailed?.Invoke(currentAction, failure);
             Debug.LogWarning($"NPC action '{actionName}' failed: {failure.Message}", this);
             return failure;

@@ -15,11 +15,13 @@ MonoBehaviour:
   inventoryConfig: {fileID: 11400000, guid: fa4f1db64ad3bd14f9b13a9058512c26, type: 2}
   startDay: 1
   startHour: 8
-  timeScale: 240
-  waterDecayGameSeconds: 120
-  weedDelayGameSeconds: 180
-  maturityGameSeconds: 300
+  timeScale: 20
+  waterDecayGameSeconds: 10
+  weedDelayGameSeconds: 15
+  maturityGameSeconds: 30
   farmActionSeconds: 0.2
   waitActionSeconds: 0.2
+  expressionCooldownSeconds: 12
+  expressionDisplaySeconds: 2.5
   plotSize: 2
   plotSpacing: 0.35

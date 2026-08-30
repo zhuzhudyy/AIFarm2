@@ -72,6 +72,12 @@ namespace AIFarm.Tests.EditMode
             Assert.That(npc.GetComponent<NpcPlanExecutor>(), Is.Not.Null);
             Assert.That(npc.transform.Find("NPC_Visual_Capsule"), Is.Not.Null);
             Assert.That(npc.transform.Find("ActionFeedback_ProgressBar"), Is.Not.Null);
+            Transform dialogueBubble = npc.transform.Find("NPC_DialogueBubble");
+            Assert.That(dialogueBubble, Is.Not.Null);
+            Assert.That(dialogueBubble.GetComponent<NpcDialogueBubble>(), Is.Not.Null);
+            Assert.That(dialogueBubble.Find("DialogueText"), Is.Not.Null);
+            Assert.That(dialogueBubble.Find("EmojiText"), Is.Not.Null);
+            Assert.That(dialogueBubble.Find("MoodText"), Is.Not.Null);
 
             NavMeshSurface navMeshSurface =
                 GameObject.Find("Navigation_NavMeshSurface").GetComponent<NavMeshSurface>();
@@ -79,8 +85,26 @@ namespace AIFarm.Tests.EditMode
             Assert.That(navMeshSurface.navMeshData, Is.Not.Null);
             Assert.That(GameObject.Find("UI_Canvas").GetComponent<Canvas>(), Is.Not.Null);
             Assert.That(GameObject.Find("UI_Canvas/StatusPanel/TimeText"), Is.Not.Null);
-            Assert.That(GameObject.Find("UI_Canvas/StatusPanel/InventoryText"), Is.Not.Null);
-            Assert.That(GameObject.Find("UI_Canvas/StatusPanel/ExpressionText"), Is.Not.Null);
+            Assert.That(GameObject.Find("UI_Canvas/StatusPanel/MoodText"), Is.Not.Null);
+            Assert.That(GameObject.Find("UI_Canvas/StatusPanel/EmojiText"), Is.Not.Null);
+            Assert.That(
+                GameObject.Find("UI_Canvas/StatusPanel/TimeControls/PauseButton").GetComponent<Button>(),
+                Is.Not.Null);
+            Assert.That(
+                GameObject.Find("UI_Canvas/StatusPanel/TimeControls/Speed1Button").GetComponent<Button>(),
+                Is.Not.Null);
+            Assert.That(
+                GameObject.Find("UI_Canvas/StatusPanel/TimeControls/Speed5Button").GetComponent<Button>(),
+                Is.Not.Null);
+            Assert.That(
+                GameObject.Find("UI_Canvas/StatusPanel/TimeControls/Speed20Button").GetComponent<Button>(),
+                Is.Not.Null);
+            Assert.That(GameObject.Find("UI_Canvas/BackpackPanel/InventoryText"), Is.Not.Null);
+            Assert.That(GameObject.Find("UI_Canvas/GoalPanel/GoalText"), Is.Not.Null);
+            Assert.That(GameObject.Find("UI_Canvas/GoalPanel/ActionText"), Is.Not.Null);
+            Assert.That(GameObject.Find("UI_Canvas/GoalPanel/ActionReasonText"), Is.Not.Null);
+            Assert.That(GameObject.Find("UI_Canvas/GoalPanel/ExpressionText"), Is.Not.Null);
+            Assert.That(GameObject.Find("UI_Canvas/WorldEventsPanel/WorldEventsText"), Is.Not.Null);
             Assert.That(GameObject.Find("UI_Canvas/CommandPanel/CommandInput").GetComponent<InputField>(), Is.Not.Null);
             Assert.That(GameObject.Find("UI_Canvas/CommandPanel/SubmitButton").GetComponent<Button>(), Is.Not.Null);
 
@@ -101,7 +125,9 @@ namespace AIFarm.Tests.EditMode
                 AssetDatabase.LoadAssetAtPath<DemoSceneConfig>(DemoSceneBuilder.SceneConfigPath);
             Assert.That(sceneConfig, Is.Not.Null);
             Assert.That(sceneConfig.InventoryConfig, Is.SameAs(inventoryConfig));
-            Assert.That(sceneConfig.TimeScale, Is.GreaterThanOrEqualTo(240f));
+            Assert.That(sceneConfig.TimeScale, Is.EqualTo(20f));
+            Assert.That(sceneConfig.ExpressionCooldownSeconds, Is.GreaterThan(0f));
+            Assert.That(sceneConfig.ExpressionDisplaySeconds, Is.GreaterThan(0f));
             Assert.That(sceneConfig.CreateDemoMode().IsAiServiceRequired, Is.False);
 
             Assert.That(

@@ -3,6 +3,7 @@ using AIFarm.Farming;
 using AIFarm.Inventory;
 using AIFarm.Time;
 using NUnit.Framework;
+using System.Linq;
 
 namespace AIFarm.Tests.EditMode
 {
@@ -19,7 +20,8 @@ namespace AIFarm.Tests.EditMode
                 waterDecayGameSeconds: 2d,
                 weedDelayGameSeconds: 3d,
                 maturityGameSeconds: 4d);
-            var simulation = new FarmSimulation(field, clock, mode);
+            var events = new WorldEventLog();
+            var simulation = new FarmSimulation(field, clock, mode, events);
             FarmPlot plot = field.GetPlot(1);
             Assert.That(plot.Sow(inventory).Succeeded, Is.True);
             Assert.That(plot.Fertilize(inventory).Succeeded, Is.True);
@@ -32,10 +34,16 @@ namespace AIFarm.Tests.EditMode
             Assert.That(simulation.Advance(0.01d).Succeeded, Is.True);
             Assert.That(plot.WaterLevel, Is.EqualTo(FarmPlot.RequiredWaterLevel));
             Assert.That(simulation.WaterDecayEventCount, Is.EqualTo(1));
+            Assert.That(
+                events.Entries.Any(entry => entry.Kind == WorldEventKind.MoistureChanged),
+                Is.True);
 
             Assert.That(simulation.Advance(1d).Succeeded, Is.True);
             Assert.That(plot.HasWeeds, Is.True);
             Assert.That(simulation.WeedEventCount, Is.EqualTo(1));
+            Assert.That(
+                events.Entries.Any(entry => entry.Kind == WorldEventKind.WeedsAppeared),
+                Is.True);
             Assert.That(plot.Weed().Succeeded, Is.True);
 
             Assert.That(simulation.Advance(3.99d).Succeeded, Is.True);
@@ -45,6 +53,9 @@ namespace AIFarm.Tests.EditMode
             Assert.That(plot.State, Is.EqualTo(PlotState.Mature));
             Assert.That(plot.WaterLevel, Is.EqualTo(FarmPlot.RequiredWaterLevel));
             Assert.That(simulation.WaterDecayEventCount, Is.EqualTo(1));
+            Assert.That(
+                events.Entries.Any(entry => entry.Kind == WorldEventKind.CropMatured),
+                Is.True);
         }
 
         [Test]

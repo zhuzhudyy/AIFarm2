@@ -46,8 +46,9 @@ namespace AIFarm.Tests.PlayMode
                 weedActionSeconds: 0.01f,
                 harvestActionSeconds: 0.01f,
                 waitActionSeconds: 0.02f);
-            var simulation = new FarmSimulation(field, clock, mode);
-            var context = new NpcActionContext(field, inventory, clock, simulation);
+            var events = new WorldEventLog();
+            var simulation = new FarmSimulation(field, clock, mode, events);
+            var context = new NpcActionContext(field, inventory, clock, simulation, events);
 
             PlotInteractionPoint[] points = CreateInteractionPoints();
             GameObject npc = new GameObject("OfflineNpc");
@@ -127,6 +128,27 @@ namespace AIFarm.Tests.PlayMode
             AssertPhase<WeedAction>(farmingActions, startIndex: 27);
             AssertPhase<HarvestAction>(farmingActions, startIndex: 36);
             Assert.That(history.Any(action => action is WaitAction), Is.True);
+            Assert.That(events.Entries, Has.Count.LessThanOrEqualTo(10));
+            Assert.That(events.Entries.Last().Kind, Is.EqualTo(WorldEventKind.GoalCompleted));
+            Assert.That(controller.CurrentMood, Is.EqualTo(NpcMood.Proud));
+            Assert.That(controller.CurrentEmoji, Is.Not.Empty);
+            NpcExpressionTrigger[] expectedExpressionTriggers =
+            {
+                NpcExpressionTrigger.CommandAccepted,
+                NpcExpressionTrigger.SowingStarted,
+                NpcExpressionTrigger.WaterNeeded,
+                NpcExpressionTrigger.WeedsFound,
+                NpcExpressionTrigger.WaitingForGrowth,
+                NpcExpressionTrigger.HarvestStarted,
+                NpcExpressionTrigger.GoalCompleted
+            };
+            foreach (NpcExpressionTrigger trigger in expectedExpressionTriggers)
+            {
+                Assert.That(
+                    controller.RecentExpressions.Any(expression => expression.Trigger == trigger),
+                    Is.True,
+                    $"Missing offline expression trigger: {trigger}.");
+            }
         }
 
         private PlotInteractionPoint[] CreateInteractionPoints()

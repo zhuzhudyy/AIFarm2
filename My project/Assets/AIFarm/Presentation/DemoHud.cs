@@ -1,6 +1,7 @@
 using AIFarm.Core;
 using AIFarm.Inventory;
 using AIFarm.Npc;
+using System.Text;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -39,6 +40,33 @@ namespace AIFarm.Presentation
         [SerializeField]
         private Text expressionText;
 
+        [SerializeField]
+        private Text actionReasonText;
+
+        [SerializeField]
+        private Text worldEventsText;
+
+        [SerializeField]
+        private Text moodText;
+
+        [SerializeField]
+        private Text emojiText;
+
+        [SerializeField]
+        private Button pauseButton;
+
+        [SerializeField]
+        private Text pauseButtonLabel;
+
+        [SerializeField]
+        private Button speed1Button;
+
+        [SerializeField]
+        private Button speed5Button;
+
+        [SerializeField]
+        private Button speed20Button;
+
         private string idleSubmissionMessage = string.Empty;
 
         public void Configure(
@@ -51,7 +79,16 @@ namespace AIFarm.Presentation
             Button button,
             NpcPlanExecutor executor = null,
             ReplanController controller = null,
-            Text expressionLabel = null)
+            Text expressionLabel = null,
+            Text actionReasonLabel = null,
+            Text eventsLabel = null,
+            Text moodLabel = null,
+            Text emojiLabel = null,
+            Button pauseControl = null,
+            Text pauseControlLabel = null,
+            Button speed1Control = null,
+            Button speed5Control = null,
+            Button speed20Control = null)
         {
             bootstrap = gameBootstrap;
             timeText = timeLabel;
@@ -63,6 +100,15 @@ namespace AIFarm.Presentation
             planExecutor = executor;
             replanController = controller;
             expressionText = expressionLabel;
+            actionReasonText = actionReasonLabel;
+            worldEventsText = eventsLabel;
+            moodText = moodLabel;
+            emojiText = emojiLabel;
+            pauseButton = pauseControl;
+            pauseButtonLabel = pauseControlLabel;
+            speed1Button = speed1Control;
+            speed5Button = speed5Control;
+            speed20Button = speed20Control;
         }
 
         private void Start()
@@ -72,14 +118,21 @@ namespace AIFarm.Presentation
                 submitButton.onClick.AddListener(HandleSubmit);
             }
 
+            pauseButton?.onClick.AddListener(HandlePause);
+            speed1Button?.onClick.AddListener(HandleSpeed1);
+            speed5Button?.onClick.AddListener(HandleSpeed5);
+            speed20Button?.onClick.AddListener(HandleSpeed20);
+
             RefreshFromDomain();
             RefreshFromExecutor();
+            RefreshWorldEvents();
         }
 
         private void Update()
         {
             RefreshFromDomain();
             RefreshFromExecutor();
+            RefreshWorldEvents();
         }
 
         private void OnDestroy()
@@ -88,6 +141,11 @@ namespace AIFarm.Presentation
             {
                 submitButton.onClick.RemoveListener(HandleSubmit);
             }
+
+            pauseButton?.onClick.RemoveListener(HandlePause);
+            speed1Button?.onClick.RemoveListener(HandleSpeed1);
+            speed5Button?.onClick.RemoveListener(HandleSpeed5);
+            speed20Button?.onClick.RemoveListener(HandleSpeed20);
         }
 
         private void RefreshFromDomain()
@@ -99,7 +157,15 @@ namespace AIFarm.Presentation
 
             if (timeText != null)
             {
-                timeText.text = FormatGameTime(bootstrap.Clock.ElapsedGameSeconds);
+                string pauseState = bootstrap.Clock.IsPaused ? "  PAUSED" : string.Empty;
+                timeText.text =
+                    $"{FormatGameTime(bootstrap.Clock.ElapsedGameSeconds)}  " +
+                    $"[{bootstrap.Clock.TimeScale:0.#}x]{pauseState}";
+            }
+
+            if (pauseButtonLabel != null)
+            {
+                pauseButtonLabel.text = bootstrap.Clock.IsPaused ? "RESUME" : "PAUSE";
             }
 
             if (inventoryText != null)
@@ -180,6 +246,78 @@ namespace AIFarm.Presentation
             SubmitCommand(command);
         }
 
+        public ActionResult TogglePause()
+        {
+            if (bootstrap == null || !bootstrap.IsInitialized)
+            {
+                return ActionResult.Failure(
+                    ActionFailureReason.InvalidState,
+                    "Time controls require an initialized GameBootstrap.");
+            }
+
+            ActionResult result = bootstrap.Clock.IsPaused
+                ? bootstrap.Clock.Resume()
+                : bootstrap.Clock.Pause();
+            if (result.Succeeded)
+            {
+                string state = bootstrap.Clock.IsPaused ? "暂停" : "继续";
+                bootstrap.Events.Record(
+                    bootstrap.Clock.ElapsedGameSeconds,
+                    WorldEventKind.TimeControlChanged,
+                    $"游戏时间已{state}。");
+            }
+
+            return result;
+        }
+
+        public ActionResult SetTimeScale(double timeScale)
+        {
+            if (bootstrap == null || !bootstrap.IsInitialized)
+            {
+                return ActionResult.Failure(
+                    ActionFailureReason.InvalidState,
+                    "Time controls require an initialized GameBootstrap.");
+            }
+
+            if (timeScale != 1d && timeScale != 5d && timeScale != 20d)
+            {
+                return ActionResult.Failure(
+                    ActionFailureReason.InvalidArgument,
+                    "Demo time scale must be 1x, 5x, or 20x.");
+            }
+
+            ActionResult result = bootstrap.Clock.SetTimeScale(timeScale);
+            if (result.Succeeded)
+            {
+                bootstrap.Events.Record(
+                    bootstrap.Clock.ElapsedGameSeconds,
+                    WorldEventKind.TimeControlChanged,
+                    $"时间倍速调整为 {timeScale:0}x。");
+            }
+
+            return result;
+        }
+
+        private void HandlePause()
+        {
+            TogglePause();
+        }
+
+        private void HandleSpeed1()
+        {
+            SetTimeScale(1d);
+        }
+
+        private void HandleSpeed5()
+        {
+            SetTimeScale(5d);
+        }
+
+        private void HandleSpeed20()
+        {
+            SetTimeScale(20d);
+        }
+
         private void RefreshFromExecutor()
         {
             RefreshGoalAndExpression();
@@ -238,6 +376,55 @@ namespace AIFarm.Presentation
             {
                 expressionText.text = $"NPC: {replanController.NpcExpression}";
             }
+
+            if (actionReasonText != null)
+            {
+                string reason = string.IsNullOrWhiteSpace(replanController.CurrentDecisionReason)
+                    ? "等待目标"
+                    : replanController.CurrentDecisionReason;
+                actionReasonText.text = $"Reason: {reason}";
+            }
+
+            if (moodText != null)
+            {
+                moodText.text = $"Mood: {replanController.CurrentMood}";
+            }
+
+            if (emojiText != null)
+            {
+                emojiText.text = replanController.CurrentEmoji;
+            }
+        }
+
+        private void RefreshWorldEvents()
+        {
+            if (worldEventsText == null)
+            {
+                return;
+            }
+
+            WorldEventLog events = bootstrap?.Events ?? replanController?.WorldEvents;
+            if (events == null || events.Entries.Count == 0)
+            {
+                worldEventsText.text = "No world events yet.";
+                return;
+            }
+
+            var builder = new StringBuilder();
+            for (int index = events.Entries.Count - 1; index >= 0; index--)
+            {
+                WorldEventEntry entry = events.Entries[index];
+                builder.Append('[')
+                    .Append(FormatEventTime(entry.GameSeconds))
+                    .Append("] ")
+                    .Append(entry.Message);
+                if (index > 0)
+                {
+                    builder.AppendLine();
+                }
+            }
+
+            worldEventsText.text = builder.ToString();
         }
 
         private void CompleteSuccessfulSubmission()
@@ -268,6 +455,14 @@ namespace AIFarm.Presentation
             int hour = minuteOfDay / 60;
             int minute = minuteOfDay % 60;
             return $"Day {day}  {hour:00}:{minute:00}";
+        }
+
+        private static string FormatEventTime(double elapsedGameSeconds)
+        {
+            int totalMinutes = (int)(elapsedGameSeconds / 60d);
+            int day = totalMinutes / (24 * 60) + 1;
+            int minuteOfDay = totalMinutes % (24 * 60);
+            return $"D{day} {minuteOfDay / 60:00}:{minuteOfDay % 60:00}";
         }
     }
 }

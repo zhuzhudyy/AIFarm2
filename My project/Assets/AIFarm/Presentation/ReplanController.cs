@@ -27,6 +27,10 @@ namespace AIFarm.Presentation
         private LocalIntentInterpreter interpreter;
         private DeterministicFarmPlanner planner;
         private FarmGoalSpec activeGoal;
+        private NpcActionContext actionContext;
+        private WorldEventLog eventLog;
+        private NpcExpressionDirector expressionDirector;
+        private string fallbackExpressionText = "等待你的种田目标。";
 
         public ReplanStatus Status { get; private set; } = ReplanStatus.Idle;
 
@@ -40,7 +44,18 @@ namespace AIFarm.Presentation
 
         public string CurrentDecisionReason { get; private set; } = string.Empty;
 
-        public string NpcExpression { get; private set; } = "等待你的种田目标。";
+        public string NpcExpression => expressionDirector?.Current?.Text ?? fallbackExpressionText;
+
+        public string CurrentEmoji =>
+            (expressionDirector?.Current ?? expressionDirector?.Latest)?.Emoji ?? "…";
+
+        public NpcMood CurrentMood =>
+            (expressionDirector?.Current ?? expressionDirector?.Latest)?.Mood ?? NpcMood.Focused;
+
+        public IReadOnlyList<NpcExpression> RecentExpressions =>
+            expressionDirector?.RecentExpressions ?? System.Array.Empty<NpcExpression>();
+
+        public WorldEventLog WorldEvents => eventLog;
 
         public string LastFailureReason { get; private set; } = string.Empty;
 
@@ -73,7 +88,8 @@ namespace AIFarm.Presentation
                 bootstrap.Field,
                 bootstrap.Inventory,
                 bootstrap.Clock,
-                bootstrap.Simulation);
+                bootstrap.Simulation,
+                bootstrap.Events);
             return Initialize(context, executor, bootstrap.Mode);
         }
 
@@ -97,10 +113,18 @@ namespace AIFarm.Presentation
             }
 
             executor = planExecutor;
+            actionContext = context;
+            eventLog = context.EventLog ?? new WorldEventLog();
             interpreter = new LocalIntentInterpreter();
             var world = new WorldStateQuery(context.Field, context.Inventory, context.Clock);
             planner = new DeterministicFarmPlanner(world, demoMode);
+            expressionDirector = new NpcExpressionDirector(
+                new LocalTemplateExpressionService(),
+                demoMode.ExpressionCooldownSeconds,
+                demoMode.ExpressionDisplaySeconds);
+            executor.ActionStarted += HandleActionStarted;
             executor.ActionCompleted += HandleActionCompleted;
+            executor.ActionFailed += HandleActionFailed;
             IsInitialized = true;
             return ActionResult.Success("Offline replanning initialized.");
         }
@@ -134,8 +158,12 @@ namespace AIFarm.Presentation
             Status = ReplanStatus.Running;
             CurrentGoalText = goal.Summary;
             CurrentDecisionReason = "目标已在本地解释，准备查询世界状态。";
-            NpcExpression = "收到，我会照顾九块胡萝卜直到全部收获。";
+            fallbackExpressionText = "收到，我会照顾九块胡萝卜直到全部收获。";
             LastFailureReason = string.Empty;
+            RecordEvent(
+                WorldEventKind.CommandAccepted,
+                $"接受用户命令：{goal.Summary}。");
+            TriggerExpression(NpcExpressionTrigger.CommandAccepted, goal.Summary);
             return TickReplan();
         }
 
@@ -170,11 +198,22 @@ namespace AIFarm.Presentation
             }
 
             CurrentDecisionReason = decision.Reason;
+            RecordEvent(
+                WorldEventKind.PlanDecision,
+                $"规划原因：{decision.Reason}",
+                decision.Action?.TargetPlotNumber);
             if (decision.Kind == FarmPlanDecisionKind.GoalCompleted)
             {
                 Status = ReplanStatus.Completed;
                 CurrentGoalText = $"Completed: {activeGoal.Summary}";
-                NpcExpression = "九块地都完成了，胡萝卜已经收好。";
+                fallbackExpressionText = "九块地都完成了，胡萝卜已经收好。";
+                RecordEvent(
+                    WorldEventKind.GoalCompleted,
+                    "九块目标土地已经全部收获，离线任务完成。");
+                TriggerExpression(
+                    NpcExpressionTrigger.GoalCompleted,
+                    activeGoal.Summary,
+                    interrupt: true);
                 return ActionResult.Success("离线端到端种田目标已完成。");
             }
 
@@ -184,7 +223,6 @@ namespace AIFarm.Presentation
                 return FailGoal(queued.Message, queued.FailureReason);
             }
 
-            NpcExpression = ExpressionFor(decision.Action, decision.Kind);
             return queued;
         }
 
@@ -200,13 +238,14 @@ namespace AIFarm.Presentation
             {
                 Status = ReplanStatus.Failed;
                 LastFailureReason = result.Message;
-                NpcExpression = $"无法启动离线规划：{result.Message}";
+                fallbackExpressionText = $"无法启动离线规划：{result.Message}";
                 Debug.LogWarning(result.Message, this);
             }
         }
 
         private void Update()
         {
+            expressionDirector?.Advance(UnityEngine.Time.unscaledDeltaTime);
             if (IsInitialized && IsGoalActive && !executor.IsBusy)
             {
                 TickReplan();
@@ -217,7 +256,33 @@ namespace AIFarm.Presentation
         {
             if (executor != null)
             {
+                executor.ActionStarted -= HandleActionStarted;
                 executor.ActionCompleted -= HandleActionCompleted;
+                executor.ActionFailed -= HandleActionFailed;
+            }
+        }
+
+        private void HandleActionStarted(INpcAction action)
+        {
+            if (action is SowAction)
+            {
+                TriggerExpression(NpcExpressionTrigger.SowingStarted, CurrentDecisionReason);
+            }
+            else if (action is WaterAction)
+            {
+                TriggerExpression(NpcExpressionTrigger.WaterNeeded, CurrentDecisionReason);
+            }
+            else if (action is WeedAction)
+            {
+                TriggerExpression(NpcExpressionTrigger.WeedsFound, CurrentDecisionReason);
+            }
+            else if (action is WaitAction)
+            {
+                TriggerExpression(NpcExpressionTrigger.WaitingForGrowth, CurrentDecisionReason);
+            }
+            else if (action is HarvestAction)
+            {
+                TriggerExpression(NpcExpressionTrigger.HarvestStarted, CurrentDecisionReason);
             }
         }
 
@@ -234,6 +299,14 @@ namespace AIFarm.Presentation
             }
         }
 
+        private void HandleActionFailed(INpcAction action, ActionResult result)
+        {
+            TriggerExpression(
+                NpcExpressionTrigger.ActionFailed,
+                result.Message,
+                interrupt: true);
+        }
+
         private ActionResult FailGoal(
             string reason,
             ActionFailureReason failureReason = ActionFailureReason.InvalidState)
@@ -241,43 +314,51 @@ namespace AIFarm.Presentation
             Status = ReplanStatus.Failed;
             LastFailureReason = string.IsNullOrWhiteSpace(reason) ? "离线规划失败。" : reason;
             CurrentDecisionReason = LastFailureReason;
-            NpcExpression = $"目标失败：{LastFailureReason}";
+            fallbackExpressionText = $"目标失败：{LastFailureReason}";
+            RecordEvent(
+                WorldEventKind.ActionFailed,
+                $"目标失败：{LastFailureReason}");
+            TriggerExpression(
+                NpcExpressionTrigger.ActionFailed,
+                LastFailureReason,
+                interrupt: true);
             return ActionResult.Failure(failureReason, LastFailureReason);
         }
 
-        private static string ExpressionFor(INpcAction action, FarmPlanDecisionKind kind)
+        private ActionResult TriggerExpression(
+            NpcExpressionTrigger trigger,
+            string context,
+            bool interrupt = false)
         {
-            if (kind == FarmPlanDecisionKind.WaitAndRecheck)
+            if (expressionDirector == null)
             {
-                return "作物还在变化，我会稍等后重新检查。";
+                return ActionResult.Failure(
+                    ActionFailureReason.InvalidState,
+                    "NPC expression director is not initialized.");
             }
 
-            if (action is SowAction)
+            return expressionDirector.Trigger(
+                trigger,
+                context,
+                UnityEngine.Time.unscaledTime,
+                interrupt);
+        }
+
+        private void RecordEvent(
+            WorldEventKind kind,
+            string message,
+            int? plotNumber = null)
+        {
+            if (eventLog == null || actionContext == null)
             {
-                return "先把空地逐块种上胡萝卜。";
+                return;
             }
 
-            if (action is FertilizeAction)
-            {
-                return "正在给已播种的土地施肥。";
-            }
-
-            if (action is WaterAction)
-            {
-                return "检测到水分不足，正在浇水。";
-            }
-
-            if (action is WeedAction)
-            {
-                return "杂草出现了，马上清理。";
-            }
-
-            if (action is HarvestAction)
-            {
-                return "胡萝卜成熟了，开始收获。";
-            }
-
-            return "正在执行下一步农事动作。";
+            eventLog.Record(
+                actionContext.Clock.ElapsedGameSeconds,
+                kind,
+                message,
+                plotNumber);
         }
     }
 }

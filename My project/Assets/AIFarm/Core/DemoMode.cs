@@ -5,16 +5,18 @@ namespace AIFarm.Core
     public sealed class DemoMode
     {
         public DemoMode(
-            double recommendedTimeScale = 240d,
-            double waterDecayGameSeconds = 120d,
-            double weedDelayGameSeconds = 180d,
-            double maturityGameSeconds = 300d,
+            double recommendedTimeScale = 20d,
+            double waterDecayGameSeconds = 10d,
+            double weedDelayGameSeconds = 15d,
+            double maturityGameSeconds = 30d,
             float sowActionSeconds = 0.2f,
             float fertilizeActionSeconds = 0.22f,
             float waterActionSeconds = 0.2f,
             float weedActionSeconds = 0.2f,
             float harvestActionSeconds = 0.25f,
-            float waitActionSeconds = 0.2f)
+            float waitActionSeconds = 0.2f,
+            float expressionCooldownSeconds = 12f,
+            float expressionDisplaySeconds = 2.5f)
         {
             RecommendedTimeScale = recommendedTimeScale;
             WaterDecayGameSeconds = waterDecayGameSeconds;
@@ -26,6 +28,8 @@ namespace AIFarm.Core
             WeedActionSeconds = weedActionSeconds;
             HarvestActionSeconds = harvestActionSeconds;
             WaitActionSeconds = waitActionSeconds;
+            ExpressionCooldownSeconds = expressionCooldownSeconds;
+            ExpressionDisplaySeconds = expressionDisplaySeconds;
 
             ActionResult validation = Validate();
             if (validation.Failed)
@@ -54,6 +58,10 @@ namespace AIFarm.Core
 
         public float WaitActionSeconds { get; }
 
+        public float ExpressionCooldownSeconds { get; }
+
+        public float ExpressionDisplaySeconds { get; }
+
         public bool IsAiServiceRequired => false;
 
         public ActionResult Validate()
@@ -67,7 +75,9 @@ namespace AIFarm.Core
                 !IsFinitePositive(WaterActionSeconds) ||
                 !IsFinitePositive(WeedActionSeconds) ||
                 !IsFinitePositive(HarvestActionSeconds) ||
-                !IsFinitePositive(WaitActionSeconds))
+                !IsFinitePositive(WaitActionSeconds) ||
+                !IsFinitePositive(ExpressionCooldownSeconds) ||
+                !IsFinitePositive(ExpressionDisplaySeconds))
             {
                 return ActionResult.Failure(
                     ActionFailureReason.InvalidArgument,

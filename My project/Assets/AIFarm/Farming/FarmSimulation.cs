@@ -9,16 +9,22 @@ namespace AIFarm.Farming
         private readonly FarmField field;
         private readonly GameClock clock;
         private readonly DemoMode demoMode;
+        private readonly WorldEventLog eventLog;
         private readonly double[] waterElapsed = new double[FarmField.PlotCount];
         private readonly double[] weedElapsed = new double[FarmField.PlotCount];
         private readonly double[] growthElapsed = new double[FarmField.PlotCount];
         private readonly bool[] waterHasDecayed = new bool[FarmField.PlotCount];
 
-        public FarmSimulation(FarmField field, GameClock clock, DemoMode demoMode)
+        public FarmSimulation(
+            FarmField field,
+            GameClock clock,
+            DemoMode demoMode,
+            WorldEventLog eventLog = null)
         {
             this.field = field ?? throw new ArgumentNullException(nameof(field));
             this.clock = clock ?? throw new ArgumentNullException(nameof(clock));
             this.demoMode = demoMode ?? throw new ArgumentNullException(nameof(demoMode));
+            this.eventLog = eventLog;
         }
 
         public int WaterDecayEventCount { get; private set; }
@@ -94,6 +100,11 @@ namespace AIFarm.Farming
             {
                 waterHasDecayed[index] = true;
                 WaterDecayEventCount++;
+                eventLog?.Record(
+                    clock.ElapsedGameSeconds,
+                    WorldEventKind.MoistureChanged,
+                    $"{plot.PlotNumber:00} 号地水分下降到 {plot.WaterLevel}。",
+                    plot.PlotNumber);
             }
 
             return result;
@@ -116,6 +127,11 @@ namespace AIFarm.Farming
             if (result.Succeeded)
             {
                 WeedEventCount++;
+                eventLog?.Record(
+                    clock.ElapsedGameSeconds,
+                    WorldEventKind.WeedsAppeared,
+                    $"{plot.PlotNumber:00} 号地出现杂草。",
+                    plot.PlotNumber);
             }
 
             return result;
@@ -134,9 +150,22 @@ namespace AIFarm.Farming
                 growthElapsed[index] / demoMode.MaturityGameSeconds * FarmPlot.RequiredGrowth);
             targetProgress = Math.Min(FarmPlot.RequiredGrowth, targetProgress);
             int amount = targetProgress - plot.GrowthProgress;
-            return amount > 0
-                ? plot.AdvanceGrowth(amount)
-                : ActionResult.Success();
+            if (amount <= 0)
+            {
+                return ActionResult.Success();
+            }
+
+            ActionResult result = plot.AdvanceGrowth(amount);
+            if (result.Succeeded && plot.State == PlotState.Mature)
+            {
+                eventLog?.Record(
+                    clock.ElapsedGameSeconds,
+                    WorldEventKind.CropMatured,
+                    $"{plot.PlotNumber:00} 号地的胡萝卜成熟了。",
+                    plot.PlotNumber);
+            }
+
+            return result;
         }
 
         private void ResetPlotTimers(int index)
