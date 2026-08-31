@@ -1,6 +1,8 @@
 using System.Collections;
 using System.Linq;
+using AIFarm.Ai;
 using AIFarm.Core;
+using AIFarm.Npc;
 using AIFarm.Presentation;
 using NUnit.Framework;
 using UnityEngine;
@@ -109,6 +111,45 @@ namespace AIFarm.Tests.PlayMode
                 Is.EqualTo(5));
         }
 
+        [UnityTest]
+        public IEnumerator AiModeLabel_ShowsRemoteThenLocalAfterAutomaticFallback()
+        {
+            hudObject = new GameObject("HudAiMode");
+            ReplanController controller = hudObject.AddComponent<ReplanController>();
+            controller.enabled = false;
+            var remoteClient = new RemoteAiGatewayClient(
+                "http://127.0.0.1:8000",
+                requestTimeoutSeconds: 2,
+                gatewayTransport: new UnavailableTransport());
+            Assert.That(controller.ConfigureAiGateway(remoteClient).Succeeded, Is.True);
+
+            Text modeLabel = CreateText("AiModeLabel");
+            DemoHud hud = hudObject.AddComponent<DemoHud>();
+            hud.Configure(
+                gameBootstrap: null,
+                timeLabel: null,
+                inventoryLabel: null,
+                goalLabel: null,
+                actionLabel: null,
+                input: null,
+                button: null,
+                controller: controller,
+                aiModeLabel: modeLabel);
+
+            yield return null;
+            Assert.That(modeLabel.text, Is.EqualTo("AI: REMOTE"));
+
+            AiGatewayResult<FarmGoalSpec> fallbackResult = null;
+            yield return remoteClient.InterpretCommand(
+                "把地种满胡萝卜并照顾到收获。",
+                result => fallbackResult = result);
+            yield return null;
+
+            Assert.That(fallbackResult, Is.Not.Null);
+            Assert.That(fallbackResult.Source, Is.EqualTo(AiGatewayMode.Local));
+            Assert.That(modeLabel.text, Is.EqualTo("AI: LOCAL"));
+        }
+
         private Button CreateButton(string name)
         {
             var buttonObject = new GameObject(name, typeof(RectTransform));
@@ -121,6 +162,19 @@ namespace AIFarm.Tests.PlayMode
             var textObject = new GameObject(name, typeof(RectTransform));
             textObject.transform.SetParent(hudObject.transform, false);
             return textObject.AddComponent<Text>();
+        }
+
+        private sealed class UnavailableTransport : IAiGatewayTransport
+        {
+            public IEnumerator PostJson(
+                string url,
+                string json,
+                int timeoutSeconds,
+                System.Action<AiGatewayHttpResult> completed)
+            {
+                completed(AiGatewayHttpResult.Failure(0, "Service unavailable."));
+                yield break;
+            }
         }
     }
 }

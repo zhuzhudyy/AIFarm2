@@ -1,6 +1,8 @@
+using AIFarm.Ai;
 using AIFarm.Core;
 using AIFarm.Inventory;
 using AIFarm.Npc;
+using System.Collections.Generic;
 using System.Text;
 using UnityEngine;
 using UnityEngine.UI;
@@ -67,6 +69,15 @@ namespace AIFarm.Presentation
         [SerializeField]
         private Button speed20Button;
 
+        [SerializeField]
+        private Text aiModeText;
+
+        [SerializeField]
+        private Text recentMemoriesText;
+
+        [SerializeField]
+        private Text recentReflectionsText;
+
         private string idleSubmissionMessage = string.Empty;
 
         public void Configure(
@@ -88,7 +99,10 @@ namespace AIFarm.Presentation
             Text pauseControlLabel = null,
             Button speed1Control = null,
             Button speed5Control = null,
-            Button speed20Control = null)
+            Button speed20Control = null,
+            Text aiModeLabel = null,
+            Text memoriesLabel = null,
+            Text reflectionsLabel = null)
         {
             bootstrap = gameBootstrap;
             timeText = timeLabel;
@@ -109,6 +123,9 @@ namespace AIFarm.Presentation
             speed1Button = speed1Control;
             speed5Button = speed5Control;
             speed20Button = speed20Control;
+            aiModeText = aiModeLabel;
+            recentMemoriesText = memoriesLabel;
+            recentReflectionsText = reflectionsLabel;
         }
 
         private void Start()
@@ -126,6 +143,7 @@ namespace AIFarm.Presentation
             RefreshFromDomain();
             RefreshFromExecutor();
             RefreshWorldEvents();
+            RefreshMemoriesAndReflections();
         }
 
         private void Update()
@@ -133,6 +151,7 @@ namespace AIFarm.Presentation
             RefreshFromDomain();
             RefreshFromExecutor();
             RefreshWorldEvents();
+            RefreshMemoriesAndReflections();
         }
 
         private void OnDestroy()
@@ -321,7 +340,28 @@ namespace AIFarm.Presentation
         private void RefreshFromExecutor()
         {
             RefreshGoalAndExpression();
-            if (actionText == null || planExecutor == null)
+            if (actionText == null)
+            {
+                return;
+            }
+
+            if (replanController != null && replanController.IsGatewayRequestPending)
+            {
+                actionText.text = "Action: Waiting for Remote AI";
+                return;
+            }
+
+            if (replanController != null &&
+                replanController.Status == ReplanStatus.Idle &&
+                replanController.LastGatewaySubmissionResult.HasValue &&
+                replanController.LastGatewaySubmissionResult.Value.Failed)
+            {
+                actionText.text =
+                    $"Action: Rejected - {replanController.LastGatewaySubmissionResult.Value.Message}";
+                return;
+            }
+
+            if (planExecutor == null)
             {
                 return;
             }
@@ -357,11 +397,19 @@ namespace AIFarm.Presentation
                 return;
             }
 
-            actionText.text = "Action: Idle - submit an offline full-field goal";
+            actionText.text = "Action: Idle - submit a full-field goal";
         }
 
         private void RefreshGoalAndExpression()
         {
+            if (aiModeText != null)
+            {
+                AiGatewayMode mode = replanController != null
+                    ? replanController.CurrentAiMode
+                    : bootstrap?.SceneConfig?.AiGatewayMode ?? AiGatewayMode.Local;
+                aiModeText.text = $"AI: {mode.ToString().ToUpperInvariant()}";
+            }
+
             if (replanController == null)
             {
                 return;
@@ -425,6 +473,55 @@ namespace AIFarm.Presentation
             }
 
             worldEventsText.text = builder.ToString();
+        }
+
+        private void RefreshMemoriesAndReflections()
+        {
+            if (recentMemoriesText != null)
+            {
+                IReadOnlyList<MemoryEntry> memories = replanController?.RecentMemories;
+                if (memories == null || memories.Count == 0)
+                {
+                    recentMemoriesText.text = "芽芽还没有新的观察。";
+                }
+                else
+                {
+                    var builder = new StringBuilder();
+                    foreach (MemoryEntry memory in memories)
+                    {
+                        builder.Append("[重要性 ")
+                            .Append(memory.Importance)
+                            .Append("] ")
+                            .Append(memory.Text)
+                            .AppendLine();
+                    }
+
+                    recentMemoriesText.text = builder.ToString().TrimEnd();
+                }
+            }
+
+            if (recentReflectionsText != null)
+            {
+                MemoryStore memoryStore = replanController?.Memories;
+                IReadOnlyList<MemoryEntry> reflections =
+                    memoryStore?.GetRecentReflections(3);
+                if (reflections == null || reflections.Count == 0)
+                {
+                    recentReflectionsText.text = "反思：完成一轮种植后生成。";
+                }
+                else
+                {
+                    var builder = new StringBuilder();
+                    foreach (MemoryEntry reflection in reflections)
+                    {
+                        builder.Append("• ")
+                            .Append(reflection.Text)
+                            .AppendLine();
+                    }
+
+                    recentReflectionsText.text = builder.ToString().TrimEnd();
+                }
+            }
         }
 
         private void CompleteSuccessfulSubmission()

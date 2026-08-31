@@ -87,6 +87,7 @@ namespace AIFarm.Tests.EditMode
             Assert.That(GameObject.Find("UI_Canvas/StatusPanel/TimeText"), Is.Not.Null);
             Assert.That(GameObject.Find("UI_Canvas/StatusPanel/MoodText"), Is.Not.Null);
             Assert.That(GameObject.Find("UI_Canvas/StatusPanel/EmojiText"), Is.Not.Null);
+            Assert.That(GameObject.Find("UI_Canvas/StatusPanel/AiModeText"), Is.Not.Null);
             Assert.That(
                 GameObject.Find("UI_Canvas/StatusPanel/TimeControls/PauseButton").GetComponent<Button>(),
                 Is.Not.Null);
@@ -105,6 +106,9 @@ namespace AIFarm.Tests.EditMode
             Assert.That(GameObject.Find("UI_Canvas/GoalPanel/ActionReasonText"), Is.Not.Null);
             Assert.That(GameObject.Find("UI_Canvas/GoalPanel/ExpressionText"), Is.Not.Null);
             Assert.That(GameObject.Find("UI_Canvas/WorldEventsPanel/WorldEventsText"), Is.Not.Null);
+            Assert.That(GameObject.Find("UI_Canvas/MemoryPanel/PersonaText"), Is.Not.Null);
+            Assert.That(GameObject.Find("UI_Canvas/MemoryPanel/RecentMemoriesText"), Is.Not.Null);
+            Assert.That(GameObject.Find("UI_Canvas/MemoryPanel/RecentReflectionsText"), Is.Not.Null);
             Assert.That(GameObject.Find("UI_Canvas/CommandPanel/CommandInput").GetComponent<InputField>(), Is.Not.Null);
             Assert.That(GameObject.Find("UI_Canvas/CommandPanel/SubmitButton").GetComponent<Button>(), Is.Not.Null);
 
@@ -128,6 +132,8 @@ namespace AIFarm.Tests.EditMode
             Assert.That(sceneConfig.TimeScale, Is.EqualTo(20f));
             Assert.That(sceneConfig.ExpressionCooldownSeconds, Is.GreaterThan(0f));
             Assert.That(sceneConfig.ExpressionDisplaySeconds, Is.GreaterThan(0f));
+            Assert.That(sceneConfig.AiGatewayBaseUrl, Is.Not.Empty);
+            Assert.That(sceneConfig.AiRequestTimeoutSeconds, Is.InRange(1, 60));
             Assert.That(sceneConfig.CreateDemoMode().IsAiServiceRequired, Is.False);
 
             Assert.That(

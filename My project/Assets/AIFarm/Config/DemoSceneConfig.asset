@@ -25,3 +25,6 @@ MonoBehaviour:
   expressionDisplaySeconds: 2.5
   plotSize: 2
   plotSpacing: 0.35
+  aiGatewayMode: 0
+  aiGatewayBaseUrl: http://127.0.0.1:8000
+  aiRequestTimeoutSeconds: 8

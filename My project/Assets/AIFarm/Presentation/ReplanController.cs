@@ -1,4 +1,7 @@
+using System;
+using System.Collections;
 using System.Collections.Generic;
+using AIFarm.Ai;
 using AIFarm.Core;
 using AIFarm.Npc;
 using UnityEngine;
@@ -24,12 +27,20 @@ namespace AIFarm.Presentation
         private NpcPlanExecutor executor;
 
         private readonly HashSet<int> harvestedPlotNumbers = new HashSet<int>();
-        private LocalIntentInterpreter interpreter;
+        private readonly HashSet<NpcExpressionTrigger> pendingExpressionTriggers =
+            new HashSet<NpcExpressionTrigger>();
         private DeterministicFarmPlanner planner;
         private FarmGoalSpec activeGoal;
         private NpcActionContext actionContext;
         private WorldEventLog eventLog;
         private NpcExpressionDirector expressionDirector;
+        private ObservationService observationService;
+        private NpcRuntimeState runtimeState;
+        private ReflectionService reflectionService;
+        private IAiGatewayClient aiGatewayClient;
+        private bool gatewayRequestPending;
+        private bool reflectionRequestPending;
+        private int activeCycleNumber;
         private string fallbackExpressionText = "等待你的种田目标。";
 
         public ReplanStatus Status { get; private set; } = ReplanStatus.Idle;
@@ -53,11 +64,40 @@ namespace AIFarm.Presentation
             (expressionDirector?.Current ?? expressionDirector?.Latest)?.Mood ?? NpcMood.Focused;
 
         public IReadOnlyList<NpcExpression> RecentExpressions =>
-            expressionDirector?.RecentExpressions ?? System.Array.Empty<NpcExpression>();
+            expressionDirector?.RecentExpressions ?? Array.Empty<NpcExpression>();
 
         public WorldEventLog WorldEvents => eventLog;
 
+        public NpcPersonaDefinition Persona =>
+            runtimeState?.Persona ?? NpcPersonaDefinition.Yaya;
+
+        public MemoryStore Memories => runtimeState?.Memories;
+
+        public IReadOnlyList<MemoryEntry> RecentMemories => runtimeState == null
+            ? Array.Empty<MemoryEntry>()
+            : runtimeState.Memories.GetRecentObservations(6);
+
+        public IReadOnlyList<NpcReflection> RecentReflections => runtimeState == null
+            ? Array.Empty<NpcReflection>()
+            : runtimeState.RecentReflections;
+
+        public NpcReflection LatestReflection => runtimeState?.LatestReflection;
+
+        public int CompletedReflectionCount => runtimeState?.CompletedCycleCount ?? 0;
+
         public string LastFailureReason { get; private set; } = string.Empty;
+
+        public ActionResult? LastGatewaySubmissionResult { get; private set; }
+
+        public AiGatewayMode ConfiguredAiMode =>
+            aiGatewayClient?.ConfiguredMode ?? AiGatewayMode.Local;
+
+        public AiGatewayMode CurrentAiMode =>
+            aiGatewayClient?.ActiveMode ?? AiGatewayMode.Local;
+
+        public bool IsGatewayRequestPending => gatewayRequestPending || reflectionRequestPending;
+
+        public bool IsReflectionPending => reflectionRequestPending;
 
         public bool IsInitialized { get; private set; }
 
@@ -75,6 +115,26 @@ namespace AIFarm.Presentation
             return ActionResult.Success("ReplanController scene references configured.");
         }
 
+        public ActionResult ConfigureAiGateway(IAiGatewayClient gatewayClient)
+        {
+            if (gatewayClient == null)
+            {
+                return ActionResult.Failure(
+                    ActionFailureReason.InvalidArgument,
+                    "AI gateway client cannot be null.");
+            }
+
+            if (IsInitialized)
+            {
+                return ActionResult.Failure(
+                    ActionFailureReason.InvalidState,
+                    "AI gateway mode must be configured before initialization.");
+            }
+
+            aiGatewayClient = gatewayClient;
+            return ActionResult.Success("AI gateway client configured.");
+        }
+
         public ActionResult Initialize()
         {
             if (bootstrap == null || !bootstrap.IsInitialized)
@@ -90,13 +150,26 @@ namespace AIFarm.Presentation
                 bootstrap.Clock,
                 bootstrap.Simulation,
                 bootstrap.Events);
-            return Initialize(context, executor, bootstrap.Mode);
+
+            try
+            {
+                IAiGatewayClient configuredClient = aiGatewayClient ??
+                    CreateGatewayClient(bootstrap.SceneConfig);
+                return Initialize(context, executor, bootstrap.Mode, configuredClient);
+            }
+            catch (ArgumentException exception)
+            {
+                return ActionResult.Failure(
+                    ActionFailureReason.InvalidArgument,
+                    exception.Message);
+            }
         }
 
         public ActionResult Initialize(
             NpcActionContext context,
             NpcPlanExecutor planExecutor,
-            DemoMode demoMode)
+            DemoMode demoMode,
+            IAiGatewayClient gatewayClient = null)
         {
             if (IsInitialized)
             {
@@ -115,7 +188,15 @@ namespace AIFarm.Presentation
             executor = planExecutor;
             actionContext = context;
             eventLog = context.EventLog ?? new WorldEventLog();
-            interpreter = new LocalIntentInterpreter();
+            aiGatewayClient = gatewayClient ?? aiGatewayClient ?? new LocalAiGatewayClient();
+            runtimeState = new NpcRuntimeState(NpcPersonaDefinition.Yaya);
+            observationService = new ObservationService();
+            reflectionService = new ReflectionService(runtimeState);
+            observationService.CaptureNewObservations(
+                eventLog,
+                runtimeState.Memories,
+                out _);
+            eventLog.EntryRecorded += HandleWorldEventRecorded;
             var world = new WorldStateQuery(context.Field, context.Inventory, context.Clock);
             planner = new DeterministicFarmPlanner(world, demoMode);
             expressionDirector = new NpcExpressionDirector(
@@ -126,7 +207,7 @@ namespace AIFarm.Presentation
             executor.ActionCompleted += HandleActionCompleted;
             executor.ActionFailed += HandleActionFailed;
             IsInitialized = true;
-            return ActionResult.Success("Offline replanning initialized.");
+            return ActionResult.Success($"{ConfiguredAiMode} AI replanning initialized.");
         }
 
         public ActionResult SubmitGoal(string command)
@@ -140,31 +221,38 @@ namespace AIFarm.Presentation
                 }
             }
 
-            if (IsGoalActive || executor.IsBusy)
+            if (gatewayRequestPending || reflectionRequestPending || IsGoalActive || executor.IsBusy)
             {
                 return ActionResult.Failure(
                     ActionFailureReason.InvalidState,
-                    "当前种田目标尚未完成，请等待后再提交。");
+                    "当前种田目标或 AI 请求尚未完成，请等待后再提交。");
             }
 
-            ActionResult interpretation = interpreter.TryInterpret(command, out FarmGoalSpec goal);
-            if (interpretation.Failed)
+            LastGatewaySubmissionResult = null;
+            if (ConfiguredAiMode == AiGatewayMode.Remote)
             {
-                return interpretation;
+                gatewayRequestPending = true;
+                CurrentGoalText = "Contacting Remote AI…";
+                CurrentDecisionReason = "正在请求远程 AI 网关解释命令。";
+                StartCoroutine(RequestGoalInterpretation(command));
+                return ActionResult.Success("Remote AI interpretation requested.");
             }
 
-            harvestedPlotNumbers.Clear();
-            activeGoal = goal;
-            Status = ReplanStatus.Running;
-            CurrentGoalText = goal.Summary;
-            CurrentDecisionReason = "目标已在本地解释，准备查询世界状态。";
-            fallbackExpressionText = "收到，我会照顾九块胡萝卜直到全部收获。";
-            LastFailureReason = string.Empty;
-            RecordEvent(
-                WorldEventKind.CommandAccepted,
-                $"接受用户命令：{goal.Summary}。");
-            TriggerExpression(NpcExpressionTrigger.CommandAccepted, goal.Summary);
-            return TickReplan();
+            AiGatewayResult<FarmGoalSpec> gatewayResult = null;
+            IEnumerator request = aiGatewayClient.InterpretCommand(
+                command,
+                result => gatewayResult = result);
+            while (request.MoveNext())
+            {
+                if (request.Current != null)
+                {
+                    return ActionResult.Failure(
+                        ActionFailureReason.InvalidState,
+                        "Local AI gateway unexpectedly required asynchronous execution.");
+                }
+            }
+
+            return CompleteGoalInterpretation(gatewayResult);
         }
 
         public ActionResult TickReplan()
@@ -178,7 +266,7 @@ namespace AIFarm.Presentation
 
             if (!IsGoalActive)
             {
-                return ActionResult.Success("No offline goal requires replanning.");
+                return ActionResult.Success("No farm goal requires replanning.");
             }
 
             if (executor.Status == NpcExecutionStatus.Failed)
@@ -209,12 +297,16 @@ namespace AIFarm.Presentation
                 fallbackExpressionText = "九块地都完成了，胡萝卜已经收好。";
                 RecordEvent(
                     WorldEventKind.GoalCompleted,
-                    "九块目标土地已经全部收获，离线任务完成。");
-                TriggerExpression(
+                    "九块目标土地已经全部收获，任务完成。");
+                string reflectionContext = reflectionService.BuildReflectionContext(
+                    activeGoal.Summary);
+                TriggerReflection(
+                    NpcReflectionOutcome.Completed,
+                    reflectionContext,
                     NpcExpressionTrigger.GoalCompleted,
-                    activeGoal.Summary,
+                    activeCycleNumber,
                     interrupt: true);
-                return ActionResult.Success("离线端到端种田目标已完成。");
+                return ActionResult.Success("端到端种田目标已完成。");
             }
 
             ActionResult queued = executor.Enqueue(decision.Action);
@@ -238,7 +330,7 @@ namespace AIFarm.Presentation
             {
                 Status = ReplanStatus.Failed;
                 LastFailureReason = result.Message;
-                fallbackExpressionText = $"无法启动离线规划：{result.Message}";
+                fallbackExpressionText = $"无法启动 AI 规划：{result.Message}";
                 Debug.LogWarning(result.Message, this);
             }
         }
@@ -260,6 +352,63 @@ namespace AIFarm.Presentation
                 executor.ActionCompleted -= HandleActionCompleted;
                 executor.ActionFailed -= HandleActionFailed;
             }
+
+            if (eventLog != null)
+            {
+                eventLog.EntryRecorded -= HandleWorldEventRecorded;
+            }
+        }
+
+        private IEnumerator RequestGoalInterpretation(string command)
+        {
+            AiGatewayResult<FarmGoalSpec> gatewayResult = null;
+            yield return aiGatewayClient.InterpretCommand(
+                command,
+                result => gatewayResult = result);
+            gatewayRequestPending = false;
+            CompleteGoalInterpretation(gatewayResult);
+        }
+
+        private ActionResult CompleteGoalInterpretation(
+            AiGatewayResult<FarmGoalSpec> gatewayResult)
+        {
+            if (gatewayResult == null)
+            {
+                ActionResult missing = ActionResult.Failure(
+                    ActionFailureReason.ServiceUnavailable,
+                    "AI gateway did not return an interpretation result.");
+                LastGatewaySubmissionResult = missing;
+                CurrentGoalText = "Rejected";
+                CurrentDecisionReason = missing.Message;
+                LastFailureReason = missing.Message;
+                Status = ReplanStatus.Idle;
+                return missing;
+            }
+
+            LastGatewaySubmissionResult = gatewayResult.Outcome;
+            if (gatewayResult.Failed)
+            {
+                CurrentGoalText = "Rejected";
+                CurrentDecisionReason = gatewayResult.Outcome.Message;
+                LastFailureReason = gatewayResult.Outcome.Message;
+                Status = ReplanStatus.Idle;
+                return gatewayResult.Outcome;
+            }
+
+            FarmGoalSpec goal = gatewayResult.Value;
+            harvestedPlotNumbers.Clear();
+            activeGoal = goal;
+            activeCycleNumber = runtimeState.BeginCycle();
+            Status = ReplanStatus.Running;
+            CurrentGoalText = goal.Summary;
+            CurrentDecisionReason = DescribeInterpretationSource(gatewayResult.Source);
+            fallbackExpressionText = "收到，我会照顾九块胡萝卜直到全部收获。";
+            LastFailureReason = string.Empty;
+            RecordEvent(
+                WorldEventKind.CommandAccepted,
+                $"[{gatewayResult.Source}] 接受用户命令：{goal.Summary}。");
+            TriggerExpression(NpcExpressionTrigger.CommandAccepted, goal.Summary);
+            return TickReplan();
         }
 
         private void HandleActionStarted(INpcAction action)
@@ -312,7 +461,7 @@ namespace AIFarm.Presentation
             ActionFailureReason failureReason = ActionFailureReason.InvalidState)
         {
             Status = ReplanStatus.Failed;
-            LastFailureReason = string.IsNullOrWhiteSpace(reason) ? "离线规划失败。" : reason;
+            LastFailureReason = string.IsNullOrWhiteSpace(reason) ? "规划失败。" : reason;
             CurrentDecisionReason = LastFailureReason;
             fallbackExpressionText = $"目标失败：{LastFailureReason}";
             RecordEvent(
@@ -337,11 +486,192 @@ namespace AIFarm.Presentation
                     "NPC expression director is not initialized.");
             }
 
-            return expressionDirector.Trigger(
+            double requestTime = UnityEngine.Time.unscaledTime;
+            if (CurrentAiMode == AiGatewayMode.Local)
+            {
+                return expressionDirector.Trigger(trigger, context, requestTime, interrupt);
+            }
+
+            string generationContext = reflectionService.BuildExpressionContext(context);
+
+            ActionResult available = expressionDirector.CanTrigger(trigger, requestTime);
+            if (available.Failed)
+            {
+                return available;
+            }
+
+            if (!pendingExpressionTriggers.Add(trigger))
+            {
+                return ActionResult.Failure(
+                    ActionFailureReason.InvalidState,
+                    $"Expression trigger {trigger} already has a pending AI request.");
+            }
+
+            StartCoroutine(RequestExpression(trigger, context, generationContext, interrupt));
+            return ActionResult.Success("Remote NPC utterance requested.");
+        }
+
+        private ActionResult TriggerReflection(
+            NpcReflectionOutcome outcome,
+            string eventSummary,
+            NpcExpressionTrigger trigger,
+            int cycleNumber,
+            bool interrupt)
+        {
+            if (CurrentAiMode == AiGatewayMode.Local)
+            {
+                return CreateAndApplyLocalReflection(
+                    outcome,
+                    eventSummary,
+                    trigger,
+                    cycleNumber,
+                    interrupt);
+            }
+
+            if (!pendingExpressionTriggers.Add(trigger))
+            {
+                return ActionResult.Failure(
+                    ActionFailureReason.InvalidState,
+                    $"Expression trigger {trigger} already has a pending AI request.");
+            }
+
+            reflectionRequestPending = true;
+            StartCoroutine(RequestReflection(
+                activeGoal,
+                outcome,
+                eventSummary,
                 trigger,
-                context,
+                cycleNumber,
+                interrupt));
+            return ActionResult.Success("Remote NPC reflection requested.");
+        }
+
+        private IEnumerator RequestExpression(
+            NpcExpressionTrigger trigger,
+            string localContext,
+            string generationContext,
+            bool interrupt)
+        {
+            AiGatewayResult<NpcExpression> result = null;
+            yield return aiGatewayClient.GenerateUtterance(
+                trigger,
+                generationContext,
+                gatewayResult => result = gatewayResult);
+            pendingExpressionTriggers.Remove(trigger);
+
+            if (result != null && result.Succeeded && result.Source == AiGatewayMode.Remote)
+            {
+                expressionDirector.Trigger(result.Value, UnityEngine.Time.unscaledTime, interrupt);
+                yield break;
+            }
+
+            expressionDirector.Trigger(
+                trigger,
+                localContext,
                 UnityEngine.Time.unscaledTime,
                 interrupt);
+        }
+
+        private IEnumerator RequestReflection(
+            FarmGoalSpec goal,
+            NpcReflectionOutcome outcome,
+            string eventSummary,
+            NpcExpressionTrigger trigger,
+            int cycleNumber,
+            bool interrupt)
+        {
+            AiGatewayResult<NpcReflection> result = null;
+            yield return aiGatewayClient.Reflect(
+                goal,
+                outcome,
+                eventSummary,
+                gatewayResult => result = gatewayResult);
+            pendingExpressionTriggers.Remove(trigger);
+            reflectionRequestPending = false;
+
+            if (result != null && result.Succeeded && result.Source == AiGatewayMode.Remote)
+            {
+                ApplyCompletedReflection(result.Value, trigger, cycleNumber, interrupt);
+                yield break;
+            }
+
+            CreateAndApplyLocalReflection(
+                outcome,
+                eventSummary,
+                trigger,
+                cycleNumber,
+                interrupt);
+        }
+
+        private ActionResult CreateAndApplyLocalReflection(
+            NpcReflectionOutcome outcome,
+            string eventSummary,
+            NpcExpressionTrigger trigger,
+            int cycleNumber,
+            bool interrupt)
+        {
+            ActionResult created = reflectionService.CreateLocalReflection(
+                activeGoal,
+                outcome,
+                eventSummary,
+                out NpcReflection reflection);
+            if (created.Failed)
+            {
+                return created;
+            }
+
+            return ApplyCompletedReflection(reflection, trigger, cycleNumber, interrupt);
+        }
+
+        private ActionResult ApplyCompletedReflection(
+            NpcReflection reflection,
+            NpcExpressionTrigger trigger,
+            int cycleNumber,
+            bool interrupt)
+        {
+            ActionResult recorded = runtimeState.RecordCompletedCycleReflection(
+                cycleNumber,
+                reflection,
+                actionContext.Clock.ElapsedGameSeconds);
+            if (recorded.Failed)
+            {
+                return recorded;
+            }
+
+            fallbackExpressionText = reflection.Text;
+            var expression = new NpcExpression(
+                trigger,
+                reflection.Mood,
+                reflection.Emoji,
+                reflection.Text);
+            return expressionDirector.Trigger(
+                expression,
+                UnityEngine.Time.unscaledTime,
+                interrupt);
+        }
+
+        private static IAiGatewayClient CreateGatewayClient(DemoSceneConfig config)
+        {
+            if (config == null || config.AiGatewayMode == AiGatewayMode.Local)
+            {
+                return new LocalAiGatewayClient();
+            }
+
+            return new RemoteAiGatewayClient(
+                config.AiGatewayBaseUrl,
+                config.AiRequestTimeoutSeconds);
+        }
+
+        private string DescribeInterpretationSource(AiGatewayMode source)
+        {
+            if (source == AiGatewayMode.Remote)
+            {
+                return "目标已由远程 AI 网关解释并通过本地 JSON 校验。";
+            }
+
+            return ConfiguredAiMode == AiGatewayMode.Remote
+                ? "远程服务不可用或响应无效，已自动回退本地解释。"
+                : "目标已在本地解释，准备查询世界状态。";
         }
 
         private void RecordEvent(
@@ -359,6 +689,11 @@ namespace AIFarm.Presentation
                 kind,
                 message,
                 plotNumber);
+        }
+
+        private void HandleWorldEventRecorded(WorldEventEntry worldEvent)
+        {
+            observationService?.Observe(worldEvent, runtimeState?.Memories, out _);
         }
     }
 }

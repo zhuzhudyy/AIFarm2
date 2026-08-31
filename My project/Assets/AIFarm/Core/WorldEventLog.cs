@@ -54,6 +54,8 @@ namespace AIFarm.Core
         private readonly ReadOnlyCollection<WorldEventEntry> readOnlyEntries;
         private long nextSequence = 1;
 
+        public event Action<WorldEventEntry> EntryRecorded;
+
         public WorldEventLog(int capacity = DefaultCapacity)
         {
             if (capacity <= 0)
@@ -102,7 +104,14 @@ namespace AIFarm.Core
                 entries.RemoveAt(0);
             }
 
-            entries.Add(new WorldEventEntry(nextSequence++, gameSeconds, kind, message, plotNumber));
+            var entry = new WorldEventEntry(
+                nextSequence++,
+                gameSeconds,
+                kind,
+                message,
+                plotNumber);
+            entries.Add(entry);
+            EntryRecorded?.Invoke(entry);
             return ActionResult.Success("World event recorded.");
         }
 

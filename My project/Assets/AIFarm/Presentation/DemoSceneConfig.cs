@@ -1,4 +1,5 @@
 using System;
+using AIFarm.Ai;
 using AIFarm.Core;
 using UnityEngine;
 
@@ -7,6 +8,8 @@ namespace AIFarm.Presentation
     [CreateAssetMenu(fileName = "DemoSceneConfig", menuName = "AIFarm/Demo Scene Config")]
     public sealed class DemoSceneConfig : ScriptableObject
     {
+        public const string DefaultAiGatewayBaseUrl = "http://127.0.0.1:8000";
+
         [SerializeField]
         private DemoInventoryConfig inventoryConfig;
 
@@ -58,6 +61,18 @@ namespace AIFarm.Presentation
         [SerializeField]
         private float plotSpacing = 0.35f;
 
+        [Header("AI Gateway")]
+        [SerializeField]
+        private AiGatewayMode aiGatewayMode = AiGatewayMode.Local;
+
+        [Tooltip("HTTP(S) URL of the trusted AI gateway. Never enter an OpenAI API key here.")]
+        [SerializeField]
+        private string aiGatewayBaseUrl = DefaultAiGatewayBaseUrl;
+
+        [Range(1, 60)]
+        [SerializeField]
+        private int aiRequestTimeoutSeconds = 8;
+
         public DemoInventoryConfig InventoryConfig => inventoryConfig;
 
         public int StartDay => startDay;
@@ -79,6 +94,16 @@ namespace AIFarm.Presentation
         public float ExpressionCooldownSeconds => expressionCooldownSeconds;
 
         public float ExpressionDisplaySeconds => expressionDisplaySeconds;
+
+        public AiGatewayMode AiGatewayMode => aiGatewayMode;
+
+        public string AiGatewayBaseUrl => string.IsNullOrWhiteSpace(aiGatewayBaseUrl)
+            ? DefaultAiGatewayBaseUrl
+            : aiGatewayBaseUrl;
+
+        public int AiRequestTimeoutSeconds => aiRequestTimeoutSeconds > 0
+            ? aiRequestTimeoutSeconds
+            : 8;
 
         public double InitialElapsedGameSeconds => ((startDay - 1) * 24d + startHour) * 60d * 60d;
 
@@ -112,7 +137,10 @@ namespace AIFarm.Presentation
             float actionSeconds = 0.2f,
             float waitSeconds = 0.2f,
             float expressionCooldown = 12f,
-            float expressionDisplay = 2.5f)
+            float expressionDisplay = 2.5f,
+            AiGatewayMode gatewayMode = AiGatewayMode.Local,
+            string gatewayBaseUrl = DefaultAiGatewayBaseUrl,
+            int requestTimeoutSeconds = 8)
         {
             if (inventory == null)
             {
@@ -125,6 +153,25 @@ namespace AIFarm.Presentation
                 expressionDisplay <= 0f)
             {
                 throw new ArgumentOutOfRangeException(nameof(day), "Demo scene settings are outside their supported range.");
+            }
+
+            if (!Enum.IsDefined(typeof(AiGatewayMode), gatewayMode))
+            {
+                throw new ArgumentOutOfRangeException(nameof(gatewayMode));
+            }
+
+            if (!IsSafeGatewayBaseUrl(gatewayBaseUrl))
+            {
+                throw new ArgumentException(
+                    "AI gateway URL must be an HTTP(S) base URL without credentials, query, or fragment.",
+                    nameof(gatewayBaseUrl));
+            }
+
+            if (requestTimeoutSeconds < 1 || requestTimeoutSeconds > 60)
+            {
+                throw new ArgumentOutOfRangeException(
+                    nameof(requestTimeoutSeconds),
+                    "AI gateway timeout must be between 1 and 60 seconds.");
             }
 
             inventoryConfig = inventory;
@@ -140,6 +187,20 @@ namespace AIFarm.Presentation
             waitActionSeconds = waitSeconds;
             expressionCooldownSeconds = expressionCooldown;
             expressionDisplaySeconds = expressionDisplay;
+            aiGatewayMode = gatewayMode;
+            aiGatewayBaseUrl = gatewayBaseUrl.Trim().TrimEnd('/');
+            aiRequestTimeoutSeconds = requestTimeoutSeconds;
+        }
+
+        private static bool IsSafeGatewayBaseUrl(string value)
+        {
+            string candidate = (value ?? string.Empty).Trim();
+            return Uri.TryCreate(candidate, UriKind.Absolute, out Uri uri) &&
+                (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps) &&
+                !string.IsNullOrWhiteSpace(uri.Host) &&
+                string.IsNullOrEmpty(uri.UserInfo) &&
+                string.IsNullOrEmpty(uri.Query) &&
+                string.IsNullOrEmpty(uri.Fragment);
         }
     }
 }

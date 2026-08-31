@@ -125,7 +125,10 @@ namespace AIFarm.Editor
                 actionSeconds: 0.2f,
                 waitSeconds: 0.2f,
                 expressionCooldown: 12f,
-                expressionDisplay: 2.5f);
+                expressionDisplay: 2.5f,
+                gatewayMode: config.AiGatewayMode,
+                gatewayBaseUrl: config.AiGatewayBaseUrl,
+                requestTimeoutSeconds: config.AiRequestTimeoutSeconds);
             EditorUtility.SetDirty(config);
             return config;
         }
@@ -533,7 +536,7 @@ namespace AIFarm.Editor
                 new Vector2(20f, -20f),
                 new Vector2(560f, 180f));
 
-            Text titleText = CreateText("TitleText", statusPanel.transform, "AI FARM // OFFLINE", font, 27, FontStyle.Bold);
+            Text titleText = CreateText("TitleText", statusPanel.transform, "AI FARM // GATEWAY", font, 27, FontStyle.Bold);
             SetTopRow(titleText.rectTransform, -10f, 38f);
 
             Text emojiText = CreateText("EmojiText", statusPanel.transform, "…", font, 36, FontStyle.Bold);
@@ -563,6 +566,22 @@ namespace AIFarm.Editor
                 18,
                 FontStyle.Italic);
             SetTopRow(moodText.rectTransform, -82f, 26f);
+
+            Text aiModeText = CreateText(
+                "AiModeText",
+                statusPanel.transform,
+                "AI: LOCAL",
+                font,
+                18,
+                FontStyle.Bold);
+            aiModeText.alignment = TextAnchor.MiddleRight;
+            SetRect(
+                aiModeText.rectTransform,
+                new Vector2(1f, 1f),
+                new Vector2(1f, 1f),
+                new Vector2(1f, 1f),
+                new Vector2(-16f, -82f),
+                new Vector2(200f, 26f));
 
             GameObject timeControls = CreateUiObject("TimeControls", statusPanel.transform);
             SetTopRow(timeControls.GetComponent<RectTransform>(), -116f, 48f);
@@ -647,7 +666,7 @@ namespace AIFarm.Editor
                 new Vector2(1f, 1f),
                 new Vector2(1f, 1f),
                 new Vector2(-20f, -20f),
-                new Vector2(700f, 610f));
+                new Vector2(700f, 400f));
             Text eventsTitle = CreateText(
                 "TitleText",
                 eventsPanel.transform,
@@ -663,8 +682,70 @@ namespace AIFarm.Editor
                 font,
                 18,
                 FontStyle.Normal);
-            SetTopRow(worldEventsText.rectTransform, -52f, 540f);
+            SetTopRow(worldEventsText.rectTransform, -52f, 330f);
             worldEventsText.alignment = TextAnchor.UpperLeft;
+
+            GameObject memoryPanel = CreatePanel(
+                "MemoryPanel",
+                canvasObject.transform,
+                new Color(0.04f, 0.07f, 0.06f, 0.9f));
+            SetRect(
+                memoryPanel.GetComponent<RectTransform>(),
+                new Vector2(1f, 1f),
+                new Vector2(1f, 1f),
+                new Vector2(1f, 1f),
+                new Vector2(-20f, -440f),
+                new Vector2(700f, 510f));
+            Text memoryTitle = CreateText(
+                "TitleText",
+                memoryPanel.transform,
+                "芽芽 // MEMORY & REFLECTION",
+                font,
+                22,
+                FontStyle.Bold);
+            SetTopRow(memoryTitle.rectTransform, -12f, 34f);
+            Text personaText = CreateText(
+                "PersonaText",
+                memoryPanel.transform,
+                "农场助手｜认真、乐观｜优先生长问题｜喜欢整齐，讨厌杂草和浪费",
+                font,
+                16,
+                FontStyle.Italic);
+            SetTopRow(personaText.rectTransform, -48f, 40f);
+            Text memoriesTitle = CreateText(
+                "MemoriesTitleText",
+                memoryPanel.transform,
+                "RECENT OBSERVATIONS",
+                font,
+                18,
+                FontStyle.Bold);
+            SetTopRow(memoriesTitle.rectTransform, -94f, 28f);
+            Text recentMemoriesText = CreateText(
+                "RecentMemoriesText",
+                memoryPanel.transform,
+                "芽芽还没有新的观察。",
+                font,
+                15,
+                FontStyle.Normal);
+            SetTopRow(recentMemoriesText.rectTransform, -126f, 238f);
+            recentMemoriesText.alignment = TextAnchor.UpperLeft;
+            Text reflectionsTitle = CreateText(
+                "ReflectionsTitleText",
+                memoryPanel.transform,
+                "RECENT REFLECTIONS",
+                font,
+                18,
+                FontStyle.Bold);
+            SetTopRow(reflectionsTitle.rectTransform, -370f, 28f);
+            Text recentReflectionsText = CreateText(
+                "RecentReflectionsText",
+                memoryPanel.transform,
+                "反思：完成一轮种植后生成。",
+                font,
+                16,
+                FontStyle.Normal);
+            SetTopRow(recentReflectionsText.rectTransform, -402f, 92f);
+            recentReflectionsText.alignment = TextAnchor.UpperLeft;
 
             GameObject commandPanel = CreatePanel(
                 "CommandPanel",
@@ -716,7 +797,10 @@ namespace AIFarm.Editor
                 pauseButtonLabel,
                 speed1Button,
                 speed5Button,
-                speed20Button);
+                speed20Button,
+                aiModeText,
+                recentMemoriesText,
+                recentReflectionsText);
 
             var eventSystemObject = new GameObject("EventSystem_InputSystem");
             eventSystemObject.AddComponent<EventSystem>();

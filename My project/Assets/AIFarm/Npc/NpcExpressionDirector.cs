@@ -47,25 +47,23 @@ namespace AIFarm.Npc
 
         public int PendingCount => pending.Count;
 
+        public ActionResult CanTrigger(
+            NpcExpressionTrigger trigger,
+            double realSeconds)
+        {
+            return ValidateTrigger(trigger, realSeconds);
+        }
+
         public ActionResult Trigger(
             NpcExpressionTrigger trigger,
             string context,
             double realSeconds,
             bool interrupt = false)
         {
-            if (double.IsNaN(realSeconds) || double.IsInfinity(realSeconds) || realSeconds < 0d)
+            ActionResult available = ValidateTrigger(trigger, realSeconds);
+            if (available.Failed)
             {
-                return ActionResult.Failure(
-                    ActionFailureReason.InvalidArgument,
-                    "Expression time must be finite and non-negative.");
-            }
-
-            if (lastTriggerTimes.TryGetValue(trigger, out double previousTime) &&
-                realSeconds - previousTime < cooldownSeconds)
-            {
-                return ActionResult.Failure(
-                    ActionFailureReason.InvalidState,
-                    $"Expression trigger {trigger} is cooling down.");
+                return available;
             }
 
             ActionResult created = service.CreateExpression(
@@ -77,6 +75,37 @@ namespace AIFarm.Npc
             {
                 return created;
             }
+
+            return DisplayExpression(expression, realSeconds, interrupt);
+        }
+
+        public ActionResult Trigger(
+            NpcExpression expression,
+            double realSeconds,
+            bool interrupt = false)
+        {
+            if (expression == null)
+            {
+                return ActionResult.Failure(
+                    ActionFailureReason.InvalidArgument,
+                    "NPC expression cannot be null.");
+            }
+
+            ActionResult available = ValidateTrigger(expression.Trigger, realSeconds);
+            if (available.Failed)
+            {
+                return available;
+            }
+
+            return DisplayExpression(expression, realSeconds, interrupt);
+        }
+
+        private ActionResult DisplayExpression(
+            NpcExpression expression,
+            double realSeconds,
+            bool interrupt)
+        {
+            NpcExpressionTrigger trigger = expression.Trigger;
 
             lastTriggerTimes[trigger] = realSeconds;
             Latest = expression;
@@ -103,6 +132,28 @@ namespace AIFarm.Npc
 
             pending.Enqueue(expression);
             return ActionResult.Success("NPC expression queued.");
+        }
+
+        private ActionResult ValidateTrigger(
+            NpcExpressionTrigger trigger,
+            double realSeconds)
+        {
+            if (double.IsNaN(realSeconds) || double.IsInfinity(realSeconds) || realSeconds < 0d)
+            {
+                return ActionResult.Failure(
+                    ActionFailureReason.InvalidArgument,
+                    "Expression time must be finite and non-negative.");
+            }
+
+            if (lastTriggerTimes.TryGetValue(trigger, out double previousTime) &&
+                realSeconds - previousTime < cooldownSeconds)
+            {
+                return ActionResult.Failure(
+                    ActionFailureReason.InvalidState,
+                    $"Expression trigger {trigger} is cooling down.");
+            }
+
+            return ActionResult.Success();
         }
 
         public ActionResult Advance(double unscaledSeconds)

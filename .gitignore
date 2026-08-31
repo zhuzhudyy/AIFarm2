@@ -52,3 +52,10 @@ crashlytics-build.properties
 .DS_Store
 Thumbs.db
 Desktop.ini
+
+# Local Python AI gateway
+Server/.venv/
+.env
+__pycache__/
+*.py[cod]
+.pytest_cache/

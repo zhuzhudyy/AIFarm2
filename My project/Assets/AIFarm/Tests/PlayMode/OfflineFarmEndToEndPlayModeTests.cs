@@ -10,6 +10,7 @@ using AIFarm.Time;
 using NUnit.Framework;
 using UnityEngine;
 using UnityEngine.TestTools;
+using UnityEngine.UI;
 
 namespace AIFarm.Tests.PlayMode
 {
@@ -79,6 +80,10 @@ namespace AIFarm.Tests.PlayMode
             GameObject hudObject = new GameObject("OfflineDemoHud");
             hudObject.transform.SetParent(testRoot.transform, false);
             DemoHud hud = hudObject.AddComponent<DemoHud>();
+            Text recentMemoriesText = new GameObject("RecentMemoriesText").AddComponent<Text>();
+            recentMemoriesText.transform.SetParent(hudObject.transform, false);
+            Text recentReflectionsText = new GameObject("RecentReflectionsText").AddComponent<Text>();
+            recentReflectionsText.transform.SetParent(hudObject.transform, false);
             hud.Configure(
                 gameBootstrap: null,
                 timeLabel: null,
@@ -88,7 +93,9 @@ namespace AIFarm.Tests.PlayMode
                 input: null,
                 button: null,
                 executor: executor,
-                controller: controller);
+                controller: controller,
+                memoriesLabel: recentMemoriesText,
+                reflectionsLabel: recentReflectionsText);
 
             ActionResult submitted = hud.SubmitCommand("把地种满胡萝卜并照顾到收获。");
             Assert.That(submitted.Succeeded, Is.True, submitted.Message);
@@ -132,6 +139,15 @@ namespace AIFarm.Tests.PlayMode
             Assert.That(events.Entries.Last().Kind, Is.EqualTo(WorldEventKind.GoalCompleted));
             Assert.That(controller.CurrentMood, Is.EqualTo(NpcMood.Proud));
             Assert.That(controller.CurrentEmoji, Is.Not.Empty);
+            Assert.That(controller.Persona.Name, Is.EqualTo("芽芽"));
+            Assert.That(controller.CompletedReflectionCount, Is.EqualTo(1));
+            Assert.That(controller.LatestReflection, Is.Not.Null);
+            Assert.That(controller.LatestReflection.Text, Does.Contain("杂草"));
+            Assert.That(controller.RecentReflections, Has.Count.EqualTo(1));
+            Assert.That(controller.RecentMemories, Is.Not.Empty);
+            yield return null;
+            Assert.That(recentMemoriesText.text, Does.Contain("重要性"));
+            Assert.That(recentReflectionsText.text, Does.Contain(controller.LatestReflection.Text));
             NpcExpressionTrigger[] expectedExpressionTriggers =
             {
                 NpcExpressionTrigger.CommandAccepted,

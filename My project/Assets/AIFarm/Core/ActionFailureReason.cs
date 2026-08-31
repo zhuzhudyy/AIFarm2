@@ -9,6 +9,8 @@ namespace AIFarm.Core
         MissingGrowthCondition,
         CapacityExceeded,
         NavigationFailed,
-        UnsupportedIntent
+        UnsupportedIntent,
+        ServiceUnavailable,
+        InvalidResponse
     }
 }

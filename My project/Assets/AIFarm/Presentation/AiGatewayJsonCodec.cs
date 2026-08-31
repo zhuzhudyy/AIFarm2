@@ -1,0 +1,660 @@
+using System;
+using System.Collections.Generic;
+using AIFarm.Core;
+using AIFarm.Npc;
+using UnityEngine;
+
+namespace AIFarm.Presentation
+{
+    public static class AiGatewayJsonCodec
+    {
+        public const int MaximumCommandLength = 500;
+        public const int MaximumContextLength = 200;
+        public const int MaximumEventSummaryLength = 240;
+        public const int MaximumResponseLength = 16 * 1024;
+
+        public static string SerializeInterpretCommandRequest(string command)
+        {
+            return JsonUtility.ToJson(new InterpretCommandRequestDto(command));
+        }
+
+        public static string SerializeGenerateUtteranceRequest(
+            NpcExpressionTrigger trigger,
+            string context)
+        {
+            return JsonUtility.ToJson(new GenerateUtteranceRequestDto(
+                trigger.ToString(),
+                context));
+        }
+
+        public static string SerializeReflectRequest(
+            FarmGoalSpec goal,
+            NpcReflectionOutcome outcome,
+            string eventSummary)
+        {
+            if (goal == null)
+            {
+                throw new ArgumentNullException(nameof(goal));
+            }
+
+            return JsonUtility.ToJson(new ReflectRequestDto(
+                FarmGoalDto.FromGoal(goal),
+                outcome.ToString(),
+                eventSummary));
+        }
+
+        public static ActionResult TryParseFarmGoal(
+            string json,
+            out FarmGoalSpec goal)
+        {
+            goal = null;
+            if (!HasExactTopLevelProperties(
+                    json,
+                    "goal_id",
+                    "crop",
+                    "target_plot_numbers",
+                    "requires_sowing",
+                    "requires_watering",
+                    "requires_fertilizing",
+                    "requires_weeding",
+                    "requires_harvesting",
+                    "summary") ||
+                !TryDeserialize(json, out FarmGoalDto dto))
+            {
+                return InvalidResponse("Farm goal response is not a valid JSON object.");
+            }
+
+            if (dto.GoalId != FarmGoalSpec.FullFieldCarrotLifecycleId ||
+                dto.Crop != "carrot" ||
+                dto.Summary != "完成 3×3 农田的胡萝卜全周期" ||
+                !dto.RequiresSowing ||
+                !dto.RequiresWatering ||
+                !dto.RequiresFertilizing ||
+                !dto.RequiresWeeding ||
+                !dto.RequiresHarvesting ||
+                !ContainsFullField(dto.TargetPlotNumbers))
+            {
+                return InvalidResponse("Farm goal response failed semantic validation.");
+            }
+
+            goal = FarmGoalSpec.CreateFullFieldCarrotLifecycle();
+            return ActionResult.Success("Remote FarmGoalSpec validated.");
+        }
+
+        public static ActionResult TryParseUtterance(
+            string json,
+            NpcExpressionTrigger expectedTrigger,
+            out NpcExpression expression)
+        {
+            expression = null;
+            if (!HasExactTopLevelProperties(
+                    json,
+                    "trigger",
+                    "mood",
+                    "emoji",
+                    "text",
+                    "provider") ||
+                !TryDeserialize(json, out UtteranceDto dto))
+            {
+                return InvalidResponse("Utterance response is not a valid JSON object.");
+            }
+
+            if (!TryParseEnum(dto.Trigger, out NpcExpressionTrigger trigger) ||
+                trigger != expectedTrigger ||
+                !TryParseEnum(dto.Mood, out NpcMood mood) ||
+                !IsProvider(dto.Provider) ||
+                !IsBoundedText(dto.Emoji, 1, 8) ||
+                !IsBoundedText(dto.Text, 1, 300))
+            {
+                return InvalidResponse("Utterance response failed semantic validation.");
+            }
+
+            expression = new NpcExpression(trigger, mood, dto.Emoji.Trim(), dto.Text.Trim());
+            return ActionResult.Success("Remote UtteranceSpec validated.");
+        }
+
+        public static ActionResult TryParseReflection(
+            string json,
+            FarmGoalSpec expectedGoal,
+            NpcReflectionOutcome expectedOutcome,
+            out NpcReflection reflection)
+        {
+            reflection = null;
+            if (expectedGoal == null ||
+                !HasExactTopLevelProperties(
+                    json,
+                    "goal_id",
+                    "outcome",
+                    "mood",
+                    "emoji",
+                    "text",
+                    "provider") ||
+                !TryDeserialize(json, out ReflectionDto dto))
+            {
+                return InvalidResponse("Reflection response is not a valid JSON object.");
+            }
+
+            if (dto.GoalId != expectedGoal.GoalId ||
+                !TryParseEnum(dto.Outcome, out NpcReflectionOutcome outcome) ||
+                outcome != expectedOutcome ||
+                !TryParseEnum(dto.Mood, out NpcMood mood) ||
+                !IsProvider(dto.Provider) ||
+                !IsBoundedText(dto.Emoji, 1, 8) ||
+                !IsBoundedText(dto.Text, 1, 300))
+            {
+                return InvalidResponse("Reflection response failed semantic validation.");
+            }
+
+            reflection = new NpcReflection(
+                dto.GoalId,
+                outcome,
+                mood,
+                dto.Emoji.Trim(),
+                dto.Text.Trim());
+            return ActionResult.Success("Remote ReflectionSpec validated.");
+        }
+
+        public static string BoundText(string value, int maximumLength)
+        {
+            string normalized = (value ?? string.Empty).Trim();
+            return normalized.Length <= maximumLength
+                ? normalized
+                : normalized.Substring(0, maximumLength);
+        }
+
+        private static bool TryDeserialize<T>(string json, out T value)
+            where T : class
+        {
+            value = null;
+            if (string.IsNullOrWhiteSpace(json) || json.Length > MaximumResponseLength)
+            {
+                return false;
+            }
+
+            string trimmed = json.Trim();
+            if (!trimmed.StartsWith("{", StringComparison.Ordinal) ||
+                !trimmed.EndsWith("}", StringComparison.Ordinal))
+            {
+                return false;
+            }
+
+            try
+            {
+                value = JsonUtility.FromJson<T>(trimmed);
+                return value != null;
+            }
+            catch (ArgumentException)
+            {
+                return false;
+            }
+        }
+
+        private static bool HasExactTopLevelProperties(
+            string json,
+            params string[] expectedProperties)
+        {
+            if (string.IsNullOrWhiteSpace(json) || json.Length > MaximumResponseLength)
+            {
+                return false;
+            }
+
+            var remaining = new HashSet<string>(expectedProperties, StringComparer.Ordinal);
+            int index = 0;
+            SkipWhitespace(json, ref index);
+            if (!Consume(json, ref index, '{'))
+            {
+                return false;
+            }
+
+            SkipWhitespace(json, ref index);
+            if (Consume(json, ref index, '}'))
+            {
+                SkipWhitespace(json, ref index);
+                return index == json.Length && remaining.Count == 0;
+            }
+
+            while (index < json.Length)
+            {
+                if (!TryReadPropertyName(json, ref index, out string propertyName) ||
+                    !remaining.Remove(propertyName))
+                {
+                    return false;
+                }
+
+                SkipWhitespace(json, ref index);
+                if (!Consume(json, ref index, ':'))
+                {
+                    return false;
+                }
+
+                SkipWhitespace(json, ref index);
+                if (!SkipJsonValue(json, ref index))
+                {
+                    return false;
+                }
+
+                SkipWhitespace(json, ref index);
+                if (Consume(json, ref index, '}'))
+                {
+                    SkipWhitespace(json, ref index);
+                    return index == json.Length && remaining.Count == 0;
+                }
+
+                if (!Consume(json, ref index, ','))
+                {
+                    return false;
+                }
+
+                SkipWhitespace(json, ref index);
+            }
+
+            return false;
+        }
+
+        private static bool TryReadPropertyName(
+            string json,
+            ref int index,
+            out string propertyName)
+        {
+            propertyName = null;
+            SkipWhitespace(json, ref index);
+            if (!Consume(json, ref index, '"'))
+            {
+                return false;
+            }
+
+            int start = index;
+            while (index < json.Length)
+            {
+                char current = json[index++];
+                if (current == '\\')
+                {
+                    return false;
+                }
+
+                if (current == '"')
+                {
+                    propertyName = json.Substring(start, index - start - 1);
+                    return propertyName.Length > 0;
+                }
+
+                if (current < ' ')
+                {
+                    return false;
+                }
+            }
+
+            return false;
+        }
+
+        private static bool SkipJsonValue(string json, ref int index)
+        {
+            if (index >= json.Length)
+            {
+                return false;
+            }
+
+            if (json[index] == '"')
+            {
+                return SkipJsonString(json, ref index);
+            }
+
+            if (json[index] == '{' || json[index] == '[')
+            {
+                return SkipJsonContainer(json, ref index);
+            }
+
+            int start = index;
+            while (index < json.Length && json[index] != ',' && json[index] != '}')
+            {
+                index++;
+            }
+
+            int end = index;
+            while (end > start && char.IsWhiteSpace(json[end - 1]))
+            {
+                end--;
+            }
+
+            return end > start;
+        }
+
+        private static bool SkipJsonContainer(string json, ref int index)
+        {
+            var expectedClosings = new Stack<char>();
+            expectedClosings.Push(json[index++] == '{' ? '}' : ']');
+            while (index < json.Length && expectedClosings.Count > 0)
+            {
+                char current = json[index];
+                if (current == '"')
+                {
+                    if (!SkipJsonString(json, ref index))
+                    {
+                        return false;
+                    }
+
+                    continue;
+                }
+
+                index++;
+                if (current == '{')
+                {
+                    expectedClosings.Push('}');
+                }
+                else if (current == '[')
+                {
+                    expectedClosings.Push(']');
+                }
+                else if (current == '}' || current == ']')
+                {
+                    if (expectedClosings.Pop() != current)
+                    {
+                        return false;
+                    }
+                }
+            }
+
+            return expectedClosings.Count == 0;
+        }
+
+        private static bool SkipJsonString(string json, ref int index)
+        {
+            if (!Consume(json, ref index, '"'))
+            {
+                return false;
+            }
+
+            while (index < json.Length)
+            {
+                char current = json[index++];
+                if (current == '"')
+                {
+                    return true;
+                }
+
+                if (current == '\\')
+                {
+                    if (index >= json.Length)
+                    {
+                        return false;
+                    }
+
+                    char escaped = json[index++];
+                    if (escaped == 'u')
+                    {
+                        for (int digit = 0; digit < 4; digit++)
+                        {
+                            if (index >= json.Length || !IsHexDigit(json[index++]))
+                            {
+                                return false;
+                            }
+                        }
+                    }
+                    else if (escaped != '"' && escaped != '\\' && escaped != '/' &&
+                        escaped != 'b' && escaped != 'f' && escaped != 'n' &&
+                        escaped != 'r' && escaped != 't')
+                    {
+                        return false;
+                    }
+                }
+                else if (current < ' ')
+                {
+                    return false;
+                }
+            }
+
+            return false;
+        }
+
+        private static void SkipWhitespace(string json, ref int index)
+        {
+            while (index < json.Length && char.IsWhiteSpace(json[index]))
+            {
+                index++;
+            }
+        }
+
+        private static bool Consume(string json, ref int index, char expected)
+        {
+            if (index >= json.Length || json[index] != expected)
+            {
+                return false;
+            }
+
+            index++;
+            return true;
+        }
+
+        private static bool IsHexDigit(char value)
+        {
+            return (value >= '0' && value <= '9') ||
+                (value >= 'a' && value <= 'f') ||
+                (value >= 'A' && value <= 'F');
+        }
+
+        private static bool ContainsFullField(int[] plotNumbers)
+        {
+            if (plotNumbers == null || plotNumbers.Length != 9)
+            {
+                return false;
+            }
+
+            for (int index = 0; index < plotNumbers.Length; index++)
+            {
+                if (plotNumbers[index] != index + 1)
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        private static bool TryParseEnum<T>(string value, out T parsed)
+            where T : struct
+        {
+            return Enum.TryParse(value, false, out parsed) &&
+                Enum.IsDefined(typeof(T), parsed);
+        }
+
+        private static bool IsProvider(string provider)
+        {
+            return provider == "mock" || provider == "openai";
+        }
+
+        private static bool IsBoundedText(string value, int minimumLength, int maximumLength)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return false;
+            }
+
+            int length = value.Trim().Length;
+            return length >= minimumLength && length <= maximumLength;
+        }
+
+        private static ActionResult InvalidResponse(string message)
+        {
+            return ActionResult.Failure(ActionFailureReason.InvalidResponse, message);
+        }
+
+        [Serializable]
+        private sealed class InterpretCommandRequestDto
+        {
+            [SerializeField]
+            private string command;
+
+            public InterpretCommandRequestDto(string commandText)
+            {
+                command = commandText;
+            }
+        }
+
+        [Serializable]
+        private sealed class GenerateUtteranceRequestDto
+        {
+            [SerializeField]
+            private string trigger;
+
+            [SerializeField]
+            private string context;
+
+            public GenerateUtteranceRequestDto(string triggerName, string boundedContext)
+            {
+                trigger = triggerName;
+                context = boundedContext;
+            }
+        }
+
+        [Serializable]
+        private sealed class ReflectRequestDto
+        {
+            [SerializeField]
+            private FarmGoalDto goal;
+
+            [SerializeField]
+            private string outcome;
+
+            [SerializeField]
+            private string event_summary;
+
+            public ReflectRequestDto(
+                FarmGoalDto farmGoal,
+                string reflectionOutcome,
+                string boundedEventSummary)
+            {
+                goal = farmGoal;
+                outcome = reflectionOutcome;
+                event_summary = boundedEventSummary;
+            }
+        }
+
+        [Serializable]
+        private sealed class FarmGoalDto
+        {
+            [SerializeField]
+            private string goal_id;
+
+            [SerializeField]
+            private string crop;
+
+            [SerializeField]
+            private int[] target_plot_numbers;
+
+            [SerializeField]
+            private bool requires_sowing;
+
+            [SerializeField]
+            private bool requires_watering;
+
+            [SerializeField]
+            private bool requires_fertilizing;
+
+            [SerializeField]
+            private bool requires_weeding;
+
+            [SerializeField]
+            private bool requires_harvesting;
+
+            [SerializeField]
+            private string summary;
+
+            public string GoalId => goal_id;
+
+            public string Crop => crop;
+
+            public int[] TargetPlotNumbers => target_plot_numbers;
+
+            public bool RequiresSowing => requires_sowing;
+
+            public bool RequiresWatering => requires_watering;
+
+            public bool RequiresFertilizing => requires_fertilizing;
+
+            public bool RequiresWeeding => requires_weeding;
+
+            public bool RequiresHarvesting => requires_harvesting;
+
+            public string Summary => summary;
+
+            public static FarmGoalDto FromGoal(FarmGoalSpec goal)
+            {
+                return new FarmGoalDto
+                {
+                    goal_id = goal.GoalId,
+                    crop = "carrot",
+                    target_plot_numbers = new[] { 1, 2, 3, 4, 5, 6, 7, 8, 9 },
+                    requires_sowing = true,
+                    requires_watering = true,
+                    requires_fertilizing = true,
+                    requires_weeding = true,
+                    requires_harvesting = true,
+                    summary = goal.Summary
+                };
+            }
+        }
+
+        [Serializable]
+        private sealed class UtteranceDto
+        {
+            [SerializeField]
+            private string trigger;
+
+            [SerializeField]
+            private string mood;
+
+            [SerializeField]
+            private string emoji;
+
+            [SerializeField]
+            private string text;
+
+            [SerializeField]
+            private string provider;
+
+            public string Trigger => trigger;
+
+            public string Mood => mood;
+
+            public string Emoji => emoji;
+
+            public string Text => text;
+
+            public string Provider => provider;
+        }
+
+        [Serializable]
+        private sealed class ReflectionDto
+        {
+            [SerializeField]
+            private string goal_id;
+
+            [SerializeField]
+            private string outcome;
+
+            [SerializeField]
+            private string mood;
+
+            [SerializeField]
+            private string emoji;
+
+            [SerializeField]
+            private string text;
+
+            [SerializeField]
+            private string provider;
+
+            public string GoalId => goal_id;
+
+            public string Outcome => outcome;
+
+            public string Mood => mood;
+
+            public string Emoji => emoji;
+
+            public string Text => text;
+
+            public string Provider => provider;
+        }
+    }
+}

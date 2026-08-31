@@ -6,12 +6,16 @@ namespace AIFarm.Npc
 {
     public sealed class FarmGoalSpec
     {
+        public const string FullFieldCarrotLifecycleId = "full_field_carrot_lifecycle";
+
         private static readonly ReadOnlyCollection<int> FullFieldPlots =
             new ReadOnlyCollection<int>(new[] { 1, 2, 3, 4, 5, 6, 7, 8, 9 });
 
         private FarmGoalSpec()
         {
         }
+
+        public string GoalId => FullFieldCarrotLifecycleId;
 
         public CropType Crop => CropType.Carrot;
 
