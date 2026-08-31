@@ -31,6 +31,25 @@ namespace AIFarm.Time
 
         public bool IsPaused { get; private set; }
 
+        public ActionResult Restore(
+            double elapsedGameSeconds,
+            double timeScale,
+            bool isPaused)
+        {
+            if (!IsFinite(elapsedGameSeconds) || elapsedGameSeconds < 0d ||
+                !IsFinite(timeScale) || timeScale <= 0d)
+            {
+                return ActionResult.Failure(
+                    ActionFailureReason.InvalidArgument,
+                    "Saved game time and time scale must be finite and valid.");
+            }
+
+            ElapsedGameSeconds = elapsedGameSeconds;
+            TimeScale = timeScale;
+            IsPaused = isPaused;
+            return ActionResult.Success("Game clock restored.");
+        }
+
         public ActionResult Pause()
         {
             if (IsPaused)

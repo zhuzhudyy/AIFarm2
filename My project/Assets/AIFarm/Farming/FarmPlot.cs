@@ -37,6 +37,62 @@ namespace AIFarm.Farming
 
         public int GrowthProgress { get; private set; }
 
+        public ActionResult RestoreState(
+            PlotState state,
+            CropType? crop,
+            int waterLevel,
+            bool isFertilized,
+            bool hasWeeds,
+            bool hasBeenWeeded,
+            int growthProgress)
+        {
+            if (!System.Enum.IsDefined(typeof(PlotState), state) ||
+                (crop.HasValue && !System.Enum.IsDefined(typeof(CropType), crop.Value)) ||
+                waterLevel < 0 || waterLevel > MaximumWaterLevel ||
+                growthProgress < 0 || growthProgress > RequiredGrowth)
+            {
+                return ActionResult.Failure(
+                    ActionFailureReason.InvalidArgument,
+                    $"Plot {PlotNumber:00} contains an invalid saved value.");
+            }
+
+            bool validEmpty = state == PlotState.Empty &&
+                !crop.HasValue &&
+                waterLevel == 0 &&
+                !isFertilized &&
+                !hasWeeds &&
+                !hasBeenWeeded &&
+                growthProgress == 0;
+            bool validGrowing = state == PlotState.Growing &&
+                crop == CropType.Carrot &&
+                growthProgress < RequiredGrowth &&
+                !(hasWeeds && hasBeenWeeded) &&
+                (isFertilized || (!hasWeeds && !hasBeenWeeded));
+            bool validMature = state == PlotState.Mature &&
+                crop == CropType.Carrot &&
+                waterLevel >= RequiredWaterLevel &&
+                isFertilized &&
+                !hasWeeds &&
+                hasBeenWeeded &&
+                growthProgress == RequiredGrowth;
+
+            if (!validEmpty && !validGrowing && !validMature)
+            {
+                return ActionResult.Failure(
+                    ActionFailureReason.InvalidState,
+                    $"Plot {PlotNumber:00} saved state is internally inconsistent.");
+            }
+
+            State = state;
+            Crop = crop;
+            WaterLevel = waterLevel;
+            IsFertilized = isFertilized;
+            HasWeeds = hasWeeds;
+            HasBeenWeeded = hasBeenWeeded;
+            GrowthProgress = growthProgress;
+            return ActionResult.Success($"Plot {PlotNumber:00} restored.");
+        }
+
         public ActionResult Sow(FarmInventory inventory)
         {
             if (inventory == null)

@@ -74,7 +74,7 @@ namespace AIFarm.Editor
                 interactionPoints,
                 replanController);
             EnsureSucceeded(replanController.Configure(bootstrap, executor));
-            CreateUi(bootstrap, executor, replanController);
+            CreateUi(bootstrap, executor, replanController, executor.transform);
             NavMeshSurface navMeshSurface = CreateNavigation();
             navMeshSurface.BuildNavMesh();
 
@@ -507,7 +507,8 @@ namespace AIFarm.Editor
         private static void CreateUi(
             GameBootstrap bootstrap,
             NpcPlanExecutor executor,
-            ReplanController replanController)
+            ReplanController replanController,
+            Transform npcTransform)
         {
             Font font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
             GameObject canvasObject = new GameObject(
@@ -777,6 +778,67 @@ namespace AIFarm.Editor
                 new Vector2(-20f, 0f),
                 new Vector2(180f, 54f));
 
+            GameObject savePanel = CreatePanel(
+                "SaveControlsPanel",
+                canvasObject.transform,
+                new Color(0.04f, 0.07f, 0.06f, 0.9f));
+            SetRect(
+                savePanel.GetComponent<RectTransform>(),
+                new Vector2(0f, 0f),
+                new Vector2(0f, 0f),
+                new Vector2(0f, 0f),
+                new Vector2(20f, 20f),
+                new Vector2(360f, 116f));
+            Text saveStatusText = CreateText(
+                "SaveStatusText",
+                savePanel.transform,
+                "SAVE DATA // READY",
+                font,
+                15,
+                FontStyle.Normal);
+            SetTopRow(saveStatusText.rectTransform, -8f, 44f);
+            saveStatusText.alignment = TextAnchor.UpperLeft;
+
+            Button saveButton = CreateControlButton(
+                "SaveButton",
+                "SAVE",
+                savePanel.transform,
+                font,
+                out _);
+            SetRect(
+                saveButton.GetComponent<RectTransform>(),
+                new Vector2(0f, 0f),
+                new Vector2(0f, 0f),
+                new Vector2(0f, 0f),
+                new Vector2(12f, 12f),
+                new Vector2(100f, 42f));
+            Button loadButton = CreateControlButton(
+                "LoadButton",
+                "LOAD",
+                savePanel.transform,
+                font,
+                out _);
+            SetRect(
+                loadButton.GetComponent<RectTransform>(),
+                new Vector2(0f, 0f),
+                new Vector2(0f, 0f),
+                new Vector2(0f, 0f),
+                new Vector2(124f, 12f),
+                new Vector2(100f, 42f));
+            Button newDemoButton = CreateControlButton(
+                "NewDemoButton",
+                "NEW DEMO",
+                savePanel.transform,
+                font,
+                out _);
+            SetRect(
+                newDemoButton.GetComponent<RectTransform>(),
+                new Vector2(0f, 0f),
+                new Vector2(0f, 0f),
+                new Vector2(0f, 0f),
+                new Vector2(236f, 12f),
+                new Vector2(112f, 42f));
+
             DemoHud hud = canvasObject.AddComponent<DemoHud>();
             hud.Configure(
                 bootstrap,
@@ -801,6 +863,17 @@ namespace AIFarm.Editor
                 aiModeText,
                 recentMemoriesText,
                 recentReflectionsText);
+
+            SaveGameController saveController = canvasObject.AddComponent<SaveGameController>();
+            EnsureSucceeded(saveController.Configure(
+                bootstrap,
+                executor,
+                replanController,
+                npcTransform,
+                saveButton,
+                loadButton,
+                newDemoButton,
+                saveStatusText));
 
             var eventSystemObject = new GameObject("EventSystem_InputSystem");
             eventSystemObject.AddComponent<EventSystem>();

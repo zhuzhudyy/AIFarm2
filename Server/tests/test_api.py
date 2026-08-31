@@ -3,6 +3,7 @@ from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
 from Server.app.main import create_app
+from Server.app.providers import MockProvider
 from Server.app.schemas import FarmGoalSpec
 
 
@@ -21,7 +22,7 @@ FULL_GOAL = {
 
 @pytest.fixture
 def client() -> TestClient:
-    with TestClient(create_app()) as test_client:
+    with TestClient(create_app(MockProvider())) as test_client:
         yield test_client
 
 

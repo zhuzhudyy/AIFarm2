@@ -38,6 +38,26 @@ namespace AIFarm.Inventory
             return amount > 0 && counts.TryGetValue(item, out int count) && count >= amount;
         }
 
+        public ActionResult RestoreCounts(
+            int carrotSeeds,
+            int water,
+            int fertilizer,
+            int carrots)
+        {
+            if (carrotSeeds < 0 || water < 0 || fertilizer < 0 || carrots < 0)
+            {
+                return ActionResult.Failure(
+                    ActionFailureReason.InvalidArgument,
+                    "Saved inventory counts cannot be negative.");
+            }
+
+            counts[InventoryItem.CarrotSeed] = carrotSeeds;
+            counts[InventoryItem.Water] = water;
+            counts[InventoryItem.Fertilizer] = fertilizer;
+            counts[InventoryItem.Carrot] = carrots;
+            return ActionResult.Success("Farm inventory restored.");
+        }
+
         public ActionResult TryAdd(InventoryItem item, int amount = 1)
         {
             if (amount <= 0 || !counts.TryGetValue(item, out int current))

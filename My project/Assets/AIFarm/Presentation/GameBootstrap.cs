@@ -72,6 +72,66 @@ namespace AIFarm.Presentation
             return ActionResult.Success("Demo domain state initialized.");
         }
 
+        public ActionResult ResetToConfiguredDefaults()
+        {
+            if (!IsInitialized || sceneConfig == null || sceneConfig.InventoryConfig == null)
+            {
+                return ActionResult.Failure(
+                    ActionFailureReason.InvalidState,
+                    "GameBootstrap must be initialized before starting a new demo.");
+            }
+
+            foreach (FarmPlot plot in Field.Plots)
+            {
+                ActionResult plotResult = plot.RestoreState(
+                    PlotState.Empty,
+                    null,
+                    0,
+                    false,
+                    false,
+                    false,
+                    0);
+                if (plotResult.Failed)
+                {
+                    return plotResult;
+                }
+            }
+
+            DemoInventoryConfig inventoryConfig = sceneConfig.InventoryConfig;
+            ActionResult inventoryResult = Inventory.RestoreCounts(
+                inventoryConfig.CarrotSeeds,
+                inventoryConfig.Water,
+                inventoryConfig.Fertilizer,
+                inventoryConfig.Carrots);
+            if (inventoryResult.Failed)
+            {
+                return inventoryResult;
+            }
+
+            ActionResult clockResult = Clock.Restore(
+                sceneConfig.InitialElapsedGameSeconds,
+                sceneConfig.TimeScale,
+                false);
+            if (clockResult.Failed)
+            {
+                return clockResult;
+            }
+
+            ActionResult simulationResult = Simulation.ResetRuntimeState();
+            if (simulationResult.Failed)
+            {
+                return simulationResult;
+            }
+
+            Events.Clear();
+            Events.Record(
+                Clock.ElapsedGameSeconds,
+                WorldEventKind.System,
+                "已创建新 Demo；本地规划与表达服务可用。");
+            LastSimulationResult = null;
+            return ActionResult.Success("New demo state initialized.");
+        }
+
         private void Awake()
         {
             ActionResult result = Initialize();

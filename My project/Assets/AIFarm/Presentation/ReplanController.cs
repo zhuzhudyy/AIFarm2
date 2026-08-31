@@ -38,6 +38,7 @@ namespace AIFarm.Presentation
         private NpcRuntimeState runtimeState;
         private ReflectionService reflectionService;
         private IAiGatewayClient aiGatewayClient;
+        private DemoMode demoMode;
         private bool gatewayRequestPending;
         private bool reflectionRequestPending;
         private int activeCycleNumber;
@@ -50,6 +51,12 @@ namespace AIFarm.Presentation
         public bool IsGoalActive => Status == ReplanStatus.Running;
 
         public int HarvestedPlotCount => harvestedPlotNumbers.Count;
+
+        public IReadOnlyCollection<int> HarvestedPlotNumbers => harvestedPlotNumbers;
+
+        public NpcRuntimeState RuntimeState => runtimeState;
+
+        public int ActiveCycleNumber => activeCycleNumber;
 
         public string CurrentGoalText { get; private set; } = "Idle";
 
@@ -187,6 +194,7 @@ namespace AIFarm.Presentation
 
             executor = planExecutor;
             actionContext = context;
+            this.demoMode = demoMode;
             eventLog = context.EventLog ?? new WorldEventLog();
             aiGatewayClient = gatewayClient ?? aiGatewayClient ?? new LocalAiGatewayClient();
             runtimeState = new NpcRuntimeState(NpcPersonaDefinition.Yaya);
@@ -208,6 +216,130 @@ namespace AIFarm.Presentation
             executor.ActionFailed += HandleActionFailed;
             IsInitialized = true;
             return ActionResult.Success($"{ConfiguredAiMode} AI replanning initialized.");
+        }
+
+        public ActionResult RestoreFromSave(
+            FarmGoalSpec savedGoal,
+            ReplanStatus savedStatus,
+            IEnumerable<int> savedHarvestedPlotNumbers,
+            NpcRuntimeState savedRuntimeState,
+            int savedActiveCycleNumber,
+            string savedGoalText,
+            string savedDecisionReason,
+            string savedFailureReason,
+            NpcMood savedMood,
+            string savedEmoji,
+            string savedExpression)
+        {
+            if (!IsInitialized || savedRuntimeState == null ||
+                savedHarvestedPlotNumbers == null ||
+                !Enum.IsDefined(typeof(ReplanStatus), savedStatus))
+            {
+                return ActionResult.Failure(
+                    ActionFailureReason.InvalidArgument,
+                    "A valid initialized replanner and saved NPC state are required.");
+            }
+
+            if ((savedStatus == ReplanStatus.Running && savedGoal == null) ||
+                savedActiveCycleNumber < 0 ||
+                savedActiveCycleNumber > savedRuntimeState.StartedCycleCount ||
+                (savedGoal != null && savedActiveCycleNumber == 0))
+            {
+                return ActionResult.Failure(
+                    ActionFailureReason.InvalidResponse,
+                    "Saved farm goal and NPC cycle state are inconsistent.");
+            }
+
+            var validatedHarvests = new HashSet<int>();
+            foreach (int plotNumber in savedHarvestedPlotNumbers)
+            {
+                if (plotNumber < 1 || plotNumber > AIFarm.Farming.FarmField.PlotCount ||
+                    !validatedHarvests.Add(plotNumber))
+                {
+                    return ActionResult.Failure(
+                        ActionFailureReason.InvalidResponse,
+                        "Saved harvested plot numbers are invalid.");
+                }
+            }
+
+            StopAllCoroutines();
+            gatewayRequestPending = false;
+            reflectionRequestPending = false;
+            pendingExpressionTriggers.Clear();
+            runtimeState = savedRuntimeState;
+            observationService = new ObservationService();
+            reflectionService = new ReflectionService(runtimeState);
+            expressionDirector = new NpcExpressionDirector(
+                new LocalTemplateExpressionService(),
+                demoMode.ExpressionCooldownSeconds,
+                demoMode.ExpressionDisplaySeconds);
+            activeGoal = savedGoal;
+            activeCycleNumber = savedActiveCycleNumber;
+            harvestedPlotNumbers.Clear();
+            foreach (int plotNumber in validatedHarvests)
+            {
+                harvestedPlotNumbers.Add(plotNumber);
+            }
+
+            Status = savedStatus;
+            CurrentGoalText = string.IsNullOrWhiteSpace(savedGoalText)
+                ? (savedGoal?.Summary ?? "Idle")
+                : savedGoalText;
+            CurrentDecisionReason = savedStatus == ReplanStatus.Running
+                ? "存档已加载；正在根据权威世界状态安全重新规划。"
+                : (savedDecisionReason ?? string.Empty);
+            LastFailureReason = savedFailureReason ?? string.Empty;
+            fallbackExpressionText = string.IsNullOrWhiteSpace(savedExpression)
+                ? "状态恢复好了，我们继续吧。"
+                : savedExpression.Trim();
+            LastGatewaySubmissionResult = null;
+
+            if (Enum.IsDefined(typeof(NpcMood), savedMood))
+            {
+                expressionDirector.Trigger(
+                    new NpcExpression(
+                        NpcExpressionTrigger.CommandAccepted,
+                        savedMood,
+                        savedEmoji,
+                        fallbackExpressionText),
+                    UnityEngine.Time.unscaledTime,
+                    true);
+            }
+
+            eventLog.Clear();
+            return ActionResult.Success("NPC replanning state restored.");
+        }
+
+        public ActionResult ResetForNewDemo()
+        {
+            if (!IsInitialized)
+            {
+                return ActionResult.Failure(
+                    ActionFailureReason.InvalidState,
+                    "ReplanController must be initialized before starting a new demo.");
+            }
+
+            StopAllCoroutines();
+            gatewayRequestPending = false;
+            reflectionRequestPending = false;
+            pendingExpressionTriggers.Clear();
+            harvestedPlotNumbers.Clear();
+            activeGoal = null;
+            activeCycleNumber = 0;
+            runtimeState = new NpcRuntimeState(NpcPersonaDefinition.Yaya);
+            observationService = new ObservationService();
+            reflectionService = new ReflectionService(runtimeState);
+            expressionDirector = new NpcExpressionDirector(
+                new LocalTemplateExpressionService(),
+                demoMode.ExpressionCooldownSeconds,
+                demoMode.ExpressionDisplaySeconds);
+            Status = ReplanStatus.Idle;
+            CurrentGoalText = "Idle";
+            CurrentDecisionReason = string.Empty;
+            LastFailureReason = string.Empty;
+            fallbackExpressionText = "新的 Demo 准备好了，交给我吧！🌱";
+            LastGatewaySubmissionResult = null;
+            return ActionResult.Success("NPC state reset for a new demo.");
         }
 
         public ActionResult SubmitGoal(string command)

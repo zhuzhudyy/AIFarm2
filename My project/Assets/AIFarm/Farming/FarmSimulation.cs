@@ -31,6 +31,58 @@ namespace AIFarm.Farming
 
         public int WeedEventCount { get; private set; }
 
+        public void CaptureRuntimeState(
+            out double[] savedWaterElapsed,
+            out double[] savedWeedElapsed,
+            out double[] savedGrowthElapsed,
+            out bool[] savedWaterHasDecayed)
+        {
+            savedWaterElapsed = (double[])waterElapsed.Clone();
+            savedWeedElapsed = (double[])weedElapsed.Clone();
+            savedGrowthElapsed = (double[])growthElapsed.Clone();
+            savedWaterHasDecayed = (bool[])waterHasDecayed.Clone();
+        }
+
+        public ActionResult RestoreRuntimeState(
+            int waterDecayEventCount,
+            int weedEventCount,
+            double[] savedWaterElapsed,
+            double[] savedWeedElapsed,
+            double[] savedGrowthElapsed,
+            bool[] savedWaterHasDecayed)
+        {
+            if (waterDecayEventCount < 0 || weedEventCount < 0 ||
+                !IsValidTimerArray(savedWaterElapsed) ||
+                !IsValidTimerArray(savedWeedElapsed) ||
+                !IsValidTimerArray(savedGrowthElapsed) ||
+                savedWaterHasDecayed == null ||
+                savedWaterHasDecayed.Length != FarmField.PlotCount)
+            {
+                return ActionResult.Failure(
+                    ActionFailureReason.InvalidArgument,
+                    "Saved farm simulation state is invalid.");
+            }
+
+            WaterDecayEventCount = waterDecayEventCount;
+            WeedEventCount = weedEventCount;
+            Array.Copy(savedWaterElapsed, waterElapsed, FarmField.PlotCount);
+            Array.Copy(savedWeedElapsed, weedElapsed, FarmField.PlotCount);
+            Array.Copy(savedGrowthElapsed, growthElapsed, FarmField.PlotCount);
+            Array.Copy(savedWaterHasDecayed, waterHasDecayed, FarmField.PlotCount);
+            return ActionResult.Success("Farm simulation runtime restored.");
+        }
+
+        public ActionResult ResetRuntimeState()
+        {
+            WaterDecayEventCount = 0;
+            WeedEventCount = 0;
+            Array.Clear(waterElapsed, 0, waterElapsed.Length);
+            Array.Clear(weedElapsed, 0, weedElapsed.Length);
+            Array.Clear(growthElapsed, 0, growthElapsed.Length);
+            Array.Clear(waterHasDecayed, 0, waterHasDecayed.Length);
+            return ActionResult.Success("Farm simulation runtime reset.");
+        }
+
         public ActionResult Advance(double realSeconds)
         {
             double previousGameSeconds = clock.ElapsedGameSeconds;
@@ -174,6 +226,26 @@ namespace AIFarm.Farming
             weedElapsed[index] = 0d;
             growthElapsed[index] = 0d;
             waterHasDecayed[index] = false;
+        }
+
+        private static bool IsValidTimerArray(double[] values)
+        {
+            if (values == null || values.Length != FarmField.PlotCount)
+            {
+                return false;
+            }
+
+            for (int index = 0; index < values.Length; index++)
+            {
+                if (double.IsNaN(values[index]) ||
+                    double.IsInfinity(values[index]) ||
+                    values[index] < 0d)
+                {
+                    return false;
+                }
+            }
+
+            return true;
         }
     }
 }

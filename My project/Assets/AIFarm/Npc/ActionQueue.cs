@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using AIFarm.Core;
 
 namespace AIFarm.Npc
@@ -10,6 +11,11 @@ namespace AIFarm.Npc
         public int Count => actions.Count;
 
         public bool IsEmpty => actions.Count == 0;
+
+        public IReadOnlyList<INpcAction> GetSnapshot()
+        {
+            return new ReadOnlyCollection<INpcAction>(actions.ToArray());
+        }
 
         public ActionResult Enqueue(INpcAction action)
         {

@@ -109,7 +109,53 @@ namespace AIFarm.Npc
         public ActionResult Clear()
         {
             entries.Clear();
+            nextSequence = 1;
             return ActionResult.Success("NPC memories cleared.");
+        }
+
+        public ActionResult Restore(IEnumerable<MemoryEntry> savedEntries)
+        {
+            if (savedEntries == null)
+            {
+                return ActionResult.Failure(
+                    ActionFailureReason.InvalidArgument,
+                    "Saved NPC memories are required.");
+            }
+
+            var validated = new List<MemoryEntry>();
+            long previousSequence = 0;
+            foreach (MemoryEntry entry in savedEntries)
+            {
+                if (entry == null ||
+                    entry.Sequence <= previousSequence ||
+                    entry.Sequence == long.MaxValue ||
+                    entry.Text.Length > MaximumTextLength ||
+                    !Enum.IsDefined(typeof(MemoryEntryKind), entry.Kind) ||
+                    (entry.SourceEventKind.HasValue &&
+                        !Enum.IsDefined(typeof(WorldEventKind), entry.SourceEventKind.Value)))
+                {
+                    return ActionResult.Failure(
+                        ActionFailureReason.InvalidResponse,
+                        "Saved NPC memories contain an invalid entry.");
+                }
+
+                validated.Add(entry);
+                previousSequence = entry.Sequence;
+            }
+
+            if (validated.Count > Capacity)
+            {
+                return ActionResult.Failure(
+                    ActionFailureReason.InvalidResponse,
+                    $"Saved NPC memories exceed the {Capacity}-entry limit.");
+            }
+
+            entries.Clear();
+            entries.AddRange(validated);
+            nextSequence = validated.Count == 0
+                ? 1
+                : validated[validated.Count - 1].Sequence + 1;
+            return ActionResult.Success("NPC memories restored.");
         }
 
         private ActionResult Add(

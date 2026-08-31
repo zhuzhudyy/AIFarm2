@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using AIFarm.Core;
 using AIFarm.Npc;
 using UnityEngine;
@@ -53,6 +54,8 @@ namespace AIFarm.Presentation
         public bool IsInitialized { get; private set; }
 
         public bool IsBusy => currentAction != null || !actionQueue.IsEmpty;
+
+        public IReadOnlyList<INpcAction> PendingActions => actionQueue.GetSnapshot();
 
         public ActionResult Configure(
             GameBootstrap gameBootstrap,
@@ -230,6 +233,48 @@ namespace AIFarm.Presentation
             lastFailureReason = string.Empty;
             SetStatus(actionQueue.IsEmpty ? NpcExecutionStatus.Completed : NpcExecutionStatus.Pending);
             return ActionResult.Success("NpcPlanExecutor failure reset.");
+        }
+
+        public ActionResult RestorePendingActions(IEnumerable<INpcAction> actions)
+        {
+            if (!IsInitialized || actions == null)
+            {
+                return ActionResult.Failure(
+                    ActionFailureReason.InvalidArgument,
+                    "An initialized executor and saved action list are required.");
+            }
+
+            var validated = new List<INpcAction>();
+            foreach (INpcAction action in actions)
+            {
+                if (action == null)
+                {
+                    return ActionResult.Failure(
+                        ActionFailureReason.InvalidResponse,
+                        "Saved NPC action list contains a null action.");
+                }
+
+                validated.Add(action);
+            }
+
+            navigationDriver.CancelMove();
+            feedbackDriver.Cancel();
+            actionQueue.Clear();
+            currentAction = null;
+            lastResult = null;
+            lastFailureReason = string.Empty;
+            foreach (INpcAction action in validated)
+            {
+                actionQueue.Enqueue(action);
+            }
+
+            SetStatus(actionQueue.IsEmpty
+                ? NpcExecutionStatus.Completed
+                : NpcExecutionStatus.Pending);
+            return ActionResult.Success(
+                actionQueue.IsEmpty
+                    ? "NPC executor restored without pending actions."
+                    : "Saved NPC actions restored and safely restarted from Pending.");
         }
 
         private void Start()

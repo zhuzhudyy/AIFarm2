@@ -73,9 +73,20 @@ namespace AIFarm.Presentation
 
                 if (request.result != UnityWebRequest.Result.Success)
                 {
-                    string error = request.responseCode > 0
-                        ? $"HTTP {request.responseCode}"
-                        : request.result.ToString();
+                    string transportError = request.error ?? string.Empty;
+                    bool timedOut = transportError.IndexOf(
+                        "timed out",
+                        StringComparison.OrdinalIgnoreCase) >= 0 ||
+                        transportError.IndexOf(
+                            "timeout",
+                            StringComparison.OrdinalIgnoreCase) >= 0;
+                    string error = timedOut
+                        ? $"AI gateway request timed out after {timeoutSeconds} seconds."
+                        : request.responseCode > 0
+                            ? $"HTTP {request.responseCode}: {transportError}"
+                            : string.IsNullOrWhiteSpace(transportError)
+                                ? request.result.ToString()
+                                : transportError;
                     completed(AiGatewayHttpResult.Failure(request.responseCode, error));
                     yield break;
                 }

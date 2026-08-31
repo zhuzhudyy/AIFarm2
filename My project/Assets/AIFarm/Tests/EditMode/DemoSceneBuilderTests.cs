@@ -111,6 +111,11 @@ namespace AIFarm.Tests.EditMode
             Assert.That(GameObject.Find("UI_Canvas/MemoryPanel/RecentReflectionsText"), Is.Not.Null);
             Assert.That(GameObject.Find("UI_Canvas/CommandPanel/CommandInput").GetComponent<InputField>(), Is.Not.Null);
             Assert.That(GameObject.Find("UI_Canvas/CommandPanel/SubmitButton").GetComponent<Button>(), Is.Not.Null);
+            Assert.That(GameObject.Find("UI_Canvas/SaveControlsPanel/SaveButton").GetComponent<Button>(), Is.Not.Null);
+            Assert.That(GameObject.Find("UI_Canvas/SaveControlsPanel/LoadButton").GetComponent<Button>(), Is.Not.Null);
+            Assert.That(GameObject.Find("UI_Canvas/SaveControlsPanel/NewDemoButton").GetComponent<Button>(), Is.Not.Null);
+            Assert.That(GameObject.Find("UI_Canvas/SaveControlsPanel/SaveStatusText"), Is.Not.Null);
+            Assert.That(GameObject.Find("UI_Canvas").GetComponent<SaveGameController>(), Is.Not.Null);
 
             GameBootstrap bootstrap = GameObject.Find("GameBootstrap").GetComponent<GameBootstrap>();
             Assert.That(bootstrap, Is.Not.Null);

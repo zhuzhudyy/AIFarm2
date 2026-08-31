@@ -35,6 +35,18 @@ namespace AIFarm.Npc
 
         public IReadOnlyList<NpcReflection> RecentReflections => readOnlyReflections;
 
+        public int StartedCycleCount => startedCycleCount;
+
+        public IReadOnlyList<int> ReflectedCycleNumbers
+        {
+            get
+            {
+                var cycleNumbers = new List<int>(reflectedCycleNumbers);
+                cycleNumbers.Sort();
+                return new ReadOnlyCollection<int>(cycleNumbers);
+            }
+        }
+
         public int BeginCycle()
         {
             CurrentCycleNumber = ++startedCycleCount;
@@ -91,6 +103,88 @@ namespace AIFarm.Npc
 
             recentReflections.Add(reflection);
             return ActionResult.Success($"Reflection recorded for cycle {cycleNumber}.");
+        }
+
+        public ActionResult Restore(
+            int savedStartedCycleCount,
+            int savedCurrentCycleNumber,
+            int savedCompletedCycleCount,
+            IEnumerable<int> savedReflectedCycleNumbers,
+            IEnumerable<NpcReflection> savedRecentReflections)
+        {
+            if (savedStartedCycleCount < 0 ||
+                savedCurrentCycleNumber < 0 ||
+                savedCurrentCycleNumber > savedStartedCycleCount ||
+                savedCompletedCycleCount < 0 ||
+                savedCompletedCycleCount > savedStartedCycleCount ||
+                savedReflectedCycleNumbers == null ||
+                savedRecentReflections == null)
+            {
+                return ActionResult.Failure(
+                    ActionFailureReason.InvalidResponse,
+                    "Saved NPC cycle state is invalid.");
+            }
+
+            var validatedCycles = new HashSet<int>();
+            foreach (int cycleNumber in savedReflectedCycleNumbers)
+            {
+                if (cycleNumber <= 0 || cycleNumber > savedStartedCycleCount ||
+                    !validatedCycles.Add(cycleNumber))
+                {
+                    return ActionResult.Failure(
+                        ActionFailureReason.InvalidResponse,
+                        "Saved NPC reflected cycle numbers are invalid.");
+                }
+            }
+
+            if (validatedCycles.Count != savedCompletedCycleCount)
+            {
+                return ActionResult.Failure(
+                    ActionFailureReason.InvalidResponse,
+                    "Saved NPC reflection count is inconsistent.");
+            }
+
+            var validatedReflections = new List<NpcReflection>();
+            foreach (NpcReflection reflection in savedRecentReflections)
+            {
+                if (reflection == null ||
+                    reflection.Outcome != NpcReflectionOutcome.Completed ||
+                    string.IsNullOrWhiteSpace(reflection.Text) ||
+                    reflection.Text.Length > MemoryStore.MaximumTextLength ||
+                    !Enum.IsDefined(typeof(NpcMood), reflection.Mood))
+                {
+                    return ActionResult.Failure(
+                        ActionFailureReason.InvalidResponse,
+                        "Saved NPC reflection history is invalid.");
+                }
+
+                validatedReflections.Add(reflection);
+            }
+
+            if (validatedReflections.Count > ReflectionHistoryCapacity ||
+                validatedReflections.Count > savedCompletedCycleCount ||
+                (savedCompletedCycleCount > 0 && validatedReflections.Count == 0))
+            {
+                return ActionResult.Failure(
+                    ActionFailureReason.InvalidResponse,
+                    "Saved NPC reflection history has an invalid length.");
+            }
+
+            startedCycleCount = savedStartedCycleCount;
+            CurrentCycleNumber = savedCurrentCycleNumber;
+            CompletedCycleCount = savedCompletedCycleCount;
+            reflectedCycleNumbers.Clear();
+            foreach (int cycleNumber in validatedCycles)
+            {
+                reflectedCycleNumbers.Add(cycleNumber);
+            }
+
+            recentReflections.Clear();
+            recentReflections.AddRange(validatedReflections);
+            LatestReflection = recentReflections.Count == 0
+                ? null
+                : recentReflections[recentReflections.Count - 1];
+            return ActionResult.Success("NPC runtime state restored.");
         }
     }
 }
