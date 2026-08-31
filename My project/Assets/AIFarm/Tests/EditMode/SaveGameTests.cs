@@ -162,7 +162,8 @@ namespace AIFarm.Tests.EditMode
 
             ActionResult saved = service.Save();
             Assert.That(saved.Succeeded, Is.True, saved.Message);
-            Assert.That(storage.Json, Does.Contain("\"version\": 1"));
+            Assert.That(storage.Json, Does.Contain("\"version\": 2"));
+            Assert.That(storage.Json, Does.Contain("\"residentId\": \"resident-001\""));
             Assert.That(storage.Json, Does.Not.Contain("OPENAI_API_KEY"));
             Assert.That(storage.Json, Does.Not.Contain("sk-"));
 
@@ -218,6 +219,78 @@ namespace AIFarm.Tests.EditMode
                 bootstrap.Inventory.GetCount(InventoryItem.CarrotSeed),
                 Is.EqualTo(savedSeeds - 1),
                 "Restarted atomic action must commit exactly once.");
+        }
+
+        [Test]
+        public void SaveLoad_PreservesMultipleResidentSaveDataRecords()
+        {
+            Assert.That(service.Save().Succeeded, Is.True);
+            SaveData data = JsonUtility.FromJson<SaveData>(storage.Json);
+            Assert.That(data.residents, Has.Length.EqualTo(1));
+
+            ResidentSaveData extra = JsonUtility.FromJson<ResidentSaveData>(
+                JsonUtility.ToJson(data.residents[0]));
+            extra.residentId = "resident-test-b";
+            extra.displayName = "测试居民";
+            foreach (MemorySaveData memory in extra.recentMemories)
+            {
+                memory.ownerResidentId = extra.residentId;
+            }
+
+            data.residents = new[] { data.residents[0], extra };
+            storage.Json = JsonUtility.ToJson(data, true);
+
+            ActionResult loaded = service.Load();
+            Assert.That(loaded.Succeeded, Is.True, loaded.Message);
+            Assert.That(service.Save().Succeeded, Is.True);
+
+            SaveData roundTripped = JsonUtility.FromJson<SaveData>(storage.Json);
+            Assert.That(roundTripped.residents, Has.Length.EqualTo(2));
+            Assert.That(roundTripped.residents[0].residentId, Is.EqualTo(ResidentIds.YayaValue));
+            Assert.That(roundTripped.residents[1].residentId, Is.EqualTo("resident-test-b"));
+            Assert.That(roundTripped.residents[1].displayName, Is.EqualTo("测试居民"));
+        }
+
+        [Test]
+        public void Load_LegacySingleResidentSave_MigratesToYaya()
+        {
+            Assert.That(service.Save().Succeeded, Is.True);
+            SaveData current = JsonUtility.FromJson<SaveData>(storage.Json);
+            ResidentSaveData resident = current.residents[0];
+            foreach (MemorySaveData memory in resident.recentMemories)
+            {
+                memory.ownerResidentId = string.Empty;
+            }
+
+            var legacy = new LegacySaveDataV1
+            {
+                version = SaveData.LegacySingleResidentVersion,
+                savedAtUtc = current.savedAtUtc,
+                clock = current.clock,
+                plots = current.plots,
+                inventory = current.inventory,
+                simulation = current.simulation,
+                npc = resident.npc,
+                hasFarmGoal = resident.hasFarmGoal,
+                farmGoal = resident.farmGoal,
+                executor = resident.executor,
+                recentMemories = resident.recentMemories,
+                recentReflections = resident.recentReflections,
+                npcRuntime = resident.runtime
+            };
+            storage.Json = JsonUtility.ToJson(legacy, true);
+
+            ActionResult loaded = service.Load();
+
+            Assert.That(loaded.Succeeded, Is.True, loaded.Message);
+            Assert.That(service.LastLoadMigratedLegacySave, Is.True);
+            Assert.That(replanner.ResidentId, Is.EqualTo(ResidentIds.Yaya));
+            Assert.That(replanner.Memories.OwnerResidentId, Is.EqualTo(ResidentIds.Yaya));
+            Assert.That(service.Save().Succeeded, Is.True);
+            SaveData migrated = JsonUtility.FromJson<SaveData>(storage.Json);
+            Assert.That(migrated.version, Is.EqualTo(SaveData.CurrentVersion));
+            Assert.That(migrated.residents, Has.Length.EqualTo(1));
+            Assert.That(migrated.residents[0].residentId, Is.EqualTo(ResidentIds.YayaValue));
         }
 
         [Test]

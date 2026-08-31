@@ -1,6 +1,7 @@
 using AIFarm.Core;
 using AIFarm.Farming;
 using AIFarm.Inventory;
+using AIFarm.Npc;
 using AIFarm.Time;
 using UnityEngine;
 
@@ -26,6 +27,8 @@ namespace AIFarm.Presentation
         public FarmSimulation Simulation { get; private set; }
 
         public WorldEventLog Events { get; private set; }
+
+        public ResidentRegistry ResidentRegistry { get; private set; }
 
         public ActionResult? LastSimulationResult { get; private set; }
 
@@ -53,6 +56,15 @@ namespace AIFarm.Presentation
             }
 
             DemoInventoryConfig inventoryConfig = sceneConfig.InventoryConfig;
+            ResidentRegistry = new ResidentRegistry();
+            ActionResult residentResult = ResidentRegistry.Register(
+                ResidentDefinition.Yaya,
+                new NpcRuntimeState(ResidentDefinition.Yaya));
+            if (residentResult.Failed)
+            {
+                return residentResult;
+            }
+
             Field = new FarmField();
             Inventory = new FarmInventory(
                 inventoryConfig.CarrotSeeds,

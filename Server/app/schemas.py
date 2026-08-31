@@ -32,6 +32,15 @@ EmojiText = Annotated[
     StrictStr,
     StringConstraints(strip_whitespace=True, min_length=1, max_length=8),
 ]
+ResidentIdText = Annotated[
+    StrictStr,
+    StringConstraints(
+        strip_whitespace=True,
+        min_length=1,
+        max_length=64,
+        pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*$",
+    ),
+]
 
 
 class StrictSchema(BaseModel):
@@ -120,15 +129,18 @@ class ReflectionSpec(StrictSchema):
 
 
 class InterpretCommandRequest(StrictSchema):
+    resident_id: ResidentIdText = "resident-001"
     command: CommandText
 
 
 class GenerateUtteranceRequest(StrictSchema):
+    resident_id: ResidentIdText = "resident-001"
     trigger: ExpressionTriggerValue
     context: ContextText = ""
 
 
 class ReflectRequest(StrictSchema):
+    resident_id: ResidentIdText = "resident-001"
     goal: FarmGoalSpec
     outcome: ReflectionOutcomeValue
     event_summary: EventSummaryText

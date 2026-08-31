@@ -1,4 +1,5 @@
 using AIFarm.Editor;
+using AIFarm.Npc;
 using AIFarm.Presentation;
 using NUnit.Framework;
 using Unity.AI.Navigation;
@@ -69,7 +70,9 @@ namespace AIFarm.Tests.EditMode
             Assert.That(npc.GetComponent<NavMeshAgent>(), Is.Not.Null);
             Assert.That(npc.GetComponent<NpcNavigator>(), Is.Not.Null);
             Assert.That(npc.GetComponent<BlockoutActionFeedback>(), Is.Not.Null);
-            Assert.That(npc.GetComponent<NpcPlanExecutor>(), Is.Not.Null);
+            NpcPlanExecutor planExecutor = npc.GetComponent<NpcPlanExecutor>();
+            Assert.That(planExecutor, Is.Not.Null);
+            Assert.That(planExecutor.ResidentId, Is.EqualTo(ResidentIds.Yaya));
             Assert.That(npc.transform.Find("NPC_Visual_Capsule"), Is.Not.Null);
             Assert.That(npc.transform.Find("ActionFeedback_ProgressBar"), Is.Not.Null);
             Transform dialogueBubble = npc.transform.Find("NPC_DialogueBubble");
@@ -83,7 +86,11 @@ namespace AIFarm.Tests.EditMode
                 GameObject.Find("Navigation_NavMeshSurface").GetComponent<NavMeshSurface>();
             Assert.That(navMeshSurface, Is.Not.Null);
             Assert.That(navMeshSurface.navMeshData, Is.Not.Null);
-            Assert.That(GameObject.Find("UI_Canvas").GetComponent<Canvas>(), Is.Not.Null);
+            GameObject uiCanvas = GameObject.Find("UI_Canvas");
+            Assert.That(uiCanvas.GetComponent<Canvas>(), Is.Not.Null);
+            Assert.That(
+                uiCanvas.GetComponent<DemoHud>().SelectedResidentId,
+                Is.EqualTo(ResidentIds.Yaya));
             Assert.That(GameObject.Find("UI_Canvas/StatusPanel/TimeText"), Is.Not.Null);
             Assert.That(GameObject.Find("UI_Canvas/StatusPanel/MoodText"), Is.Not.Null);
             Assert.That(GameObject.Find("UI_Canvas/StatusPanel/EmojiText"), Is.Not.Null);

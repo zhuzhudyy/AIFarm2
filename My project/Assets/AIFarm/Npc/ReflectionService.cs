@@ -10,9 +10,9 @@ namespace AIFarm.Npc
         public const int MaximumExpressionContextLength = 200;
         public const int MaximumReflectionContextLength = 240;
 
-        private readonly NpcRuntimeState runtimeState;
+        private readonly ResidentRuntimeState runtimeState;
 
-        public ReflectionService(NpcRuntimeState state)
+        public ReflectionService(ResidentRuntimeState state)
         {
             runtimeState = state ?? throw new ArgumentNullException(nameof(state));
         }
@@ -20,7 +20,10 @@ namespace AIFarm.Npc
         public string BuildExpressionContext(string immediateContext)
         {
             var builder = new StringBuilder(MaximumExpressionContextLength);
-            AppendSegment(builder, "人物：芽芽，认真乐观，优先解决作物生长问题", MaximumExpressionContextLength);
+            AppendSegment(
+                builder,
+                $"人物：{Bound(runtimeState.Persona.PromptSummary, 100)}",
+                MaximumExpressionContextLength);
             AppendSegment(
                 builder,
                 $"当前：{Bound(immediateContext, 80)}",
@@ -44,7 +47,7 @@ namespace AIFarm.Npc
             var builder = new StringBuilder(MaximumReflectionContextLength);
             AppendSegment(
                 builder,
-                "人物：芽芽，农场助手，认真乐观、偶尔小抱怨，喜欢整齐，讨厌杂草和浪费",
+                $"人物：{Bound(runtimeState.Persona.PromptSummary, 120)}",
                 MaximumReflectionContextLength);
             AppendSegment(
                 builder,

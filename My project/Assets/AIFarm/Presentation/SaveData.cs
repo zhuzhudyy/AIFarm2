@@ -1,13 +1,43 @@
 using System;
+using AIFarm.Core;
+using AIFarm.Npc;
+using UnityEngine;
 
 namespace AIFarm.Presentation
 {
     [Serializable]
     public sealed class SaveData
     {
-        public const int CurrentVersion = 1;
+        public const int LegacySingleResidentVersion = 1;
+        public const int CurrentVersion = 2;
 
         public int version = CurrentVersion;
+        public string savedAtUtc = string.Empty;
+        public ClockSaveData clock = new ClockSaveData();
+        public PlotSaveData[] plots = Array.Empty<PlotSaveData>();
+        public InventorySaveData inventory = new InventorySaveData();
+        public SimulationSaveData simulation = new SimulationSaveData();
+        public ResidentSaveData[] residents = Array.Empty<ResidentSaveData>();
+    }
+
+    [Serializable]
+    public sealed class ResidentSaveData
+    {
+        public string residentId = string.Empty;
+        public string displayName = string.Empty;
+        public NpcSaveData npc = new NpcSaveData();
+        public bool hasFarmGoal;
+        public FarmGoalSaveData farmGoal = new FarmGoalSaveData();
+        public ExecutorSaveData executor = new ExecutorSaveData();
+        public MemorySaveData[] recentMemories = Array.Empty<MemorySaveData>();
+        public ReflectionSaveData[] recentReflections = Array.Empty<ReflectionSaveData>();
+        public NpcRuntimeSaveData runtime = new NpcRuntimeSaveData();
+    }
+
+    [Serializable]
+    public sealed class LegacySaveDataV1
+    {
+        public int version = SaveData.LegacySingleResidentVersion;
         public string savedAtUtc = string.Empty;
         public ClockSaveData clock = new ClockSaveData();
         public PlotSaveData[] plots = Array.Empty<PlotSaveData>();
@@ -20,6 +50,114 @@ namespace AIFarm.Presentation
         public MemorySaveData[] recentMemories = Array.Empty<MemorySaveData>();
         public ReflectionSaveData[] recentReflections = Array.Empty<ReflectionSaveData>();
         public NpcRuntimeSaveData npcRuntime = new NpcRuntimeSaveData();
+    }
+
+    public static class SaveDataMigration
+    {
+        public static ActionResult TryDeserializeAndMigrate(
+            string json,
+            out SaveData data,
+            out bool migratedLegacySave)
+        {
+            data = null;
+            migratedLegacySave = false;
+            if (string.IsNullOrWhiteSpace(json))
+            {
+                return InvalidSave("Save JSON is empty.");
+            }
+
+            try
+            {
+                SaveVersionHeader header = JsonUtility.FromJson<SaveVersionHeader>(json);
+                if (header == null)
+                {
+                    return InvalidSave("Save JSON does not contain a version header.");
+                }
+
+                if (header.version == SaveData.CurrentVersion)
+                {
+                    data = JsonUtility.FromJson<SaveData>(json);
+                    return data == null
+                        ? InvalidSave("Save JSON could not be read.")
+                        : ActionResult.Success("Current save data read.");
+                }
+
+                if (header.version != SaveData.LegacySingleResidentVersion)
+                {
+                    return InvalidSave(
+                        $"Unsupported save version {header.version}; expected " +
+                        $"{SaveData.LegacySingleResidentVersion} or {SaveData.CurrentVersion}.");
+                }
+
+                LegacySaveDataV1 legacy = JsonUtility.FromJson<LegacySaveDataV1>(json);
+                if (legacy == null)
+                {
+                    return InvalidSave("Legacy save JSON could not be read.");
+                }
+
+                data = MigrateLegacySingleResident(legacy);
+                migratedLegacySave = true;
+                return ActionResult.Success("Legacy single-resident save migrated to resident-001.");
+            }
+            catch (ArgumentException exception)
+            {
+                data = null;
+                return InvalidSave($"Save JSON is malformed: {exception.Message}");
+            }
+        }
+
+        public static SaveData MigrateLegacySingleResident(LegacySaveDataV1 legacy)
+        {
+            if (legacy == null)
+            {
+                throw new ArgumentNullException(nameof(legacy));
+            }
+
+            MemorySaveData[] memories = legacy.recentMemories ?? Array.Empty<MemorySaveData>();
+            foreach (MemorySaveData memory in memories)
+            {
+                if (memory != null)
+                {
+                    memory.ownerResidentId = ResidentIds.YayaValue;
+                }
+            }
+
+            return new SaveData
+            {
+                version = SaveData.CurrentVersion,
+                savedAtUtc = legacy.savedAtUtc,
+                clock = legacy.clock,
+                plots = legacy.plots,
+                inventory = legacy.inventory,
+                simulation = legacy.simulation,
+                residents = new[]
+                {
+                    new ResidentSaveData
+                    {
+                        residentId = ResidentIds.YayaValue,
+                        displayName = ResidentDefinition.Yaya.DisplayName,
+                        npc = legacy.npc,
+                        hasFarmGoal = legacy.hasFarmGoal,
+                        farmGoal = legacy.farmGoal,
+                        executor = legacy.executor,
+                        recentMemories = memories,
+                        recentReflections = legacy.recentReflections,
+                        runtime = legacy.npcRuntime
+                    }
+                }
+            };
+        }
+
+        private static ActionResult InvalidSave(string message)
+        {
+            return ActionResult.Failure(ActionFailureReason.InvalidResponse, message);
+        }
+
+        [Serializable]
+        private sealed class SaveVersionHeader
+        {
+            public int version;
+        }
     }
 
     [Serializable]
@@ -119,6 +257,7 @@ namespace AIFarm.Presentation
     [Serializable]
     public sealed class MemorySaveData
     {
+        public string ownerResidentId = string.Empty;
         public long sequence;
         public double gameSeconds;
         public int kind;

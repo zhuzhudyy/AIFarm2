@@ -22,6 +22,9 @@ namespace AIFarm.Presentation
         [SerializeField]
         private NpcExecutionStatus status = NpcExecutionStatus.Completed;
 
+        [SerializeField]
+        private string residentIdValue = ResidentIds.YayaValue;
+
         [TextArea]
         [SerializeField]
         private string lastFailureReason = string.Empty;
@@ -47,6 +50,11 @@ namespace AIFarm.Presentation
 
         public INpcAction CurrentAction => currentAction;
 
+        public ResidentId ResidentId { get; private set; } = ResidentIds.Yaya;
+
+        public ResidentId? CurrentActionResidentId =>
+            currentAction == null ? (ResidentId?)null : ResidentId;
+
         public ActionResult? LastResult => lastResult;
 
         public string LastFailureReason => lastFailureReason;
@@ -62,13 +70,24 @@ namespace AIFarm.Presentation
             NpcNavigator npcNavigator,
             BlockoutActionFeedback feedback)
         {
-            if (gameBootstrap == null || npcNavigator == null || feedback == null)
+            return Configure(ResidentIds.Yaya, gameBootstrap, npcNavigator, feedback);
+        }
+
+        public ActionResult Configure(
+            ResidentId residentId,
+            GameBootstrap gameBootstrap,
+            NpcNavigator npcNavigator,
+            BlockoutActionFeedback feedback)
+        {
+            if (!residentId.IsValid || gameBootstrap == null || npcNavigator == null || feedback == null)
             {
                 return ActionResult.Failure(
                     ActionFailureReason.InvalidArgument,
                     "NpcPlanExecutor requires bootstrap, navigation, and feedback components.");
             }
 
+            ResidentId = residentId;
+            residentIdValue = residentId.Value;
             bootstrap = gameBootstrap;
             navigator = npcNavigator;
             actionFeedback = feedback;
@@ -84,8 +103,24 @@ namespace AIFarm.Presentation
                     "NpcPlanExecutor requires an initialized GameBootstrap.");
             }
 
+            if (!ResidentId.TryCreate(residentIdValue, out ResidentId configuredResidentId))
+            {
+                return ActionResult.Failure(
+                    ActionFailureReason.InvalidArgument,
+                    "NpcPlanExecutor requires a valid configured ResidentId.");
+            }
+
+            ActionResult registered = bootstrap.ResidentRegistry.TryGetRuntimeState(
+                configuredResidentId,
+                out _);
+            if (registered.Failed)
+            {
+                return registered;
+            }
+
             return Initialize(
                 new NpcActionContext(
+                    configuredResidentId,
                     bootstrap.Field,
                     bootstrap.Inventory,
                     bootstrap.Clock,
@@ -100,6 +135,19 @@ namespace AIFarm.Presentation
             INpcNavigationDriver npcNavigation,
             INpcActionFeedback feedback)
         {
+            return Initialize(
+                context == null ? default : context.ResidentId,
+                context,
+                npcNavigation,
+                feedback);
+        }
+
+        public ActionResult Initialize(
+            ResidentId residentId,
+            NpcActionContext context,
+            INpcNavigationDriver npcNavigation,
+            INpcActionFeedback feedback)
+        {
             if (IsInitialized)
             {
                 return ActionResult.Failure(
@@ -107,13 +155,17 @@ namespace AIFarm.Presentation
                     "NpcPlanExecutor has already been initialized.");
             }
 
-            if (context == null || npcNavigation == null || feedback == null)
+            if (!residentId.IsValid || context == null ||
+                context.ResidentId != residentId ||
+                npcNavigation == null || feedback == null)
             {
                 return ActionResult.Failure(
                     ActionFailureReason.InvalidArgument,
                     "NpcPlanExecutor requires action context, navigation, and feedback services.");
             }
 
+            ResidentId = residentId;
+            residentIdValue = residentId.Value;
             actionContext = context;
             navigationDriver = npcNavigation;
             feedbackDriver = feedback;

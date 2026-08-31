@@ -78,7 +78,24 @@ namespace AIFarm.Presentation
         [SerializeField]
         private Text recentReflectionsText;
 
+        [SerializeField]
+        private string selectedResidentIdValue = ResidentIds.YayaValue;
+
         private string idleSubmissionMessage = string.Empty;
+        private readonly Dictionary<ResidentId, NpcPlanExecutor> executorsByResidentId =
+            new Dictionary<ResidentId, NpcPlanExecutor>();
+        private readonly Dictionary<ResidentId, ReplanController> replannersByResidentId =
+            new Dictionary<ResidentId, ReplanController>();
+
+        public ResidentId SelectedResidentId
+        {
+            get
+            {
+                return ResidentId.TryCreate(selectedResidentIdValue, out ResidentId selected)
+                    ? selected
+                    : ResidentIds.Yaya;
+            }
+        }
 
         public void Configure(
             GameBootstrap gameBootstrap,
@@ -126,10 +143,65 @@ namespace AIFarm.Presentation
             aiModeText = aiModeLabel;
             recentMemoriesText = memoriesLabel;
             recentReflectionsText = reflectionsLabel;
+            EnsureResidentBindings();
+        }
+
+        public ActionResult RegisterResidentBinding(
+            ResidentId residentId,
+            NpcPlanExecutor executor,
+            ReplanController controller)
+        {
+            if (!residentId.IsValid || executor == null || controller == null ||
+                (executor.IsInitialized && executor.ResidentId != residentId) ||
+                (controller.IsInitialized && controller.ResidentId != residentId))
+            {
+                return ActionResult.Failure(
+                    ActionFailureReason.InvalidArgument,
+                    "HUD resident bindings require matching ResidentIds and components.");
+            }
+
+            if (executorsByResidentId.ContainsKey(residentId) ||
+                replannersByResidentId.ContainsKey(residentId))
+            {
+                return ActionResult.Failure(
+                    ActionFailureReason.InvalidState,
+                    $"HUD already has a binding for ResidentId '{residentId}'.");
+            }
+
+            executorsByResidentId.Add(residentId, executor);
+            replannersByResidentId.Add(residentId, controller);
+            return ActionResult.Success($"HUD binding registered for '{residentId}'.");
+        }
+
+        public ActionResult SelectResident(ResidentId residentId)
+        {
+            EnsureResidentBindings();
+            if (!residentId.IsValid ||
+                !executorsByResidentId.ContainsKey(residentId) ||
+                !replannersByResidentId.ContainsKey(residentId))
+            {
+                return ActionResult.Failure(
+                    ActionFailureReason.InvalidArgument,
+                    $"ResidentId '{residentId}' is not available in this HUD.");
+            }
+
+            if (bootstrap?.ResidentRegistry != null &&
+                bootstrap.ResidentRegistry.TryGetDefinition(residentId, out _).Failed)
+            {
+                return ActionResult.Failure(
+                    ActionFailureReason.InvalidArgument,
+                    $"ResidentId '{residentId}' is not registered in the active town.");
+            }
+
+            selectedResidentIdValue = residentId.Value;
+            RefreshFromExecutor();
+            RefreshMemoriesAndReflections();
+            return ActionResult.Success($"HUD selected resident '{residentId}'.");
         }
 
         private void Start()
         {
+            EnsureResidentBindings();
             if (submitButton != null)
             {
                 submitButton.onClick.AddListener(HandleSubmit);
@@ -201,9 +273,11 @@ namespace AIFarm.Presentation
 
         public ActionResult SubmitCommand(string command)
         {
-            if (replanController != null)
+            ReplanController selectedReplanner = SelectedReplanner;
+            NpcPlanExecutor selectedExecutor = SelectedExecutor;
+            if (selectedReplanner != null)
             {
-                ActionResult goalSubmission = replanController.SubmitGoal(command);
+                ActionResult goalSubmission = selectedReplanner.SubmitGoal(command);
                 if (goalSubmission.Succeeded)
                 {
                     CompleteSuccessfulSubmission();
@@ -217,7 +291,7 @@ namespace AIFarm.Presentation
                 }
             }
 
-            if (planExecutor == null)
+            if (selectedExecutor == null)
             {
                 ActionResult unavailable = ActionResult.Failure(
                     ActionFailureReason.InvalidState,
@@ -233,7 +307,7 @@ namespace AIFarm.Presentation
                 return parsed;
             }
 
-            ActionResult queued = planExecutor.Enqueue(action);
+            ActionResult queued = selectedExecutor.Enqueue(action);
             if (queued.Failed)
             {
                 SetSubmissionFailure(queued);
@@ -340,48 +414,50 @@ namespace AIFarm.Presentation
         private void RefreshFromExecutor()
         {
             RefreshGoalAndExpression();
+            ReplanController selectedReplanner = SelectedReplanner;
+            NpcPlanExecutor selectedExecutor = SelectedExecutor;
             if (actionText == null)
             {
                 return;
             }
 
-            if (replanController != null && replanController.IsGatewayRequestPending)
+            if (selectedReplanner != null && selectedReplanner.IsGatewayRequestPending)
             {
                 actionText.text = "Action: Waiting for Remote AI";
                 return;
             }
 
-            if (replanController != null &&
-                replanController.Status == ReplanStatus.Idle &&
-                replanController.LastGatewaySubmissionResult.HasValue &&
-                replanController.LastGatewaySubmissionResult.Value.Failed)
+            if (selectedReplanner != null &&
+                selectedReplanner.Status == ReplanStatus.Idle &&
+                selectedReplanner.LastGatewaySubmissionResult.HasValue &&
+                selectedReplanner.LastGatewaySubmissionResult.Value.Failed)
             {
                 actionText.text =
-                    $"Action: Rejected - {replanController.LastGatewaySubmissionResult.Value.Message}";
+                    $"Action: Rejected - {selectedReplanner.LastGatewaySubmissionResult.Value.Message}";
                 return;
             }
 
-            if (planExecutor == null)
+            if (selectedExecutor == null)
             {
                 return;
             }
 
-            if (planExecutor.Status == NpcExecutionStatus.Failed)
+            if (selectedExecutor.Status == NpcExecutionStatus.Failed)
             {
-                actionText.text = $"Action: Failed - {planExecutor.LastFailureReason}";
+                actionText.text = $"Action: Failed - {selectedExecutor.LastFailureReason}";
                 return;
             }
 
-            if (planExecutor.CurrentAction != null)
+            if (selectedExecutor.CurrentAction != null)
             {
                 actionText.text =
-                    $"Action: {planExecutor.Status} - {planExecutor.CurrentAction.DisplayName}";
+                    $"Action: {selectedExecutor.Status} - {selectedExecutor.CurrentAction.DisplayName}";
                 return;
             }
 
-            if (planExecutor.IsBusy)
+            if (selectedExecutor.IsBusy)
             {
-                actionText.text = $"Action: {planExecutor.Status}";
+                actionText.text = $"Action: {selectedExecutor.Status}";
                 return;
             }
 
@@ -391,9 +467,9 @@ namespace AIFarm.Presentation
                 return;
             }
 
-            if (planExecutor.LastResult.HasValue && planExecutor.LastResult.Value.Succeeded)
+            if (selectedExecutor.LastResult.HasValue && selectedExecutor.LastResult.Value.Succeeded)
             {
-                actionText.text = $"Action: Completed - {planExecutor.LastResult.Value.Message}";
+                actionText.text = $"Action: Completed - {selectedExecutor.LastResult.Value.Message}";
                 return;
             }
 
@@ -402,45 +478,46 @@ namespace AIFarm.Presentation
 
         private void RefreshGoalAndExpression()
         {
+            ReplanController selectedReplanner = SelectedReplanner;
             if (aiModeText != null)
             {
-                AiGatewayMode mode = replanController != null
-                    ? replanController.CurrentAiMode
+                AiGatewayMode mode = selectedReplanner != null
+                    ? selectedReplanner.CurrentAiMode
                     : bootstrap?.SceneConfig?.AiGatewayMode ?? AiGatewayMode.Local;
                 aiModeText.text = $"AI: {mode.ToString().ToUpperInvariant()}";
             }
 
-            if (replanController == null)
+            if (selectedReplanner == null)
             {
                 return;
             }
 
             if (goalText != null)
             {
-                goalText.text = $"Goal: {replanController.CurrentGoalText}";
+                goalText.text = $"Goal: {selectedReplanner.CurrentGoalText}";
             }
 
             if (expressionText != null)
             {
-                expressionText.text = $"NPC: {replanController.NpcExpression}";
+                expressionText.text = $"{SelectedResidentDisplayName}: {selectedReplanner.NpcExpression}";
             }
 
             if (actionReasonText != null)
             {
-                string reason = string.IsNullOrWhiteSpace(replanController.CurrentDecisionReason)
+                string reason = string.IsNullOrWhiteSpace(selectedReplanner.CurrentDecisionReason)
                     ? "等待目标"
-                    : replanController.CurrentDecisionReason;
+                    : selectedReplanner.CurrentDecisionReason;
                 actionReasonText.text = $"Reason: {reason}";
             }
 
             if (moodText != null)
             {
-                moodText.text = $"Mood: {replanController.CurrentMood}";
+                moodText.text = $"Mood: {selectedReplanner.CurrentMood}";
             }
 
             if (emojiText != null)
             {
-                emojiText.text = replanController.CurrentEmoji;
+                emojiText.text = selectedReplanner.CurrentEmoji;
             }
         }
 
@@ -451,7 +528,7 @@ namespace AIFarm.Presentation
                 return;
             }
 
-            WorldEventLog events = bootstrap?.Events ?? replanController?.WorldEvents;
+            WorldEventLog events = bootstrap?.Events ?? SelectedReplanner?.WorldEvents;
             if (events == null || events.Entries.Count == 0)
             {
                 worldEventsText.text = "No world events yet.";
@@ -477,12 +554,13 @@ namespace AIFarm.Presentation
 
         private void RefreshMemoriesAndReflections()
         {
+            ReplanController selectedReplanner = SelectedReplanner;
             if (recentMemoriesText != null)
             {
-                IReadOnlyList<MemoryEntry> memories = replanController?.RecentMemories;
+                IReadOnlyList<MemoryEntry> memories = selectedReplanner?.RecentMemories;
                 if (memories == null || memories.Count == 0)
                 {
-                    recentMemoriesText.text = "芽芽还没有新的观察。";
+                    recentMemoriesText.text = $"{SelectedResidentDisplayName}还没有新的观察。";
                 }
                 else
                 {
@@ -502,7 +580,7 @@ namespace AIFarm.Presentation
 
             if (recentReflectionsText != null)
             {
-                MemoryStore memoryStore = replanController?.Memories;
+                MemoryStore memoryStore = selectedReplanner?.Memories;
                 IReadOnlyList<MemoryEntry> reflections =
                     memoryStore?.GetRecentReflections(3);
                 if (reflections == null || reflections.Count == 0)
@@ -520,6 +598,72 @@ namespace AIFarm.Presentation
                     }
 
                     recentReflectionsText.text = builder.ToString().TrimEnd();
+                }
+            }
+        }
+
+        private NpcPlanExecutor SelectedExecutor
+        {
+            get
+            {
+                EnsureResidentBindings();
+                executorsByResidentId.TryGetValue(
+                    SelectedResidentId,
+                    out NpcPlanExecutor selected);
+                return selected;
+            }
+        }
+
+        private ReplanController SelectedReplanner
+        {
+            get
+            {
+                EnsureResidentBindings();
+                replannersByResidentId.TryGetValue(
+                    SelectedResidentId,
+                    out ReplanController selected);
+                return selected;
+            }
+        }
+
+        private string SelectedResidentDisplayName
+        {
+            get
+            {
+                if (bootstrap?.ResidentRegistry != null &&
+                    bootstrap.ResidentRegistry.TryGetDefinition(
+                        SelectedResidentId,
+                        out ResidentDefinition definition).Succeeded)
+                {
+                    return definition.DisplayName;
+                }
+
+                return SelectedReplanner?.Persona?.Name ?? SelectedResidentId.Value;
+            }
+        }
+
+        private void EnsureResidentBindings()
+        {
+            if (!ResidentId.TryCreate(selectedResidentIdValue, out _))
+            {
+                selectedResidentIdValue = ResidentIds.YayaValue;
+            }
+
+            if (planExecutor != null)
+            {
+                ResidentId owner = planExecutor.ResidentId;
+                if (!executorsByResidentId.ContainsKey(owner))
+                {
+                    executorsByResidentId.Add(owner, planExecutor);
+                }
+            }
+
+            if (replanController != null)
+            {
+                ResidentId owner = replanController.ResidentId;
+                if (!replannersByResidentId.ContainsKey(owner))
+                {
+                    replannersByResidentId.Add(owner, replanController);
                 }
             }
         }

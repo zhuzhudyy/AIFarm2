@@ -1,3 +1,5 @@
+import logging
+
 import pytest
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
@@ -116,6 +118,47 @@ def test_interpret_command_returns_clear_validation_errors(
     assert body["code"] == "validation_error"
     assert body["message"] == "Request validation failed."
     assert any(detail["location"] == expected_location for detail in body["details"])
+
+
+def test_ai_request_and_response_logs_include_resident_id(
+    client: TestClient,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    with caplog.at_level(logging.INFO, logger="aifarm.ai_gateway"):
+        response = client.post(
+            "/v1/interpret-command",
+            json={
+                "resident_id": "resident-test-a",
+                "command": "把地种满胡萝卜并照顾到收获。",
+            },
+        )
+
+    assert response.status_code == 200
+    messages = [record.getMessage() for record in caplog.records]
+    assert any(
+        "ai_request resident_id=resident-test-a" in message
+        for message in messages
+    )
+    assert any(
+        "ai_response resident_id=resident-test-a" in message
+        for message in messages
+    )
+
+
+def test_ai_request_rejects_invalid_resident_id(client: TestClient) -> None:
+    response = client.post(
+        "/v1/interpret-command",
+        json={
+            "resident_id": "芽芽",
+            "command": "把地种满胡萝卜并照顾到收获。",
+        },
+    )
+
+    assert response.status_code == 422
+    assert any(
+        detail["location"] == "body.resident_id"
+        for detail in response.json()["error"]["details"]
+    )
 
 
 @pytest.mark.parametrize(

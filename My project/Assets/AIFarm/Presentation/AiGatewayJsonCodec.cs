@@ -15,14 +15,37 @@ namespace AIFarm.Presentation
 
         public static string SerializeInterpretCommandRequest(string command)
         {
-            return JsonUtility.ToJson(new InterpretCommandRequestDto(command));
+            return SerializeInterpretCommandRequest(ResidentIds.Yaya, command);
+        }
+
+        public static string SerializeInterpretCommandRequest(
+            ResidentId residentId,
+            string command)
+        {
+            EnsureResidentId(residentId);
+            return JsonUtility.ToJson(new InterpretCommandRequestDto(
+                residentId.Value,
+                command));
         }
 
         public static string SerializeGenerateUtteranceRequest(
             NpcExpressionTrigger trigger,
             string context)
         {
+            return SerializeGenerateUtteranceRequest(
+                ResidentIds.Yaya,
+                trigger,
+                context);
+        }
+
+        public static string SerializeGenerateUtteranceRequest(
+            ResidentId residentId,
+            NpcExpressionTrigger trigger,
+            string context)
+        {
+            EnsureResidentId(residentId);
             return JsonUtility.ToJson(new GenerateUtteranceRequestDto(
+                residentId.Value,
                 trigger.ToString(),
                 context));
         }
@@ -32,12 +55,27 @@ namespace AIFarm.Presentation
             NpcReflectionOutcome outcome,
             string eventSummary)
         {
+            return SerializeReflectRequest(
+                ResidentIds.Yaya,
+                goal,
+                outcome,
+                eventSummary);
+        }
+
+        public static string SerializeReflectRequest(
+            ResidentId residentId,
+            FarmGoalSpec goal,
+            NpcReflectionOutcome outcome,
+            string eventSummary)
+        {
+            EnsureResidentId(residentId);
             if (goal == null)
             {
                 throw new ArgumentNullException(nameof(goal));
             }
 
             return JsonUtility.ToJson(new ReflectRequestDto(
+                residentId.Value,
                 FarmGoalDto.FromGoal(goal),
                 outcome.ToString(),
                 eventSummary));
@@ -478,14 +516,30 @@ namespace AIFarm.Presentation
             return ActionResult.Failure(ActionFailureReason.InvalidResponse, message);
         }
 
+        private static void EnsureResidentId(ResidentId residentId)
+        {
+            if (!residentId.IsValid)
+            {
+                throw new ArgumentException(
+                    "AI gateway JSON requires a valid ResidentId.",
+                    nameof(residentId));
+            }
+        }
+
         [Serializable]
         private sealed class InterpretCommandRequestDto
         {
             [SerializeField]
+            private string resident_id;
+
+            [SerializeField]
             private string command;
 
-            public InterpretCommandRequestDto(string commandText)
+            public InterpretCommandRequestDto(
+                string residentId,
+                string commandText)
             {
+                resident_id = residentId;
                 command = commandText;
             }
         }
@@ -494,13 +548,20 @@ namespace AIFarm.Presentation
         private sealed class GenerateUtteranceRequestDto
         {
             [SerializeField]
+            private string resident_id;
+
+            [SerializeField]
             private string trigger;
 
             [SerializeField]
             private string context;
 
-            public GenerateUtteranceRequestDto(string triggerName, string boundedContext)
+            public GenerateUtteranceRequestDto(
+                string residentId,
+                string triggerName,
+                string boundedContext)
             {
+                resident_id = residentId;
                 trigger = triggerName;
                 context = boundedContext;
             }
@@ -509,6 +570,9 @@ namespace AIFarm.Presentation
         [Serializable]
         private sealed class ReflectRequestDto
         {
+            [SerializeField]
+            private string resident_id;
+
             [SerializeField]
             private FarmGoalDto goal;
 
@@ -519,10 +583,12 @@ namespace AIFarm.Presentation
             private string event_summary;
 
             public ReflectRequestDto(
+                string residentId,
                 FarmGoalDto farmGoal,
                 string reflectionOutcome,
                 string boundedEventSummary)
             {
+                resident_id = residentId;
                 goal = farmGoal;
                 outcome = reflectionOutcome;
                 event_summary = boundedEventSummary;

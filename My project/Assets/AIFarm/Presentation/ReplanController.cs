@@ -30,12 +30,12 @@ namespace AIFarm.Presentation
         private readonly HashSet<NpcExpressionTrigger> pendingExpressionTriggers =
             new HashSet<NpcExpressionTrigger>();
         private DeterministicFarmPlanner planner;
-        private FarmGoalSpec activeGoal;
         private NpcActionContext actionContext;
         private WorldEventLog eventLog;
         private NpcExpressionDirector expressionDirector;
         private ObservationService observationService;
-        private NpcRuntimeState runtimeState;
+        private ResidentRuntimeState runtimeState;
+        private ResidentRegistry residentRegistry;
         private ReflectionService reflectionService;
         private IAiGatewayClient aiGatewayClient;
         private DemoMode demoMode;
@@ -46,7 +46,7 @@ namespace AIFarm.Presentation
 
         public ReplanStatus Status { get; private set; } = ReplanStatus.Idle;
 
-        public FarmGoalSpec ActiveGoal => activeGoal;
+        public FarmGoalSpec ActiveGoal => runtimeState?.CurrentGoal;
 
         public bool IsGoalActive => Status == ReplanStatus.Running;
 
@@ -54,7 +54,12 @@ namespace AIFarm.Presentation
 
         public IReadOnlyCollection<int> HarvestedPlotNumbers => harvestedPlotNumbers;
 
-        public NpcRuntimeState RuntimeState => runtimeState;
+        public ResidentRuntimeState RuntimeState => runtimeState;
+
+        public ResidentId ResidentId =>
+            runtimeState?.ResidentId ?? executor?.ResidentId ?? ResidentIds.Yaya;
+
+        public ResidentRegistry ResidentRegistry => residentRegistry;
 
         public int ActiveCycleNumber => activeCycleNumber;
 
@@ -152,6 +157,7 @@ namespace AIFarm.Presentation
             }
 
             var context = new NpcActionContext(
+                executor == null ? ResidentIds.Yaya : executor.ResidentId,
                 bootstrap.Field,
                 bootstrap.Inventory,
                 bootstrap.Clock,
@@ -162,7 +168,12 @@ namespace AIFarm.Presentation
             {
                 IAiGatewayClient configuredClient = aiGatewayClient ??
                     CreateGatewayClient(bootstrap.SceneConfig);
-                return Initialize(context, executor, bootstrap.Mode, configuredClient);
+                return Initialize(
+                    context,
+                    executor,
+                    bootstrap.Mode,
+                    configuredClient,
+                    bootstrap.ResidentRegistry);
             }
             catch (ArgumentException exception)
             {
@@ -176,7 +187,8 @@ namespace AIFarm.Presentation
             NpcActionContext context,
             NpcPlanExecutor planExecutor,
             DemoMode demoMode,
-            IAiGatewayClient gatewayClient = null)
+            IAiGatewayClient gatewayClient = null,
+            ResidentRegistry registry = null)
         {
             if (IsInitialized)
             {
@@ -185,7 +197,8 @@ namespace AIFarm.Presentation
                     "ReplanController has already been initialized.");
             }
 
-            if (context == null || planExecutor == null || !planExecutor.IsInitialized || demoMode == null)
+            if (context == null || planExecutor == null || !planExecutor.IsInitialized ||
+                planExecutor.ResidentId != context.ResidentId || demoMode == null)
             {
                 return ActionResult.Failure(
                     ActionFailureReason.InvalidArgument,
@@ -197,8 +210,32 @@ namespace AIFarm.Presentation
             this.demoMode = demoMode;
             eventLog = context.EventLog ?? new WorldEventLog();
             aiGatewayClient = gatewayClient ?? aiGatewayClient ?? new LocalAiGatewayClient();
-            runtimeState = new NpcRuntimeState(NpcPersonaDefinition.Yaya);
-            observationService = new ObservationService();
+            residentRegistry = registry ?? new ResidentRegistry();
+            ActionResult resolved = residentRegistry.TryGetRuntimeState(
+                context.ResidentId,
+                out runtimeState);
+            if (resolved.Failed)
+            {
+                if (registry != null)
+                {
+                    return resolved;
+                }
+
+                ResidentDefinition definition = context.ResidentId == ResidentIds.Yaya
+                    ? ResidentDefinition.Yaya
+                    : new ResidentDefinition(
+                        context.ResidentId,
+                        context.ResidentId.Value,
+                        NpcPersonaDefinition.Yaya);
+                runtimeState = new ResidentRuntimeState(definition);
+                ActionResult registered = residentRegistry.Register(definition, runtimeState);
+                if (registered.Failed)
+                {
+                    return registered;
+                }
+            }
+
+            observationService = new ObservationService(runtimeState.ResidentId);
             reflectionService = new ReflectionService(runtimeState);
             observationService.CaptureNewObservations(
                 eventLog,
@@ -222,7 +259,7 @@ namespace AIFarm.Presentation
             FarmGoalSpec savedGoal,
             ReplanStatus savedStatus,
             IEnumerable<int> savedHarvestedPlotNumbers,
-            NpcRuntimeState savedRuntimeState,
+            ResidentRuntimeState savedRuntimeState,
             int savedActiveCycleNumber,
             string savedGoalText,
             string savedDecisionReason,
@@ -232,6 +269,7 @@ namespace AIFarm.Presentation
             string savedExpression)
         {
             if (!IsInitialized || savedRuntimeState == null ||
+                savedRuntimeState.ResidentId != ResidentId ||
                 savedHarvestedPlotNumbers == null ||
                 !Enum.IsDefined(typeof(ReplanStatus), savedStatus))
             {
@@ -266,14 +304,29 @@ namespace AIFarm.Presentation
             gatewayRequestPending = false;
             reflectionRequestPending = false;
             pendingExpressionTriggers.Clear();
+            ActionResult goalRestore = savedGoal == null
+                ? savedRuntimeState.ClearCurrentGoal()
+                : savedRuntimeState.SetCurrentGoal(savedGoal);
+            if (goalRestore.Failed)
+            {
+                return goalRestore;
+            }
+
+            ActionResult runtimeReplace = residentRegistry.ReplaceRuntimeState(
+                ResidentId,
+                savedRuntimeState);
+            if (runtimeReplace.Failed)
+            {
+                return runtimeReplace;
+            }
+
             runtimeState = savedRuntimeState;
-            observationService = new ObservationService();
+            observationService = new ObservationService(runtimeState.ResidentId);
             reflectionService = new ReflectionService(runtimeState);
             expressionDirector = new NpcExpressionDirector(
                 new LocalTemplateExpressionService(),
                 demoMode.ExpressionCooldownSeconds,
                 demoMode.ExpressionDisplaySeconds);
-            activeGoal = savedGoal;
             activeCycleNumber = savedActiveCycleNumber;
             harvestedPlotNumbers.Clear();
             foreach (int plotNumber in validatedHarvests)
@@ -324,10 +377,18 @@ namespace AIFarm.Presentation
             reflectionRequestPending = false;
             pendingExpressionTriggers.Clear();
             harvestedPlotNumbers.Clear();
-            activeGoal = null;
             activeCycleNumber = 0;
-            runtimeState = new NpcRuntimeState(NpcPersonaDefinition.Yaya);
-            observationService = new ObservationService();
+            var resetRuntimeState = new ResidentRuntimeState(runtimeState.Definition);
+            ActionResult runtimeReplace = residentRegistry.ReplaceRuntimeState(
+                ResidentId,
+                resetRuntimeState);
+            if (runtimeReplace.Failed)
+            {
+                return runtimeReplace;
+            }
+
+            runtimeState = resetRuntimeState;
+            observationService = new ObservationService(runtimeState.ResidentId);
             reflectionService = new ReflectionService(runtimeState);
             expressionDirector = new NpcExpressionDirector(
                 new LocalTemplateExpressionService(),
@@ -372,6 +433,7 @@ namespace AIFarm.Presentation
 
             AiGatewayResult<FarmGoalSpec> gatewayResult = null;
             IEnumerator request = aiGatewayClient.InterpretCommand(
+                ResidentId,
                 command,
                 result => gatewayResult = result);
             while (request.MoveNext())
@@ -411,7 +473,7 @@ namespace AIFarm.Presentation
                 return ActionResult.Success("Waiting for the current atomic action to complete.");
             }
 
-            ActionResult planned = planner.DecideNext(activeGoal, harvestedPlotNumbers, out FarmPlanDecision decision);
+            ActionResult planned = planner.DecideNext(ActiveGoal, harvestedPlotNumbers, out FarmPlanDecision decision);
             if (planned.Failed)
             {
                 return FailGoal(planned.Message, planned.FailureReason);
@@ -425,13 +487,13 @@ namespace AIFarm.Presentation
             if (decision.Kind == FarmPlanDecisionKind.GoalCompleted)
             {
                 Status = ReplanStatus.Completed;
-                CurrentGoalText = $"Completed: {activeGoal.Summary}";
+                CurrentGoalText = $"Completed: {ActiveGoal.Summary}";
                 fallbackExpressionText = "九块地都完成了，胡萝卜已经收好。";
                 RecordEvent(
                     WorldEventKind.GoalCompleted,
                     "九块目标土地已经全部收获，任务完成。");
                 string reflectionContext = reflectionService.BuildReflectionContext(
-                    activeGoal.Summary);
+                    ActiveGoal.Summary);
                 TriggerReflection(
                     NpcReflectionOutcome.Completed,
                     reflectionContext,
@@ -495,6 +557,7 @@ namespace AIFarm.Presentation
         {
             AiGatewayResult<FarmGoalSpec> gatewayResult = null;
             yield return aiGatewayClient.InterpretCommand(
+                ResidentId,
                 command,
                 result => gatewayResult = result);
             gatewayRequestPending = false;
@@ -517,6 +580,19 @@ namespace AIFarm.Presentation
                 return missing;
             }
 
+            if (gatewayResult.ResidentId != ResidentId)
+            {
+                ActionResult mismatch = ActionResult.Failure(
+                    ActionFailureReason.InvalidResponse,
+                    "AI gateway returned an interpretation for another resident.");
+                LastGatewaySubmissionResult = mismatch;
+                CurrentGoalText = "Rejected";
+                CurrentDecisionReason = mismatch.Message;
+                LastFailureReason = mismatch.Message;
+                Status = ReplanStatus.Idle;
+                return mismatch;
+            }
+
             LastGatewaySubmissionResult = gatewayResult.Outcome;
             if (gatewayResult.Failed)
             {
@@ -529,7 +605,16 @@ namespace AIFarm.Presentation
 
             FarmGoalSpec goal = gatewayResult.Value;
             harvestedPlotNumbers.Clear();
-            activeGoal = goal;
+            ActionResult goalAssigned = runtimeState.SetCurrentGoal(goal);
+            if (goalAssigned.Failed)
+            {
+                CurrentGoalText = "Rejected";
+                CurrentDecisionReason = goalAssigned.Message;
+                LastFailureReason = goalAssigned.Message;
+                Status = ReplanStatus.Idle;
+                return goalAssigned;
+            }
+
             activeCycleNumber = runtimeState.BeginCycle();
             Status = ReplanStatus.Running;
             CurrentGoalText = goal.Summary;
@@ -675,7 +760,7 @@ namespace AIFarm.Presentation
 
             reflectionRequestPending = true;
             StartCoroutine(RequestReflection(
-                activeGoal,
+                ActiveGoal,
                 outcome,
                 eventSummary,
                 trigger,
@@ -692,12 +777,14 @@ namespace AIFarm.Presentation
         {
             AiGatewayResult<NpcExpression> result = null;
             yield return aiGatewayClient.GenerateUtterance(
+                ResidentId,
                 trigger,
                 generationContext,
                 gatewayResult => result = gatewayResult);
             pendingExpressionTriggers.Remove(trigger);
 
-            if (result != null && result.Succeeded && result.Source == AiGatewayMode.Remote)
+            if (result != null && result.ResidentId == ResidentId &&
+                result.Succeeded && result.Source == AiGatewayMode.Remote)
             {
                 expressionDirector.Trigger(result.Value, UnityEngine.Time.unscaledTime, interrupt);
                 yield break;
@@ -720,6 +807,7 @@ namespace AIFarm.Presentation
         {
             AiGatewayResult<NpcReflection> result = null;
             yield return aiGatewayClient.Reflect(
+                ResidentId,
                 goal,
                 outcome,
                 eventSummary,
@@ -727,7 +815,8 @@ namespace AIFarm.Presentation
             pendingExpressionTriggers.Remove(trigger);
             reflectionRequestPending = false;
 
-            if (result != null && result.Succeeded && result.Source == AiGatewayMode.Remote)
+            if (result != null && result.ResidentId == ResidentId &&
+                result.Succeeded && result.Source == AiGatewayMode.Remote)
             {
                 ApplyCompletedReflection(result.Value, trigger, cycleNumber, interrupt);
                 yield break;
@@ -749,7 +838,7 @@ namespace AIFarm.Presentation
             bool interrupt)
         {
             ActionResult created = reflectionService.CreateLocalReflection(
-                activeGoal,
+                ActiveGoal,
                 outcome,
                 eventSummary,
                 out NpcReflection reflection);

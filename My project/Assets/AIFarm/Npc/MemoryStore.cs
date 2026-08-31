@@ -15,16 +15,31 @@ namespace AIFarm.Npc
         private long nextSequence = 1;
 
         public MemoryStore(int capacity = DefaultCapacity)
+            : this(ResidentIds.Yaya, capacity)
         {
+        }
+
+        public MemoryStore(ResidentId ownerResidentId, int capacity = DefaultCapacity)
+        {
+            if (!ownerResidentId.IsValid)
+            {
+                throw new ArgumentException(
+                    "A MemoryStore requires a valid owner ResidentId.",
+                    nameof(ownerResidentId));
+            }
+
             if (capacity <= 0)
             {
                 throw new ArgumentOutOfRangeException(nameof(capacity));
             }
 
+            OwnerResidentId = ownerResidentId;
             Capacity = capacity;
             entries = new List<MemoryEntry>(capacity);
             readOnlyEntries = new ReadOnlyCollection<MemoryEntry>(entries);
         }
+
+        public ResidentId OwnerResidentId { get; }
 
         public int Capacity { get; }
 
@@ -46,6 +61,29 @@ namespace AIFarm.Npc
                 out entry);
         }
 
+        public ActionResult AddObservation(
+            ResidentId residentId,
+            double gameSeconds,
+            string text,
+            int importance,
+            WorldEventKind sourceEventKind,
+            out MemoryEntry entry)
+        {
+            ActionResult access = ValidateOwner(residentId);
+            if (access.Failed)
+            {
+                entry = null;
+                return access;
+            }
+
+            return AddObservation(
+                gameSeconds,
+                text,
+                importance,
+                sourceEventKind,
+                out entry);
+        }
+
         public ActionResult AddReflection(
             double gameSeconds,
             string text,
@@ -60,9 +98,37 @@ namespace AIFarm.Npc
                 out entry);
         }
 
+        public ActionResult AddReflection(
+            ResidentId residentId,
+            double gameSeconds,
+            string text,
+            out MemoryEntry entry)
+        {
+            ActionResult access = ValidateOwner(residentId);
+            if (access.Failed)
+            {
+                entry = null;
+                return access;
+            }
+
+            return AddReflection(gameSeconds, text, out entry);
+        }
+
         public IReadOnlyList<MemoryEntry> GetRecent(int count)
         {
             return SelectRecent(count, null, minimumImportance: null);
+        }
+
+        public ActionResult GetRecent(
+            ResidentId requesterResidentId,
+            int count,
+            out IReadOnlyList<MemoryEntry> memories)
+        {
+            ActionResult access = ValidateOwner(requesterResidentId);
+            memories = access.Succeeded
+                ? GetRecent(count)
+                : Array.Empty<MemoryEntry>();
+            return access;
         }
 
         public IReadOnlyList<MemoryEntry> GetRecentObservations(int count)
@@ -127,6 +193,7 @@ namespace AIFarm.Npc
             foreach (MemoryEntry entry in savedEntries)
             {
                 if (entry == null ||
+                    entry.OwnerResidentId != OwnerResidentId ||
                     entry.Sequence <= previousSequence ||
                     entry.Sequence == long.MaxValue ||
                     entry.Text.Length > MaximumTextLength ||
@@ -196,6 +263,7 @@ namespace AIFarm.Npc
             }
 
             entry = new MemoryEntry(
+                OwnerResidentId,
                 nextSequence++,
                 gameSeconds,
                 kind,
@@ -250,6 +318,18 @@ namespace AIFarm.Npc
             }
 
             entries.RemoveAt(removalIndex);
+        }
+
+        private ActionResult ValidateOwner(ResidentId residentId)
+        {
+            if (!residentId.IsValid || residentId != OwnerResidentId)
+            {
+                return ActionResult.Failure(
+                    ActionFailureReason.InvalidArgument,
+                    $"MemoryStore '{OwnerResidentId}' cannot be accessed as '{residentId}'.");
+            }
+
+            return ActionResult.Success($"MemoryStore owner '{OwnerResidentId}' verified.");
         }
     }
 }

@@ -61,6 +61,30 @@ namespace AIFarm.Tests.EditMode
         }
 
         [Test]
+        public void RemoteClient_ExplicitResidentId_IsIncludedInRequestAndResult()
+        {
+            var residentId = new ResidentId("resident-test-a");
+            var transport = new FakeTransport(AiGatewayHttpResult.Success(200, ValidGoalJson));
+            var client = new RemoteAiGatewayClient(
+                "http://127.0.0.1:8000/",
+                requestTimeoutSeconds: 7,
+                gatewayTransport: transport);
+            AiGatewayResult<FarmGoalSpec> result = null;
+
+            RunCoroutine(client.InterpretCommand(
+                residentId,
+                SupportedCommand,
+                value => result = value));
+
+            Assert.That(result, Is.Not.Null);
+            Assert.That(result.Succeeded, Is.True, result.Outcome.Message);
+            Assert.That(result.ResidentId, Is.EqualTo(residentId));
+            Assert.That(
+                transport.LastJson,
+                Does.Contain("\"resident_id\":\"resident-test-a\""));
+        }
+
+        [Test]
         public void RemoteClient_TransportFailure_FallsBackToLocalInterpreter()
         {
             var transport = new FakeTransport(

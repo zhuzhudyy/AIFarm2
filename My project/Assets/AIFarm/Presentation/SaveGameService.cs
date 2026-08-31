@@ -13,6 +13,7 @@ namespace AIFarm.Presentation
     public sealed class SaveGameService
     {
         private const int MaximumActionCount = 128;
+        private const int MaximumResidentCount = 32;
         private const int MaximumUiTextLength = 512;
         private const float MaximumActionDurationSeconds = 600f;
 
@@ -23,6 +24,7 @@ namespace AIFarm.Presentation
         private readonly ISaveGameStorage storage;
         private readonly Vector3 initialNpcPosition;
         private readonly Quaternion initialNpcRotation;
+        private ResidentSaveData[] loadedResidents = Array.Empty<ResidentSaveData>();
 
         public SaveGameService(
             GameBootstrap gameBootstrap,
@@ -43,6 +45,8 @@ namespace AIFarm.Presentation
         public string SavePath => storage.SavePath;
 
         public bool LastLoadUsedSafeReplan { get; private set; }
+
+        public bool LastLoadMigratedLegacySave { get; private set; }
 
         public ActionResult Save()
         {
@@ -70,22 +74,20 @@ namespace AIFarm.Presentation
         public ActionResult Load()
         {
             LastLoadUsedSafeReplan = false;
+            LastLoadMigratedLegacySave = false;
             ActionResult read = storage.Read(out string json);
             if (read.Failed)
             {
                 return read;
             }
 
-            SaveData data;
-            try
+            ActionResult deserialized = SaveDataMigration.TryDeserializeAndMigrate(
+                json,
+                out SaveData data,
+                out bool migratedLegacySave);
+            if (deserialized.Failed)
             {
-                data = JsonUtility.FromJson<SaveData>(json);
-            }
-            catch (ArgumentException exception)
-            {
-                return ActionResult.Failure(
-                    ActionFailureReason.InvalidResponse,
-                    $"Save JSON is malformed: {exception.Message}");
+                return deserialized;
             }
 
             ActionResult planned = BuildRestorePlan(data, out RestorePlan restorePlan);
@@ -98,6 +100,8 @@ namespace AIFarm.Presentation
             if (applied.Succeeded)
             {
                 LastLoadUsedSafeReplan = restorePlan.ReplanStatus == ReplanStatus.Running;
+                LastLoadMigratedLegacySave = migratedLegacySave;
+                loadedResidents = data.residents;
             }
 
             return applied;
@@ -132,6 +136,8 @@ namespace AIFarm.Presentation
 
             npcTransform.SetPositionAndRotation(initialNpcPosition, initialNpcRotation);
             LastLoadUsedSafeReplan = false;
+            LastLoadMigratedLegacySave = false;
+            loadedResidents = Array.Empty<ResidentSaveData>();
             if (deleteSave)
             {
                 ActionResult deleted = storage.Delete();
@@ -154,7 +160,7 @@ namespace AIFarm.Presentation
                     "Save services require initialized game, executor, and replanner components.");
             }
 
-            NpcRuntimeState runtimeState = replanner.RuntimeState;
+            ResidentRuntimeState runtimeState = replanner.RuntimeState;
             if (runtimeState == null)
             {
                 return ActionResult.Failure(
@@ -178,14 +184,20 @@ namespace AIFarm.Presentation
                     water = bootstrap.Inventory.GetCount(InventoryItem.Water),
                     fertilizer = bootstrap.Inventory.GetCount(InventoryItem.Fertilizer),
                     carrots = bootstrap.Inventory.GetCount(InventoryItem.Carrot)
-                },
+                }
+            };
+
+            var residentSnapshot = new ResidentSaveData
+            {
+                residentId = replanner.ResidentId.Value,
+                displayName = runtimeState.Definition.DisplayName,
                 npc = CaptureNpc(),
                 hasFarmGoal = replanner.ActiveGoal != null,
                 farmGoal = CaptureGoal(replanner.ActiveGoal),
                 executor = new ExecutorSaveData(),
                 recentMemories = CaptureMemories(runtimeState.Memories.Entries),
                 recentReflections = CaptureReflections(runtimeState.RecentReflections),
-                npcRuntime = new NpcRuntimeSaveData
+                runtime = new NpcRuntimeSaveData
                 {
                     startedCycleCount = runtimeState.StartedCycleCount,
                     currentCycleNumber = runtimeState.CurrentCycleNumber,
@@ -237,12 +249,12 @@ namespace AIFarm.Presentation
                     return currentActionResult;
                 }
 
-                snapshot.executor.hasCurrentAction = true;
-                snapshot.executor.currentAction = currentAction;
+                residentSnapshot.executor.hasCurrentAction = true;
+                residentSnapshot.executor.currentAction = currentAction;
             }
 
             IReadOnlyList<INpcAction> pendingActions = executor.PendingActions;
-            snapshot.executor.remainingActions = new NpcActionSaveData[pendingActions.Count];
+            residentSnapshot.executor.remainingActions = new NpcActionSaveData[pendingActions.Count];
             for (int index = 0; index < pendingActions.Count; index++)
             {
                 ActionResult actionResult = CaptureAction(
@@ -253,8 +265,10 @@ namespace AIFarm.Presentation
                     return actionResult;
                 }
 
-                snapshot.executor.remainingActions[index] = actionData;
+                residentSnapshot.executor.remainingActions[index] = actionData;
             }
+
+            snapshot.residents = MergeResidentSnapshots(residentSnapshot);
 
             data = snapshot;
             return ActionResult.Success("Versioned game state captured.");
@@ -317,6 +331,7 @@ namespace AIFarm.Presentation
                 MemoryEntry memory = memories[index];
                 result[index] = new MemorySaveData
                 {
+                    ownerResidentId = memory.OwnerResidentId.Value,
                     sequence = memory.Sequence,
                     gameSeconds = memory.GameSeconds,
                     kind = (int)memory.Kind,
@@ -352,6 +367,152 @@ namespace AIFarm.Presentation
             return result;
         }
 
+        private ResidentSaveData[] MergeResidentSnapshots(
+            ResidentSaveData activeResident)
+        {
+            var merged = new List<ResidentSaveData>();
+            bool replaced = false;
+            foreach (ResidentSaveData loadedResident in loadedResidents)
+            {
+                if (loadedResident == null)
+                {
+                    continue;
+                }
+
+                if (loadedResident.residentId == activeResident.residentId)
+                {
+                    if (!replaced)
+                    {
+                        merged.Add(activeResident);
+                        replaced = true;
+                    }
+
+                    continue;
+                }
+
+                merged.Add(loadedResident);
+            }
+
+            if (!replaced)
+            {
+                merged.Add(activeResident);
+            }
+
+            merged.Sort((left, right) => string.Compare(
+                left.residentId,
+                right.residentId,
+                StringComparison.Ordinal));
+            return merged.ToArray();
+        }
+
+        private static ActionResult TrySelectResident(
+            ResidentSaveData[] residents,
+            ResidentId selectedResidentId,
+            out ResidentSaveData selectedResident)
+        {
+            selectedResident = null;
+            if (residents == null || residents.Length == 0 ||
+                residents.Length > MaximumResidentCount)
+            {
+                return InvalidSave(
+                    $"Save must contain 1-{MaximumResidentCount} resident records.");
+            }
+
+            var residentIds = new HashSet<ResidentId>();
+            foreach (ResidentSaveData resident in residents)
+            {
+                if (resident == null ||
+                    !ResidentId.TryCreate(resident.residentId, out ResidentId residentId) ||
+                    !residentIds.Add(residentId) ||
+                    !IsBoundedRequired(resident.displayName, 100) ||
+                    resident.npc == null || resident.farmGoal == null ||
+                    resident.executor == null || resident.executor.currentAction == null ||
+                    resident.executor.remainingActions == null ||
+                    resident.recentMemories == null || resident.recentReflections == null ||
+                    resident.runtime == null || resident.runtime.reflectedCycleNumbers == null)
+                {
+                    return InvalidSave(
+                        "Saved resident records contain a missing, invalid, or duplicate ResidentId.");
+                }
+
+                foreach (MemorySaveData memory in resident.recentMemories)
+                {
+                    if (memory == null || memory.ownerResidentId != residentId.Value)
+                    {
+                        return InvalidSave(
+                            $"Saved memory owner does not match ResidentId '{residentId}'.");
+                    }
+                }
+
+                ActionResult residentValidation = ValidateResidentRecord(
+                    resident,
+                    residentId);
+                if (residentValidation.Failed)
+                {
+                    return residentValidation;
+                }
+
+                if (residentId == selectedResidentId)
+                {
+                    selectedResident = resident;
+                }
+            }
+
+            return selectedResident == null
+                ? InvalidSave(
+                    $"Save does not contain the active ResidentId '{selectedResidentId}'.")
+                : ActionResult.Success(
+                    $"Selected saved resident '{selectedResidentId}'.");
+        }
+
+        private static ActionResult ValidateResidentRecord(
+            ResidentSaveData resident,
+            ResidentId residentId)
+        {
+            ActionResult npcResult = ValidateNpc(resident.npc, out _, out _);
+            if (npcResult.Failed)
+            {
+                return npcResult;
+            }
+
+            ActionResult goalResult = RestoreGoal(resident, out FarmGoalSpec goal);
+            if (goalResult.Failed)
+            {
+                return goalResult;
+            }
+
+            ActionResult actionsResult = RestoreActions(
+                resident.executor,
+                out _,
+                out _);
+            if (actionsResult.Failed)
+            {
+                return actionsResult;
+            }
+
+            ActionResult runtimeResult = RestoreResidentRuntime(
+                resident,
+                residentId,
+                out ResidentRuntimeState runtimeState);
+            if (runtimeResult.Failed)
+            {
+                return runtimeResult;
+            }
+
+            var replanStatus = (ReplanStatus)resident.npc.replanStatus;
+            if ((replanStatus == ReplanStatus.Idle && resident.hasFarmGoal) ||
+                (replanStatus != ReplanStatus.Idle && !resident.hasFarmGoal) ||
+                resident.npc.activeCycleNumber < 0 ||
+                resident.npc.activeCycleNumber > runtimeState.StartedCycleCount ||
+                (goal != null && resident.npc.activeCycleNumber == 0))
+            {
+                return InvalidSave(
+                    $"Saved resident '{residentId}' has inconsistent goal and cycle state.");
+            }
+
+            return ActionResult.Success($"Saved resident '{residentId}' validated.");
+        }
+
         private ActionResult BuildRestorePlan(SaveData data, out RestorePlan restorePlan)
         {
             restorePlan = null;
@@ -374,11 +535,18 @@ namespace AIFarm.Presentation
             }
 
             if (data.clock == null || data.inventory == null || data.simulation == null ||
-                data.npc == null || data.farmGoal == null || data.executor == null ||
-                data.npcRuntime == null || data.plots == null ||
-                data.recentMemories == null || data.recentReflections == null)
+                data.plots == null || data.residents == null)
             {
                 return InvalidSave("Save data is missing a required section.");
+            }
+
+            ActionResult selectedResult = TrySelectResident(
+                data.residents,
+                replanner.ResidentId,
+                out ResidentSaveData residentData);
+            if (selectedResult.Failed)
+            {
+                return selectedResult;
             }
 
             var validationClock = new GameClock();
@@ -444,20 +612,23 @@ namespace AIFarm.Presentation
                 return InvalidSave(simulationResult.Message);
             }
 
-            ActionResult npcResult = ValidateNpc(data.npc, out Vector3 position, out Quaternion rotation);
+            ActionResult npcResult = ValidateNpc(
+                residentData.npc,
+                out Vector3 position,
+                out Quaternion rotation);
             if (npcResult.Failed)
             {
                 return npcResult;
             }
 
-            ActionResult goalResult = RestoreGoal(data, out FarmGoalSpec goal);
+            ActionResult goalResult = RestoreGoal(residentData, out FarmGoalSpec goal);
             if (goalResult.Failed)
             {
                 return goalResult;
             }
 
             ActionResult actionResult = RestoreActions(
-                data.executor,
+                residentData.executor,
                 out INpcAction currentAction,
                 out List<INpcAction> remainingActions);
             if (actionResult.Failed)
@@ -465,24 +636,28 @@ namespace AIFarm.Presentation
                 return actionResult;
             }
 
-            ActionResult runtimeResult = RestoreNpcRuntime(data, out NpcRuntimeState runtimeState);
+            ActionResult runtimeResult = RestoreResidentRuntime(
+                residentData,
+                replanner.ResidentId,
+                out ResidentRuntimeState runtimeState);
             if (runtimeResult.Failed)
             {
                 return runtimeResult;
             }
 
-            var replanStatus = (ReplanStatus)data.npc.replanStatus;
-            if ((replanStatus == ReplanStatus.Idle && data.hasFarmGoal) ||
-                (replanStatus != ReplanStatus.Idle && !data.hasFarmGoal) ||
-                data.npc.activeCycleNumber < 0 ||
-                data.npc.activeCycleNumber > runtimeState.StartedCycleCount ||
-                (data.hasFarmGoal && data.npc.activeCycleNumber == 0))
+            var replanStatus = (ReplanStatus)residentData.npc.replanStatus;
+            if ((replanStatus == ReplanStatus.Idle && residentData.hasFarmGoal) ||
+                (replanStatus != ReplanStatus.Idle && !residentData.hasFarmGoal) ||
+                residentData.npc.activeCycleNumber < 0 ||
+                residentData.npc.activeCycleNumber > runtimeState.StartedCycleCount ||
+                (residentData.hasFarmGoal && residentData.npc.activeCycleNumber == 0))
             {
                 return InvalidSave("Saved goal, replanning status, and NPC cycle are inconsistent.");
             }
 
             restorePlan = new RestorePlan(
                 data,
+                residentData,
                 position,
                 rotation,
                 goal,
@@ -551,7 +726,9 @@ namespace AIFarm.Presentation
             return ActionResult.Success("Saved NPC transform validated.");
         }
 
-        private static ActionResult RestoreGoal(SaveData data, out FarmGoalSpec goal)
+        private static ActionResult RestoreGoal(
+            ResidentSaveData data,
+            out FarmGoalSpec goal)
         {
             goal = null;
             if (!data.hasFarmGoal)
@@ -666,14 +843,15 @@ namespace AIFarm.Presentation
             return ActionResult.Success("Saved NPC action restored.");
         }
 
-        private static ActionResult RestoreNpcRuntime(
-            SaveData data,
-            out NpcRuntimeState runtimeState)
+        private static ActionResult RestoreResidentRuntime(
+            ResidentSaveData data,
+            ResidentId residentId,
+            out ResidentRuntimeState runtimeState)
         {
             runtimeState = null;
             if (data.recentMemories.Length > MemoryStore.DefaultCapacity ||
-                data.recentReflections.Length > NpcRuntimeState.ReflectionHistoryCapacity ||
-                data.npcRuntime.reflectedCycleNumbers == null)
+                data.recentReflections.Length > ResidentRuntimeState.ReflectionHistoryCapacity ||
+                data.runtime.reflectedCycleNumbers == null)
             {
                 return InvalidSave("Saved NPC memory or reflection history exceeds its limit.");
             }
@@ -684,6 +862,7 @@ namespace AIFarm.Presentation
                 foreach (MemorySaveData memoryData in data.recentMemories)
                 {
                     if (memoryData == null ||
+                        memoryData.ownerResidentId != residentId.Value ||
                         !Enum.IsDefined(typeof(MemoryEntryKind), memoryData.kind) ||
                         !IsBoundedRequired(memoryData.text, MemoryStore.MaximumTextLength) ||
                         (memoryData.hasSourceEventKind &&
@@ -693,6 +872,7 @@ namespace AIFarm.Presentation
                     }
 
                     memories.Add(new MemoryEntry(
+                        residentId,
                         memoryData.sequence,
                         memoryData.gameSeconds,
                         (MemoryEntryKind)memoryData.kind,
@@ -709,7 +889,7 @@ namespace AIFarm.Presentation
                 return InvalidSave($"Saved NPC memory is invalid: {exception.Message}");
             }
 
-            var memoryStore = new MemoryStore();
+            var memoryStore = new MemoryStore(residentId);
             ActionResult memoryResult = memoryStore.Restore(memories);
             if (memoryResult.Failed)
             {
@@ -737,14 +917,20 @@ namespace AIFarm.Presentation
                     reflectionData.text));
             }
 
-            var restoredRuntime = new NpcRuntimeState(
-                NpcPersonaDefinition.Yaya,
+            ResidentDefinition definition = residentId == ResidentIds.Yaya
+                ? ResidentDefinition.Yaya
+                : new ResidentDefinition(
+                    residentId,
+                    data.displayName,
+                    NpcPersonaDefinition.Yaya);
+            var restoredRuntime = new ResidentRuntimeState(
+                definition,
                 memoryStore);
             ActionResult runtimeResult = restoredRuntime.Restore(
-                data.npcRuntime.startedCycleCount,
-                data.npcRuntime.currentCycleNumber,
-                data.npcRuntime.completedCycleCount,
-                data.npcRuntime.reflectedCycleNumbers,
+                data.runtime.startedCycleCount,
+                data.runtime.currentCycleNumber,
+                data.runtime.completedCycleCount,
+                data.runtime.reflectedCycleNumbers,
                 reflections);
             if (runtimeResult.Failed)
             {
@@ -815,7 +1001,7 @@ namespace AIFarm.Presentation
             }
 
             npcTransform.SetPositionAndRotation(plan.NpcPosition, plan.NpcRotation);
-            NpcSaveData npc = plan.Data.npc;
+            NpcSaveData npc = plan.ResidentData.npc;
             ActionResult replanResult = replanner.RestoreFromSave(
                 plan.Goal,
                 plan.ReplanStatus,
@@ -841,8 +1027,8 @@ namespace AIFarm.Presentation
                     : ActionResult.Success("Game loaded; unfinished FarmGoalSpec safely replanned.");
             }
 
-            if (!plan.Data.hasFarmGoal &&
-                (NpcExecutionStatus)plan.Data.npc.executorStatus != NpcExecutionStatus.Failed)
+            if (!plan.ResidentData.hasFarmGoal &&
+                (NpcExecutionStatus)plan.ResidentData.npc.executorStatus != NpcExecutionStatus.Failed)
             {
                 var restartedActions = new List<INpcAction>();
                 if (plan.CurrentAction != null)
@@ -973,15 +1159,17 @@ namespace AIFarm.Presentation
         {
             public RestorePlan(
                 SaveData data,
+                ResidentSaveData residentData,
                 Vector3 npcPosition,
                 Quaternion npcRotation,
                 FarmGoalSpec goal,
                 INpcAction currentAction,
                 List<INpcAction> remainingActions,
-                NpcRuntimeState runtimeState,
+                ResidentRuntimeState runtimeState,
                 ReplanStatus replanStatus)
             {
                 Data = data;
+                ResidentData = residentData;
                 NpcPosition = npcPosition;
                 NpcRotation = npcRotation;
                 Goal = goal;
@@ -993,6 +1181,8 @@ namespace AIFarm.Presentation
 
             public SaveData Data { get; }
 
+            public ResidentSaveData ResidentData { get; }
+
             public Vector3 NpcPosition { get; }
 
             public Quaternion NpcRotation { get; }
@@ -1003,7 +1193,7 @@ namespace AIFarm.Presentation
 
             public List<INpcAction> RemainingActions { get; }
 
-            public NpcRuntimeState RuntimeState { get; }
+            public ResidentRuntimeState RuntimeState { get; }
 
             public ReplanStatus ReplanStatus { get; }
         }

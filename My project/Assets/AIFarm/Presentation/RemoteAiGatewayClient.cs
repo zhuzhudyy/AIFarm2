@@ -43,20 +43,30 @@ namespace AIFarm.Presentation
             string command,
             Action<AiGatewayResult<FarmGoalSpec>> completed)
         {
+            return InterpretCommand(ResidentIds.Yaya, command, completed);
+        }
+
+        public IEnumerator InterpretCommand(
+            ResidentId residentId,
+            string command,
+            Action<AiGatewayResult<FarmGoalSpec>> completed)
+        {
+            EnsureResidentId(residentId);
             EnsureCallback(completed);
             string boundedCommand = (command ?? string.Empty).Trim();
             if (boundedCommand.Length == 0 ||
                 boundedCommand.Length > AiGatewayJsonCodec.MaximumCommandLength)
             {
                 LastRemoteFailure = "Command is outside the remote gateway bounds.";
-                yield return CompleteLocalInterpretation(command, completed);
+                yield return CompleteLocalInterpretation(residentId, command, completed);
                 yield break;
             }
 
             AiGatewayHttpResult httpResult = null;
+            LogRequest(residentId, "interpret-command");
             yield return transport.PostJson(
                 Endpoint("/v1/interpret-command"),
-                AiGatewayJsonCodec.SerializeInterpretCommandRequest(boundedCommand),
+                AiGatewayJsonCodec.SerializeInterpretCommandRequest(residentId, boundedCommand),
                 timeoutSeconds,
                 result => httpResult = result);
 
@@ -70,6 +80,7 @@ namespace AIFarm.Presentation
                 {
                     CompleteRemote(
                         AiGatewayResult<FarmGoalSpec>.Success(
+                            residentId,
                             goal,
                             AiGatewayMode.Remote,
                             parsed.Message),
@@ -84,7 +95,7 @@ namespace AIFarm.Presentation
                 LastRemoteFailure = transportOutcome.Message;
             }
 
-            yield return CompleteLocalInterpretation(command, completed);
+            yield return CompleteLocalInterpretation(residentId, command, completed);
         }
 
         public IEnumerator GenerateUtterance(
@@ -92,14 +103,26 @@ namespace AIFarm.Presentation
             string context,
             Action<AiGatewayResult<NpcExpression>> completed)
         {
+            return GenerateUtterance(ResidentIds.Yaya, trigger, context, completed);
+        }
+
+        public IEnumerator GenerateUtterance(
+            ResidentId residentId,
+            NpcExpressionTrigger trigger,
+            string context,
+            Action<AiGatewayResult<NpcExpression>> completed)
+        {
+            EnsureResidentId(residentId);
             EnsureCallback(completed);
             string boundedContext = AiGatewayJsonCodec.BoundText(
                 context,
                 AiGatewayJsonCodec.MaximumContextLength);
             AiGatewayHttpResult httpResult = null;
+            LogRequest(residentId, "generate-utterance");
             yield return transport.PostJson(
                 Endpoint("/v1/generate-utterance"),
                 AiGatewayJsonCodec.SerializeGenerateUtteranceRequest(
+                    residentId,
                     trigger,
                     boundedContext),
                 timeoutSeconds,
@@ -116,6 +139,7 @@ namespace AIFarm.Presentation
                 {
                     CompleteRemote(
                         AiGatewayResult<NpcExpression>.Success(
+                            residentId,
                             expression,
                             AiGatewayMode.Remote,
                             parsed.Message),
@@ -132,10 +156,11 @@ namespace AIFarm.Presentation
 
             AiGatewayResult<NpcExpression> fallbackResult = null;
             yield return fallback.GenerateUtterance(
+                residentId,
                 trigger,
                 context,
                 result => fallbackResult = result);
-            CompleteLocal(fallbackResult, completed);
+            CompleteLocal(residentId, fallbackResult, completed);
         }
 
         public IEnumerator Reflect(
@@ -144,11 +169,28 @@ namespace AIFarm.Presentation
             string eventSummary,
             Action<AiGatewayResult<NpcReflection>> completed)
         {
+            return Reflect(
+                ResidentIds.Yaya,
+                goal,
+                outcome,
+                eventSummary,
+                completed);
+        }
+
+        public IEnumerator Reflect(
+            ResidentId residentId,
+            FarmGoalSpec goal,
+            NpcReflectionOutcome outcome,
+            string eventSummary,
+            Action<AiGatewayResult<NpcReflection>> completed)
+        {
+            EnsureResidentId(residentId);
             EnsureCallback(completed);
             if (goal == null)
             {
                 LastRemoteFailure = "Reflection requires a farm goal.";
                 yield return CompleteLocalReflection(
+                    residentId,
                     goal,
                     outcome,
                     eventSummary,
@@ -163,6 +205,7 @@ namespace AIFarm.Presentation
             {
                 LastRemoteFailure = "Reflection event summary cannot be empty.";
                 yield return CompleteLocalReflection(
+                    residentId,
                     goal,
                     outcome,
                     eventSummary,
@@ -171,9 +214,11 @@ namespace AIFarm.Presentation
             }
 
             AiGatewayHttpResult httpResult = null;
+            LogRequest(residentId, "reflect");
             yield return transport.PostJson(
                 Endpoint("/v1/reflect"),
                 AiGatewayJsonCodec.SerializeReflectRequest(
+                    residentId,
                     goal,
                     outcome,
                     boundedSummary),
@@ -192,6 +237,7 @@ namespace AIFarm.Presentation
                 {
                     CompleteRemote(
                         AiGatewayResult<NpcReflection>.Success(
+                            residentId,
                             reflection,
                             AiGatewayMode.Remote,
                             parsed.Message),
@@ -207,6 +253,7 @@ namespace AIFarm.Presentation
             }
 
             yield return CompleteLocalReflection(
+                residentId,
                 goal,
                 outcome,
                 eventSummary,
@@ -214,17 +261,20 @@ namespace AIFarm.Presentation
         }
 
         private IEnumerator CompleteLocalInterpretation(
+            ResidentId residentId,
             string command,
             Action<AiGatewayResult<FarmGoalSpec>> completed)
         {
             AiGatewayResult<FarmGoalSpec> fallbackResult = null;
             yield return fallback.InterpretCommand(
+                residentId,
                 command,
                 result => fallbackResult = result);
-            CompleteLocal(fallbackResult, completed);
+            CompleteLocal(residentId, fallbackResult, completed);
         }
 
         private IEnumerator CompleteLocalReflection(
+            ResidentId residentId,
             FarmGoalSpec goal,
             NpcReflectionOutcome outcome,
             string eventSummary,
@@ -232,11 +282,12 @@ namespace AIFarm.Presentation
         {
             AiGatewayResult<NpcReflection> fallbackResult = null;
             yield return fallback.Reflect(
+                residentId,
                 goal,
                 outcome,
                 eventSummary,
                 result => fallbackResult = result);
-            CompleteLocal(fallbackResult, completed);
+            CompleteLocal(residentId, fallbackResult, completed);
         }
 
         private void CompleteRemote<T>(
@@ -246,10 +297,12 @@ namespace AIFarm.Presentation
         {
             ActiveMode = AiGatewayMode.Remote;
             LastRemoteFailure = string.Empty;
+            LogResponse(result.ResidentId, result.Source, result.Succeeded);
             completed(result);
         }
 
         private void CompleteLocal<T>(
+            ResidentId residentId,
             AiGatewayResult<T> result,
             Action<AiGatewayResult<T>> completed)
             where T : class
@@ -258,6 +311,7 @@ namespace AIFarm.Presentation
             if (result == null)
             {
                 completed(AiGatewayResult<T>.Failure(
+                    residentId,
                     ActionResult.Failure(
                         ActionFailureReason.ServiceUnavailable,
                         "The local AI fallback did not return a result."),
@@ -265,6 +319,18 @@ namespace AIFarm.Presentation
                 return;
             }
 
+            if (result.ResidentId != residentId)
+            {
+                completed(AiGatewayResult<T>.Failure(
+                    residentId,
+                    ActionResult.Failure(
+                        ActionFailureReason.InvalidResponse,
+                        "The local AI fallback returned a result for another resident."),
+                    AiGatewayMode.Local));
+                return;
+            }
+
+            LogResponse(result.ResidentId, result.Source, result.Succeeded);
             completed(result);
         }
 
@@ -327,6 +393,31 @@ namespace AIFarm.Presentation
             {
                 throw new ArgumentNullException(nameof(completed));
             }
+        }
+
+        private static void EnsureResidentId(ResidentId residentId)
+        {
+            if (!residentId.IsValid)
+            {
+                throw new ArgumentException(
+                    "AI gateway requests require a valid ResidentId.",
+                    nameof(residentId));
+            }
+        }
+
+        private static void LogRequest(ResidentId residentId, string operation)
+        {
+            UnityEngine.Debug.Log(
+                $"AI request residentId={residentId} operation={operation}");
+        }
+
+        private static void LogResponse(
+            ResidentId residentId,
+            AiGatewayMode source,
+            bool succeeded)
+        {
+            UnityEngine.Debug.Log(
+                $"AI response residentId={residentId} source={source} succeeded={succeeded}");
         }
     }
 }

@@ -1,4 +1,5 @@
 import os
+import logging
 from collections.abc import Sequence
 
 from fastapi import FastAPI, Request
@@ -20,6 +21,9 @@ from app.schemas import (
     ReflectionSpec,
     UtteranceSpec,
 )
+
+
+logger = logging.getLogger("aifarm.ai_gateway")
 
 
 def _validation_details(errors: Sequence[dict]) -> list[dict[str, str]]:
@@ -100,15 +104,45 @@ def create_app(provider: FarmProvider | None = None) -> FastAPI:
 
     @application.post("/v1/interpret-command", response_model=FarmGoalSpec)
     def interpret_command(request: InterpretCommandRequest) -> FarmGoalSpec:
-        return gateway.interpret_command(request.command)
+        logger.info(
+            "ai_request resident_id=%s operation=interpret-command",
+            request.resident_id,
+        )
+        response = gateway.interpret_command(request.command)
+        logger.info(
+            "ai_response resident_id=%s operation=interpret-command provider=%s",
+            request.resident_id,
+            gateway.name,
+        )
+        return response
 
     @application.post("/v1/generate-utterance", response_model=UtteranceSpec)
     def generate_utterance(request: GenerateUtteranceRequest) -> UtteranceSpec:
-        return gateway.generate_utterance(request)
+        logger.info(
+            "ai_request resident_id=%s operation=generate-utterance",
+            request.resident_id,
+        )
+        response = gateway.generate_utterance(request)
+        logger.info(
+            "ai_response resident_id=%s operation=generate-utterance provider=%s",
+            request.resident_id,
+            gateway.name,
+        )
+        return response
 
     @application.post("/v1/reflect", response_model=ReflectionSpec)
     def reflect(request: ReflectRequest) -> ReflectionSpec:
-        return gateway.reflect(request)
+        logger.info(
+            "ai_request resident_id=%s operation=reflect",
+            request.resident_id,
+        )
+        response = gateway.reflect(request)
+        logger.info(
+            "ai_response resident_id=%s operation=reflect provider=%s",
+            request.resident_id,
+            gateway.name,
+        )
+        return response
 
     return application
 

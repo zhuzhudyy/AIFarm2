@@ -5,6 +5,25 @@ namespace AIFarm.Npc
 {
     public sealed class ObservationService
     {
+        public ObservationService()
+            : this(ResidentIds.Yaya)
+        {
+        }
+
+        public ObservationService(ResidentId ownerResidentId)
+        {
+            if (!ownerResidentId.IsValid)
+            {
+                throw new ArgumentException(
+                    "ObservationService requires a valid owner ResidentId.",
+                    nameof(ownerResidentId));
+            }
+
+            OwnerResidentId = ownerResidentId;
+        }
+
+        public ResidentId OwnerResidentId { get; }
+
         public long LastObservedWorldEventSequence { get; private set; }
 
         public ActionResult CaptureNewObservations(
@@ -13,7 +32,8 @@ namespace AIFarm.Npc
             out int capturedCount)
         {
             capturedCount = 0;
-            if (eventLog == null || memoryStore == null)
+            if (eventLog == null || memoryStore == null ||
+                memoryStore.OwnerResidentId != OwnerResidentId)
             {
                 return ActionResult.Failure(
                     ActionFailureReason.InvalidArgument,
@@ -45,7 +65,7 @@ namespace AIFarm.Npc
             out MemoryEntry memory)
         {
             memory = null;
-            if (memoryStore == null)
+            if (memoryStore == null || memoryStore.OwnerResidentId != OwnerResidentId)
             {
                 return ActionResult.Failure(
                     ActionFailureReason.InvalidArgument,

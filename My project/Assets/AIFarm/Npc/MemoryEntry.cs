@@ -16,6 +16,7 @@ namespace AIFarm.Npc
         public const int HighImportanceThreshold = 7;
 
         public MemoryEntry(
+            ResidentId ownerResidentId,
             long sequence,
             double gameSeconds,
             MemoryEntryKind kind,
@@ -23,6 +24,11 @@ namespace AIFarm.Npc
             int importance,
             WorldEventKind? sourceEventKind = null)
         {
+            if (!ownerResidentId.IsValid)
+            {
+                throw new ArgumentException("A memory entry requires a valid owner ResidentId.", nameof(ownerResidentId));
+            }
+
             if (sequence <= 0)
             {
                 throw new ArgumentOutOfRangeException(nameof(sequence));
@@ -43,6 +49,7 @@ namespace AIFarm.Npc
                 throw new ArgumentOutOfRangeException(nameof(importance));
             }
 
+            OwnerResidentId = ownerResidentId;
             Sequence = sequence;
             GameSeconds = gameSeconds;
             Kind = kind;
@@ -50,6 +57,26 @@ namespace AIFarm.Npc
             Importance = importance;
             SourceEventKind = sourceEventKind;
         }
+
+        public MemoryEntry(
+            long sequence,
+            double gameSeconds,
+            MemoryEntryKind kind,
+            string text,
+            int importance,
+            WorldEventKind? sourceEventKind = null)
+            : this(
+                ResidentIds.Yaya,
+                sequence,
+                gameSeconds,
+                kind,
+                text,
+                importance,
+                sourceEventKind)
+        {
+        }
+
+        public ResidentId OwnerResidentId { get; }
 
         public long Sequence { get; }
 
