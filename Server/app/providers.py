@@ -10,7 +10,7 @@ from uuid import uuid4
 from openai import OpenAI, OpenAIError
 from pydantic import BaseModel, ValidationError
 
-from Server.app.schemas import (
+from app.schemas import (
     FarmGoalSpec,
     GenerateUtteranceRequest,
     NpcExpressionTrigger,

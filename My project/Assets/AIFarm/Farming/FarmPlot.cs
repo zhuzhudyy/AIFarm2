@@ -195,6 +195,13 @@ namespace AIFarm.Farming
                     "Only a growing crop can be fertilized.");
             }
 
+            if (WaterLevel < RequiredWaterLevel)
+            {
+                return ActionResult.Failure(
+                    ActionFailureReason.InvalidState,
+                    "A crop must be watered before it can be fertilized.");
+            }
+
             if (IsFertilized)
             {
                 return ActionResult.Failure(

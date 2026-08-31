@@ -72,6 +72,7 @@ namespace AIFarm.Tests.PlayMode
 
             FarmPlot plot = bootstrap.Field.GetPlot(1);
             Assert.That(plot.Sow(bootstrap.Inventory).Succeeded, Is.True);
+            Assert.That(plot.Water(bootstrap.Inventory).Succeeded, Is.True);
             Assert.That(plot.Fertilize(bootstrap.Inventory).Succeeded, Is.True);
             Assert.That(plot.IntroduceWeeds().Succeeded, Is.True);
 

@@ -73,16 +73,16 @@ namespace AIFarm.Tests.EditMode
                 Assert.That(field.GetPlot(plotNumber).Sow(inventory).Succeeded, Is.True);
             }
 
-            AssertNext<FertilizeAction>(planner, goal, harvested, 1);
-            for (int plotNumber = 1; plotNumber <= FarmField.PlotCount; plotNumber++)
-            {
-                Assert.That(field.GetPlot(plotNumber).Fertilize(inventory).Succeeded, Is.True);
-            }
-
             AssertNext<WaterAction>(planner, goal, harvested, 1);
             for (int plotNumber = 1; plotNumber <= FarmField.PlotCount; plotNumber++)
             {
                 Assert.That(field.GetPlot(plotNumber).Water(inventory).Succeeded, Is.True);
+            }
+
+            AssertNext<FertilizeAction>(planner, goal, harvested, 1);
+            for (int plotNumber = 1; plotNumber <= FarmField.PlotCount; plotNumber++)
+            {
+                Assert.That(field.GetPlot(plotNumber).Fertilize(inventory).Succeeded, Is.True);
             }
 
             Assert.That(field.GetPlot(3).IntroduceWeeds().Succeeded, Is.True);
@@ -114,8 +114,8 @@ namespace AIFarm.Tests.EditMode
             {
                 FarmPlot plot = field.GetPlot(plotNumber);
                 Assert.That(plot.Sow(inventory).Succeeded, Is.True);
-                Assert.That(plot.Fertilize(inventory).Succeeded, Is.True);
                 Assert.That(plot.Water(inventory).Succeeded, Is.True);
+                Assert.That(plot.Fertilize(inventory).Succeeded, Is.True);
             }
 
             var planner = new DeterministicFarmPlanner(

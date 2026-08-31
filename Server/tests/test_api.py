@@ -2,9 +2,9 @@ import pytest
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
-from Server.app.main import create_app
-from Server.app.providers import MockProvider
-from Server.app.schemas import FarmGoalSpec
+from app.main import create_app
+from app.providers import MockProvider
+from app.schemas import FarmGoalSpec
 
 
 FULL_GOAL = {

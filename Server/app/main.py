@@ -5,13 +5,13 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
-from Server.app.providers import (
+from app.providers import (
     FarmProvider,
     MockProvider,
     OpenAIProvider,
     ProviderInputError,
 )
-from Server.app.schemas import (
+from app.schemas import (
     FarmGoalSpec,
     GenerateUtteranceRequest,
     HealthSpec,

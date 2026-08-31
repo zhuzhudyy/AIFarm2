@@ -26,6 +26,13 @@ namespace AIFarm.Npc
                     $"Fertilize failed: Plot {PlotNumber:00} must contain a growing crop.");
             }
 
+            if (plot.WaterLevel < FarmPlot.RequiredWaterLevel)
+            {
+                return ActionResult.Failure(
+                    ActionFailureReason.InvalidState,
+                    $"Fertilize failed: Plot {PlotNumber:00} must be watered first.");
+            }
+
             if (plot.IsFertilized)
             {
                 return ActionResult.Failure(

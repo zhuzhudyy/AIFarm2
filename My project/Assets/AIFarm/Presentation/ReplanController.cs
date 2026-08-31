@@ -582,6 +582,12 @@ namespace AIFarm.Presentation
 
         private void HandleActionFailed(INpcAction action, ActionResult result)
         {
+            if (IsGoalActive)
+            {
+                FailGoal(result.Message, result.FailureReason);
+                return;
+            }
+
             TriggerExpression(
                 NpcExpressionTrigger.ActionFailed,
                 result.Message,

@@ -33,3 +33,24 @@ Unity Test Framework `1.7.0` is already declared, but no tests or coverage targe
 ## Commits and Pull Requests
 
 There is no commit history yet. Use concise imperative subjects such as `docs: establish repository baseline`. Keep assets with their `.meta` files. Pull requests should state scope, validation performed, related issues, and visual evidence for later scene or UI changes. Never commit credentials for future AI services; use ignored local configuration or environment variables.
+
+## Multi-resident invariants
+
+- Every resident must have a stable unique ResidentId.
+- Runtime state, memory, goals, schedules, and AI requests must be keyed by ResidentId.
+- There must be no mutable global "current resident".
+- Residents may not read another resident's private memory.
+- A resident learns information only through perception, conversation, player input,
+  or an explicitly public town event.
+- A resident may have at most one active action and one active conversation.
+- A resident in a conversation may not begin another conversation.
+- A world interaction point may be reserved by at most one resident.
+- All remote AI calls must go through the shared AI gateway and request coordinator.
+- No remote AI call may be started from Update().
+- Model output may select only from explicitly allowed high-level intents.
+- The model must never directly mutate position, time, inventory, farm state,
+  relationship values, schedules, or save data.
+- Every model output must be schema-validated.
+- Every remote path must have a deterministic local fallback.
+- Pairwise conversations must have a strict turn limit and timeout.
+- In-flight AI requests must be cancelled or ignored when their owning state becomes stale.

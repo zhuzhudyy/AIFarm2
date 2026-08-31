@@ -130,8 +130,8 @@ namespace AIFarm.Tests.PlayMode
             List<INpcAction> farmingActions = history.Where(action => !(action is WaitAction)).ToList();
             Assert.That(farmingActions, Has.Count.EqualTo(45));
             AssertPhase<SowAction>(farmingActions, startIndex: 0);
-            AssertPhase<FertilizeAction>(farmingActions, startIndex: 9);
-            AssertPhase<WaterAction>(farmingActions, startIndex: 18);
+            AssertPhase<WaterAction>(farmingActions, startIndex: 9);
+            AssertPhase<FertilizeAction>(farmingActions, startIndex: 18);
             AssertPhase<WeedAction>(farmingActions, startIndex: 27);
             AssertPhase<HarvestAction>(farmingActions, startIndex: 36);
             Assert.That(history.Any(action => action is WaitAction), Is.True);

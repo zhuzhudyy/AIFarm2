@@ -312,6 +312,28 @@ namespace AIFarm.Tests.EditMode
             Assert.That(executor.Status, Is.EqualTo(NpcExecutionStatus.Completed));
         }
 
+        [Test]
+        public void NavigationFailure_DuringGoal_MarksGoalFailedWithoutWaitingForever()
+        {
+            navigation.FailBegin = true;
+            Assert.That(
+                replanner.SubmitGoal("把九块地种满胡萝卜并照顾到收获").Succeeded,
+                Is.True);
+            Assert.That(executor.Tick(0f).Succeeded, Is.True);
+            LogAssert.Expect(
+                LogType.Warning,
+                new Regex("NPC action 'Sow Plot 01' failed: Plot 01 is unreachable"));
+
+            ActionResult failed = executor.Tick(0f);
+
+            Assert.That(failed.Failed, Is.True);
+            Assert.That(replanner.Status, Is.EqualTo(ReplanStatus.Failed));
+            Assert.That(replanner.IsGoalActive, Is.False);
+            Assert.That(replanner.LastFailureReason, Does.Contain("unreachable"));
+            Assert.That(bootstrap.Field.GetPlot(1).State, Is.EqualTo(PlotState.Empty));
+            Assert.That(bootstrap.Inventory.GetCount(InventoryItem.CarrotSeed), Is.EqualTo(20));
+        }
+
         private void RunExecutorUntilIdle()
         {
             int ticks = 0;

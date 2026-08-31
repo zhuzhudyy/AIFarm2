@@ -69,9 +69,9 @@ namespace AIFarm.Presentation
         [SerializeField]
         private string aiGatewayBaseUrl = DefaultAiGatewayBaseUrl;
 
-        [Range(1, 60)]
+        [Range(1, 3)]
         [SerializeField]
-        private int aiRequestTimeoutSeconds = 8;
+        private int aiRequestTimeoutSeconds = 3;
 
         public DemoInventoryConfig InventoryConfig => inventoryConfig;
 
@@ -103,7 +103,7 @@ namespace AIFarm.Presentation
 
         public int AiRequestTimeoutSeconds => aiRequestTimeoutSeconds > 0
             ? aiRequestTimeoutSeconds
-            : 8;
+            : 3;
 
         public double InitialElapsedGameSeconds => ((startDay - 1) * 24d + startHour) * 60d * 60d;
 
@@ -140,7 +140,7 @@ namespace AIFarm.Presentation
             float expressionDisplay = 2.5f,
             AiGatewayMode gatewayMode = AiGatewayMode.Local,
             string gatewayBaseUrl = DefaultAiGatewayBaseUrl,
-            int requestTimeoutSeconds = 8)
+            int requestTimeoutSeconds = 3)
         {
             if (inventory == null)
             {
@@ -167,11 +167,11 @@ namespace AIFarm.Presentation
                     nameof(gatewayBaseUrl));
             }
 
-            if (requestTimeoutSeconds < 1 || requestTimeoutSeconds > 60)
+            if (requestTimeoutSeconds < 1 || requestTimeoutSeconds > 3)
             {
                 throw new ArgumentOutOfRangeException(
                     nameof(requestTimeoutSeconds),
-                    "AI gateway timeout must be between 1 and 60 seconds.");
+                    "AI gateway timeout must be between 1 and 3 seconds for the demo.");
             }
 
             inventoryConfig = inventory;

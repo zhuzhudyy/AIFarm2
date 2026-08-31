@@ -24,8 +24,8 @@ namespace AIFarm.Tests.EditMode
             var simulation = new FarmSimulation(field, clock, mode, events);
             FarmPlot plot = field.GetPlot(1);
             Assert.That(plot.Sow(inventory).Succeeded, Is.True);
-            Assert.That(plot.Fertilize(inventory).Succeeded, Is.True);
             Assert.That(plot.Water(inventory).Succeeded, Is.True);
+            Assert.That(plot.Fertilize(inventory).Succeeded, Is.True);
 
             Assert.That(simulation.Advance(1.99d).Succeeded, Is.True);
             Assert.That(plot.WaterLevel, Is.EqualTo(FarmPlot.MaximumWaterLevel));
@@ -67,8 +67,8 @@ namespace AIFarm.Tests.EditMode
             var simulation = new FarmSimulation(field, clock, new DemoMode());
             FarmPlot plot = field.GetPlot(1);
             Assert.That(plot.Sow(inventory).Succeeded, Is.True);
-            Assert.That(plot.Fertilize(inventory).Succeeded, Is.True);
             Assert.That(plot.Water(inventory).Succeeded, Is.True);
+            Assert.That(plot.Fertilize(inventory).Succeeded, Is.True);
             Assert.That(clock.Pause().Succeeded, Is.True);
 
             Assert.That(simulation.Advance(100d).Succeeded, Is.True);

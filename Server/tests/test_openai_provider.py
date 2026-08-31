@@ -10,10 +10,10 @@ from fastapi.testclient import TestClient
 from openai import APIConnectionError, APITimeoutError, OpenAI, RateLimitError
 from pydantic import BaseModel
 
-from Server.app import providers
-from Server.app.main import _default_provider, create_app
-from Server.app.providers import MockProvider, OpenAIProvider
-from Server.app.schemas import (
+from app import providers
+from app.main import _default_provider, create_app
+from app.providers import MockProvider, OpenAIProvider
+from app.schemas import (
     FarmGoalSpec,
     GenerateUtteranceRequest,
     NpcExpressionTrigger,

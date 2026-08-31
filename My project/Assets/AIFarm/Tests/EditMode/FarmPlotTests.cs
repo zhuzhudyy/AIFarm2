@@ -106,6 +106,20 @@ namespace AIFarm.Tests.EditMode
         }
 
         [Test]
+        public void Fertilize_UnwateredPlot_FailsWithoutConsumingFertilizer()
+        {
+            var plot = new FarmPlot();
+            var inventory = new FarmInventory(carrotSeeds: 1, water: 1, fertilizer: 1);
+            AssertSuccess(plot.Sow(inventory));
+
+            ActionResult result = plot.Fertilize(inventory);
+
+            AssertFailure(result, ActionFailureReason.InvalidState);
+            Assert.That(plot.IsFertilized, Is.False);
+            Assert.That(inventory.GetCount(InventoryItem.Fertilizer), Is.EqualTo(1));
+        }
+
+        [Test]
         public void Weed_WhenWeedsArePresent_RemovesWeeds()
         {
             var plot = new FarmPlot();

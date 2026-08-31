@@ -138,7 +138,7 @@ namespace AIFarm.Tests.EditMode
             Assert.That(sceneConfig.ExpressionCooldownSeconds, Is.GreaterThan(0f));
             Assert.That(sceneConfig.ExpressionDisplaySeconds, Is.GreaterThan(0f));
             Assert.That(sceneConfig.AiGatewayBaseUrl, Is.Not.Empty);
-            Assert.That(sceneConfig.AiRequestTimeoutSeconds, Is.InRange(1, 60));
+            Assert.That(sceneConfig.AiRequestTimeoutSeconds, Is.InRange(1, 3));
             Assert.That(sceneConfig.CreateDemoMode().IsAiServiceRequired, Is.False);
 
             Assert.That(

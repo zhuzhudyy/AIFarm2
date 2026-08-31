@@ -76,20 +76,6 @@ namespace AIFarm.Npc
                     out decision);
             }
 
-            target = world.FindFirstUnfertilizedTarget(goal, harvestedPlotNumbers);
-            if (target != null)
-            {
-                if (!world.Inventory.Has(InventoryItem.Fertilizer))
-                {
-                    return MissingResource("肥料");
-                }
-
-                return Select(
-                    new FertilizeAction(target.PlotNumber, demoMode.FertilizeActionSeconds),
-                    "已播种土地尚未施肥。",
-                    out decision);
-            }
-
             target = world.FindFirstUnderwateredTarget(goal, harvestedPlotNumbers);
             if (target != null)
             {
@@ -101,6 +87,20 @@ namespace AIFarm.Npc
                 return Select(
                     new WaterAction(target.PlotNumber, demoMode.WaterActionSeconds),
                     "土地水分不足。",
+                    out decision);
+            }
+
+            target = world.FindFirstUnfertilizedTarget(goal, harvestedPlotNumbers);
+            if (target != null)
+            {
+                if (!world.Inventory.Has(InventoryItem.Fertilizer))
+                {
+                    return MissingResource("肥料");
+                }
+
+                return Select(
+                    new FertilizeAction(target.PlotNumber, demoMode.FertilizeActionSeconds),
+                    "已浇水土地尚未施肥。",
                     out decision);
             }
 
