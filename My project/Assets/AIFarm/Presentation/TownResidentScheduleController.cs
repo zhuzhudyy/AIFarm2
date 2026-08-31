@@ -21,6 +21,7 @@ namespace AIFarm.Presentation
         private NpcPlanExecutor farmingExecutor;
 
         private bool scheduleSuspendedForFarming;
+        private bool scheduleSuspendedForConversation;
 
         public ResidentId ResidentId => definitionAsset == null
             ? default
@@ -31,6 +32,20 @@ namespace AIFarm.Presentation
         public ResidentScheduleRuntime Runtime { get; private set; }
 
         public bool IsInitialized => Runtime != null;
+
+        public bool IsFarmingBusy => farmingExecutor != null && farmingExecutor.IsBusy;
+
+        public bool IsConversationSuspended => scheduleSuspendedForConversation;
+
+        public TownResidentNavigator Navigator => navigator;
+
+        public ResidentActivityKind? CurrentActivity => Runtime?.ActiveEntry == null
+            ? (ResidentActivityKind?)null
+            : Runtime.ActiveEntry.Activity;
+
+        public TownLocationId CurrentLocationId => Runtime == null
+            ? default
+            : Runtime.CurrentLocationId;
 
         public ActionResult Configure(
             ResidentDefinitionAsset residentDefinition,
@@ -100,6 +115,12 @@ namespace AIFarm.Presentation
                     "Resident schedule controller is not initialized.");
             }
 
+            if (scheduleSuspendedForConversation)
+            {
+                residentView.SetConversationState(true);
+                return ActionResult.Success("Town schedule paused for an active conversation.");
+            }
+
             if (farmingExecutor != null && farmingExecutor.IsBusy)
             {
                 if (!scheduleSuspendedForFarming)
@@ -127,12 +148,85 @@ namespace AIFarm.Presentation
             return result;
         }
 
+        public ActionResult SuspendForConversation()
+        {
+            if (!IsInitialized || navigator == null || residentView == null)
+            {
+                return ActionResult.Failure(
+                    ActionFailureReason.InvalidState,
+                    "The resident schedule must be initialized before conversation.");
+            }
+
+            if (scheduleSuspendedForConversation || scheduleSuspendedForFarming ||
+                IsFarmingBusy || Runtime.ActiveEntry == null ||
+                Runtime.ActiveEntry.Activity == ResidentActivityKind.Home)
+            {
+                return ActionResult.Failure(
+                    ActionFailureReason.InvalidState,
+                    "The resident cannot leave the current priority activity for conversation.");
+            }
+
+            ActionResult suspended = Runtime.Suspend();
+            if (suspended.Failed)
+            {
+                return suspended;
+            }
+
+            scheduleSuspendedForConversation = true;
+            residentView.SetConversationState(true);
+            return ActionResult.Success("Resident schedule suspended for conversation.");
+        }
+
+        public ActionResult BeginConversationMove(string interactionPointId)
+        {
+            if (!scheduleSuspendedForConversation || navigator == null)
+            {
+                return ActionResult.Failure(
+                    ActionFailureReason.InvalidState,
+                    "The resident must be conversation-suspended before moving to an anchor.");
+            }
+
+            return navigator.BeginMove(interactionPointId);
+        }
+
+        public ActionResult TickConversationMove(float deltaTime, out bool arrived)
+        {
+            arrived = false;
+            if (!scheduleSuspendedForConversation || navigator == null)
+            {
+                return ActionResult.Failure(
+                    ActionFailureReason.InvalidState,
+                    "The resident has no active conversation movement.");
+            }
+
+            return navigator.Tick(deltaTime, out arrived);
+        }
+
+        public ActionResult ResumeAfterConversation()
+        {
+            if (!scheduleSuspendedForConversation)
+            {
+                return ActionResult.Success("Resident was not conversation-suspended.");
+            }
+
+            if (navigator != null)
+            {
+                navigator.CancelMove();
+            }
+
+            scheduleSuspendedForConversation = false;
+            residentView.SetConversationState(false);
+            return Runtime.Resume();
+        }
+
         private void OnDisable()
         {
             if (Runtime != null)
             {
                 Runtime.Suspend();
             }
+
+            scheduleSuspendedForConversation = false;
         }
     }
 }

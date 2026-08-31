@@ -1,0 +1,468 @@
+using System;
+using System.Collections.Generic;
+using AIFarm.Core;
+using AIFarm.Npc;
+using AIFarm.Town;
+
+namespace AIFarm.Social
+{
+    public sealed class ConversationCoordinator
+    {
+        public const double DefaultTimeoutSeconds = 30d;
+
+        private sealed class ActiveConversationRecord
+        {
+            public ActiveConversationRecord(
+                ConversationSession session,
+                ConversationParticipantLease participantLease,
+                InteractionPointReservation firstReservation,
+                InteractionPointReservation secondReservation)
+            {
+                Session = session;
+                ParticipantLease = participantLease;
+                FirstReservation = firstReservation;
+                SecondReservation = secondReservation;
+            }
+
+            public ConversationSession Session { get; }
+
+            public ConversationParticipantLease ParticipantLease { get; }
+
+            public InteractionPointReservation FirstReservation { get; }
+
+            public InteractionPointReservation SecondReservation { get; }
+        }
+
+        private readonly ResidentRegistry residentRegistry;
+        private readonly ConversationParticipantLock participantLock;
+        private readonly InteractionPointReservationService reservationService;
+        private readonly LocalConversationTemplateService templateService;
+        private readonly ConversationOutcomeApplier outcomeApplier;
+        private readonly Func<ResidentId, bool> participantAvailability;
+        private readonly Dictionary<ConversationId, ConversationSession> sessions =
+            new Dictionary<ConversationId, ConversationSession>();
+        private readonly Dictionary<ConversationId, ActiveConversationRecord> activeSessions =
+            new Dictionary<ConversationId, ActiveConversationRecord>();
+        private long nextConversationNumber;
+
+        public ConversationCoordinator(
+            ResidentRegistry registry,
+            ConversationParticipantLock conversationParticipantLock,
+            InteractionPointReservationService interactionPointReservations,
+            LocalConversationTemplateService localTemplates,
+            ConversationOutcomeApplier deterministicOutcomeApplier,
+            double timeoutSeconds = DefaultTimeoutSeconds,
+            Func<ResidentId, bool> canParticipate = null)
+        {
+            if (!IsFinitePositive(timeoutSeconds) ||
+                timeoutSeconds > ConversationSession.MaximumTimeoutSeconds)
+            {
+                throw new ArgumentOutOfRangeException(
+                    nameof(timeoutSeconds),
+                    "Conversation timeout must be positive and no greater than 30 seconds.");
+            }
+
+            residentRegistry = registry ?? throw new ArgumentNullException(nameof(registry));
+            participantLock = conversationParticipantLock ??
+                throw new ArgumentNullException(nameof(conversationParticipantLock));
+            reservationService = interactionPointReservations ??
+                throw new ArgumentNullException(nameof(interactionPointReservations));
+            templateService = localTemplates ?? throw new ArgumentNullException(nameof(localTemplates));
+            outcomeApplier = deterministicOutcomeApplier ??
+                throw new ArgumentNullException(nameof(deterministicOutcomeApplier));
+            participantAvailability = canParticipate ?? (_ => true);
+            TimeoutSeconds = timeoutSeconds;
+        }
+
+        public double TimeoutSeconds { get; }
+
+        public int ActiveSessionCount => activeSessions.Count;
+
+        public ActionResult TryStartConversation(
+            ResidentId firstResidentId,
+            ResidentId secondResidentId,
+            string firstInteractionPointId,
+            string secondInteractionPointId,
+            int targetSentenceCount,
+            double monotonicSeconds,
+            out ConversationSession session)
+        {
+            session = null;
+            if (!firstResidentId.IsValid || !secondResidentId.IsValid ||
+                firstResidentId == secondResidentId ||
+                string.IsNullOrWhiteSpace(firstInteractionPointId) ||
+                string.IsNullOrWhiteSpace(secondInteractionPointId) ||
+                string.Equals(
+                    firstInteractionPointId.Trim(),
+                    secondInteractionPointId.Trim(),
+                    StringComparison.Ordinal) ||
+                targetSentenceCount < ConversationSession.MinimumSentenceCount ||
+                targetSentenceCount > ConversationSession.MaximumSentenceCount ||
+                !IsFiniteNonNegative(monotonicSeconds) ||
+                !IsFiniteNonNegative(monotonicSeconds + TimeoutSeconds))
+            {
+                return ActionResult.Failure(
+                    ActionFailureReason.InvalidArgument,
+                    "A conversation requires two residents, two distinct points, 2-6 sentences, and monotonic time.");
+            }
+
+            ActionResult firstResident = residentRegistry.TryGetDefinition(
+                firstResidentId,
+                out _);
+            ActionResult secondResident = residentRegistry.TryGetDefinition(
+                secondResidentId,
+                out _);
+            if (firstResident.Failed || secondResident.Failed)
+            {
+                return firstResident.Failed ? firstResident : secondResident;
+            }
+
+            if (!participantAvailability(firstResidentId) ||
+                !participantAvailability(secondResidentId))
+            {
+                return ActionResult.Failure(
+                    ActionFailureReason.InvalidState,
+                    "At least one resident has an action, player instruction, or sleep priority.");
+            }
+
+            string firstPoint = firstInteractionPointId.Trim();
+            string secondPoint = secondInteractionPointId.Trim();
+            NormalizeParticipantsAndPoints(
+                ref firstResidentId,
+                ref secondResidentId,
+                ref firstPoint,
+                ref secondPoint);
+            var conversationId = new ConversationId(
+                $"conversation-{++nextConversationNumber:000000}");
+            ActionResult locked = participantLock.TryAcquire(
+                conversationId,
+                firstResidentId,
+                secondResidentId,
+                out ConversationParticipantLease participantLease);
+            if (locked.Failed)
+            {
+                return locked;
+            }
+
+            double reservationLeaseSeconds = TimeoutSeconds + 1d;
+            ActionResult firstReserved = reservationService.TryReserve(
+                firstResidentId,
+                firstPoint,
+                monotonicSeconds,
+                reservationLeaseSeconds,
+                out InteractionPointReservation firstReservation);
+            if (firstReserved.Failed)
+            {
+                participantLock.Release(participantLease);
+                return firstReserved;
+            }
+
+            ActionResult secondReserved = reservationService.TryReserve(
+                secondResidentId,
+                secondPoint,
+                monotonicSeconds,
+                reservationLeaseSeconds,
+                out InteractionPointReservation secondReservation);
+            if (secondReserved.Failed)
+            {
+                reservationService.Release(firstReservation);
+                participantLock.Release(participantLease);
+                return secondReserved;
+            }
+
+            session = new ConversationSession(
+                conversationId,
+                firstResidentId,
+                secondResidentId,
+                targetSentenceCount,
+                monotonicSeconds,
+                TimeoutSeconds);
+            ActionResult activated = session.Activate();
+            if (activated.Failed)
+            {
+                reservationService.Release(secondReservation);
+                reservationService.Release(firstReservation);
+                participantLock.Release(participantLease);
+                session = null;
+                return activated;
+            }
+
+            var record = new ActiveConversationRecord(
+                session,
+                participantLease,
+                firstReservation,
+                secondReservation);
+            sessions.Add(conversationId, session);
+            activeSessions.Add(conversationId, record);
+            return ActionResult.Success("Offline two-resident conversation started.");
+        }
+
+        public ActionResult AdvanceConversation(
+            ConversationId conversationId,
+            double monotonicSeconds,
+            double gameSeconds,
+            out ConversationUtterance utterance)
+        {
+            utterance = null;
+            if (!conversationId.IsValid || !IsFiniteNonNegative(monotonicSeconds) ||
+                !IsFiniteNonNegative(gameSeconds))
+            {
+                return ActionResult.Failure(
+                    ActionFailureReason.InvalidArgument,
+                    "Advancing a conversation requires its ID and valid clock values.");
+            }
+
+            if (!activeSessions.TryGetValue(
+                    conversationId,
+                    out ActiveConversationRecord record))
+            {
+                return ActionResult.Failure(
+                    ActionFailureReason.InvalidState,
+                    "The conversation is not active.");
+            }
+
+            if (record.Session.IsTimedOut(monotonicSeconds))
+            {
+                EndAndRelease(
+                    record,
+                    ConversationState.TimedOut,
+                    ConversationEndReason.TimedOut);
+                return ActionResult.Success("Conversation timed out before another sentence.");
+            }
+
+            if (!ReservationsStillOwned(record, monotonicSeconds))
+            {
+                EndAndRelease(
+                    record,
+                    ConversationState.Cancelled,
+                    ConversationEndReason.ReservationLost);
+                return ActionResult.Failure(
+                    ActionFailureReason.InvalidState,
+                    "A conversation position reservation was lost.");
+            }
+
+            ResidentId speakerId = record.Session.TurnOwnerResidentId;
+            ResidentId listenerId = speakerId == record.Session.FirstResidentId
+                ? record.Session.SecondResidentId
+                : record.Session.FirstResidentId;
+            ActionResult speakerResolved = residentRegistry.TryGetDefinition(
+                speakerId,
+                out ResidentDefinition speaker);
+            ActionResult listenerResolved = residentRegistry.TryGetDefinition(
+                listenerId,
+                out ResidentDefinition listener);
+            if (speakerResolved.Failed || listenerResolved.Failed)
+            {
+                EndAndRelease(
+                    record,
+                    ConversationState.Cancelled,
+                    ConversationEndReason.Cancelled);
+                return speakerResolved.Failed ? speakerResolved : listenerResolved;
+            }
+
+            ActionResult generated = templateService.CreateLine(
+                record.Session,
+                speaker,
+                listener,
+                out string line);
+            if (generated.Failed)
+            {
+                EndAndRelease(
+                    record,
+                    ConversationState.Cancelled,
+                    ConversationEndReason.Cancelled);
+                return generated;
+            }
+
+            ActionResult delivered = record.Session.AddUtterance(
+                speakerId,
+                line,
+                out utterance);
+            if (delivered.Failed)
+            {
+                EndAndRelease(
+                    record,
+                    ConversationState.Cancelled,
+                    ConversationEndReason.Cancelled);
+                return delivered;
+            }
+
+            if (record.Session.DeliveredSentenceCount < record.Session.TargetSentenceCount)
+            {
+                return delivered;
+            }
+
+            ActionResult applied;
+            try
+            {
+                ConversationOutcome outcome = templateService.SelectOutcome(record.Session);
+                ActionResult completed = record.Session.Complete(outcome);
+                if (completed.Failed)
+                {
+                    record.Session.End(
+                        ConversationState.Cancelled,
+                        ConversationEndReason.Cancelled);
+                    ReleaseResources(record);
+                    return completed;
+                }
+
+                applied = outcomeApplier.Apply(record.Session, outcome, gameSeconds);
+            }
+            catch (Exception exception)
+            {
+                record.Session.End(
+                    ConversationState.Cancelled,
+                    ConversationEndReason.Cancelled);
+                ReleaseResources(record);
+                return ActionResult.Failure(
+                    ActionFailureReason.InvalidResponse,
+                    $"Deterministic local conversation outcome failed: {exception.Message}");
+            }
+
+            ReleaseResources(record);
+            return applied.Failed
+                ? applied
+                : ActionResult.Success("Offline conversation completed and its outcome was applied.");
+        }
+
+        public int TickTimeouts(double monotonicSeconds)
+        {
+            if (!IsFiniteNonNegative(monotonicSeconds))
+            {
+                return 0;
+            }
+
+            var timedOut = new List<ActiveConversationRecord>();
+            foreach (ActiveConversationRecord record in activeSessions.Values)
+            {
+                if (record.Session.IsTimedOut(monotonicSeconds))
+                {
+                    timedOut.Add(record);
+                }
+            }
+
+            foreach (ActiveConversationRecord record in timedOut)
+            {
+                EndAndRelease(
+                    record,
+                    ConversationState.TimedOut,
+                    ConversationEndReason.TimedOut);
+            }
+
+            return timedOut.Count;
+        }
+
+        public ActionResult CancelConversation(
+            ConversationId conversationId,
+            ConversationEndReason reason = ConversationEndReason.Cancelled)
+        {
+            if (!conversationId.IsValid || reason == ConversationEndReason.None ||
+                reason == ConversationEndReason.SentenceLimitReached ||
+                reason == ConversationEndReason.TimedOut)
+            {
+                return ActionResult.Failure(
+                    ActionFailureReason.InvalidArgument,
+                    "Cancelling requires an active conversation and cancellation reason.");
+            }
+
+            if (!activeSessions.TryGetValue(
+                    conversationId,
+                    out ActiveConversationRecord record))
+            {
+                return ActionResult.Success("Conversation was already inactive.");
+            }
+
+            EndAndRelease(record, ConversationState.Cancelled, reason);
+            return ActionResult.Success("Conversation cancelled and resources released.");
+        }
+
+        public ActionResult TryGetSession(
+            ConversationId conversationId,
+            ResidentId requesterResidentId,
+            out ConversationSession session)
+        {
+            session = null;
+            if (!conversationId.IsValid || !requesterResidentId.IsValid ||
+                !sessions.TryGetValue(conversationId, out session) ||
+                !session.IsParticipant(requesterResidentId))
+            {
+                session = null;
+                return ActionResult.Failure(
+                    ActionFailureReason.InvalidArgument,
+                    "Only a conversation participant can resolve that session.");
+            }
+
+            return ActionResult.Success("Conversation session resolved for its participant.");
+        }
+
+        private bool ReservationsStillOwned(
+            ActiveConversationRecord record,
+            double monotonicSeconds)
+        {
+            return reservationService.TryGetOwner(
+                    record.FirstReservation.InteractionPointId,
+                    monotonicSeconds,
+                    out ResidentId firstOwner) &&
+                firstOwner == record.FirstReservation.ResidentId &&
+                reservationService.TryGetOwner(
+                    record.SecondReservation.InteractionPointId,
+                    monotonicSeconds,
+                    out ResidentId secondOwner) &&
+                secondOwner == record.SecondReservation.ResidentId;
+        }
+
+        private void EndAndRelease(
+            ActiveConversationRecord record,
+            ConversationState terminalState,
+            ConversationEndReason reason)
+        {
+            record.Session.End(terminalState, reason);
+            ReleaseResources(record);
+        }
+
+        private void ReleaseResources(ActiveConversationRecord record)
+        {
+            activeSessions.Remove(record.Session.ConversationId);
+            if (record.SecondReservation.IsValid)
+            {
+                reservationService.Release(record.SecondReservation);
+            }
+
+            if (record.FirstReservation.IsValid)
+            {
+                reservationService.Release(record.FirstReservation);
+            }
+
+            participantLock.Release(record.ParticipantLease);
+        }
+
+        private static void NormalizeParticipantsAndPoints(
+            ref ResidentId firstResidentId,
+            ref ResidentId secondResidentId,
+            ref string firstPoint,
+            ref string secondPoint)
+        {
+            if (firstResidentId.CompareTo(secondResidentId) <= 0)
+            {
+                return;
+            }
+
+            ResidentId residentTemporary = firstResidentId;
+            firstResidentId = secondResidentId;
+            secondResidentId = residentTemporary;
+            string pointTemporary = firstPoint;
+            firstPoint = secondPoint;
+            secondPoint = pointTemporary;
+        }
+
+        private static bool IsFiniteNonNegative(double value)
+        {
+            return !double.IsNaN(value) && !double.IsInfinity(value) && value >= 0d;
+        }
+
+        private static bool IsFinitePositive(double value)
+        {
+            return !double.IsNaN(value) && !double.IsInfinity(value) && value > 0d;
+        }
+    }
+}

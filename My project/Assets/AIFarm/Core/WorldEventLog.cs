@@ -16,7 +16,8 @@ namespace AIFarm.Core
         WeedsAppeared,
         CropMatured,
         TimeControlChanged,
-        GoalCompleted
+        GoalCompleted,
+        ConversationCompleted
     }
 
     public readonly struct WorldEventEntry

@@ -221,7 +221,8 @@ namespace AIFarm.Editor
             LocationArrivalPoint[] arrivalPoints = CreateTownLocations(
                 locationAssets,
                 townMaterial,
-                townAccentMaterial);
+                townAccentMaterial,
+                out ConversationAnchor[] conversationAnchors);
             CreateLighting();
             CreateCamera();
             ReplanController replanController = bootstrap.gameObject.AddComponent<ReplanController>();
@@ -243,6 +244,13 @@ namespace AIFarm.Editor
                 scheduleAssets,
                 arrivalPoints,
                 residentControllers));
+            TownSocialCoordinator socialCoordinator =
+                bootstrap.gameObject.AddComponent<TownSocialCoordinator>();
+            EnsureSucceeded(socialCoordinator.Configure(
+                bootstrap,
+                coordinator,
+                residentControllers,
+                conversationAnchors));
             CreateUi(bootstrap, executor, replanController, executor.transform);
             NavMeshSurface navMeshSurface = CreateNavigation();
             navMeshSurface.BuildNavMesh();
@@ -696,10 +704,12 @@ namespace AIFarm.Editor
         private static LocationArrivalPoint[] CreateTownLocations(
             TownLocationDefinitionAsset[] locationAssets,
             Material buildingMaterial,
-            Material accentMaterial)
+            Material accentMaterial,
+            out ConversationAnchor[] conversationAnchors)
         {
             var townRoot = new GameObject("Town_Locations");
             var points = new List<LocationArrivalPoint>();
+            var anchors = new List<ConversationAnchor>();
             for (int index = 0; index < TownLocationSpecs.Length; index++)
             {
                 TownLocationBuildSpec spec = TownLocationSpecs[index];
@@ -778,9 +788,94 @@ namespace AIFarm.Editor
                     marker.GetComponent<Renderer>().sharedMaterial = accentMaterial;
                     Object.DestroyImmediate(marker.GetComponent<Collider>());
                 }
+
+                if (spec.Id == "location-plaza")
+                {
+                    CreateConversationAnchors(
+                        locationRoot.transform,
+                        location,
+                        spec,
+                        inward,
+                        tangent,
+                        accentMaterial,
+                        points,
+                        anchors);
+                }
             }
 
+            conversationAnchors = anchors.ToArray();
             return points.ToArray();
+        }
+
+        private static void CreateConversationAnchors(
+            Transform locationRoot,
+            TownLocationDefinitionAsset location,
+            TownLocationBuildSpec spec,
+            Vector3 inward,
+            Vector3 tangent,
+            Material markerMaterial,
+            List<LocationArrivalPoint> points,
+            List<ConversationAnchor> anchors)
+        {
+            var anchorRoot = new GameObject("Conversation_Anchors");
+            anchorRoot.transform.SetParent(locationRoot, false);
+            for (int anchorIndex = 0; anchorIndex < 2; anchorIndex++)
+            {
+                string anchorId = $"conversation-anchor-{anchorIndex + 1:00}";
+                string firstPointId =
+                    $"social-plaza-anchor-{anchorIndex + 1:00}-seat-01";
+                string secondPointId =
+                    $"social-plaza-anchor-{anchorIndex + 1:00}-seat-02";
+                var anchorObject = new GameObject($"ConversationAnchor_{anchorIndex + 1:00}");
+                anchorObject.transform.SetParent(anchorRoot.transform, false);
+                Vector3 center = new Vector3(spec.Position.x, -0.04f, spec.Position.z) +
+                    tangent * (anchorIndex == 0 ? -0.75f : 0.75f);
+                LocationArrivalPoint firstPoint = CreateConversationStandPoint(
+                    anchorObject.transform,
+                    center - inward * 0.42f,
+                    markerMaterial,
+                    "StandPoint_01");
+                LocationArrivalPoint secondPoint = CreateConversationStandPoint(
+                    anchorObject.transform,
+                    center + inward * 0.42f,
+                    markerMaterial,
+                    "StandPoint_02");
+                EnsureSucceeded(firstPoint.Configure(
+                    location,
+                    firstPointId,
+                    secondPoint.transform));
+                EnsureSucceeded(secondPoint.Configure(
+                    location,
+                    secondPointId,
+                    firstPoint.transform));
+
+                ConversationAnchor anchor = anchorObject.AddComponent<ConversationAnchor>();
+                EnsureSucceeded(anchor.Configure(anchorId, firstPoint, secondPoint));
+                points.Add(firstPoint);
+                points.Add(secondPoint);
+                anchors.Add(anchor);
+            }
+        }
+
+        private static LocationArrivalPoint CreateConversationStandPoint(
+            Transform parent,
+            Vector3 position,
+            Material markerMaterial,
+            string objectName)
+        {
+            var pointObject = new GameObject(objectName);
+            pointObject.transform.SetParent(parent, false);
+            pointObject.transform.position = position;
+            LocationArrivalPoint point = pointObject.AddComponent<LocationArrivalPoint>();
+
+            GameObject marker = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+            marker.name = "ConversationMarker";
+            marker.transform.SetParent(pointObject.transform, false);
+            marker.transform.localPosition = new Vector3(0f, 0.025f, 0f);
+            marker.transform.localScale = new Vector3(0.18f, 0.025f, 0.18f);
+            marker.GetComponent<Renderer>().sharedMaterial = markerMaterial;
+            Object.DestroyImmediate(marker.GetComponent<Collider>());
+            return point;
         }
 
         private static TownResidentScheduleController[] CreateResidents(

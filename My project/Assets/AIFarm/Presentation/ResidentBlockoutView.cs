@@ -28,6 +28,7 @@ namespace AIFarm.Presentation
         private Quaternion baseLocalRotation;
         private bool baselineCaptured;
         private bool isWorking;
+        private bool isConversing;
 
         public ResidentDefinitionAsset DefinitionAsset => definitionAsset;
 
@@ -40,6 +41,8 @@ namespace AIFarm.Presentation
         public TextMesh StatusIcon => statusIcon;
 
         public bool IsPlayingWorkAnimation => isWorking;
+
+        public bool IsShowingConversation => isConversing;
 
         public ActionResult Configure(
             ResidentDefinitionAsset residentDefinition,
@@ -91,6 +94,11 @@ namespace AIFarm.Presentation
             ResidentScheduleState state,
             ResidentActivityKind? activity)
         {
+            if (isConversing)
+            {
+                return;
+            }
+
             isWorking = state == ResidentScheduleState.Working;
             if (statusIcon != null && definitionAsset != null)
             {
@@ -120,6 +128,19 @@ namespace AIFarm.Presentation
             if (!isWorking)
             {
                 RestoreBaseline();
+            }
+        }
+
+        public void SetConversationState(bool active)
+        {
+            isConversing = active;
+            isWorking = false;
+            RestoreBaseline();
+            if (statusIcon != null && definitionAsset != null)
+            {
+                statusIcon.text = active
+                    ? $"{definitionAsset.StatusIcon}#"
+                    : $"{definitionAsset.StatusIcon}.";
             }
         }
 
@@ -155,6 +176,7 @@ namespace AIFarm.Presentation
         private void OnDisable()
         {
             isWorking = false;
+            isConversing = false;
             RestoreBaseline();
         }
 

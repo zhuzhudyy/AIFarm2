@@ -7,6 +7,7 @@ using AIFarm.Town;
 using NUnit.Framework;
 using Unity.AI.Navigation;
 using UnityEditor;
+using UnityEditor.SceneManagement;
 using UnityEngine;
 using UnityEngine.AI;
 using UnityEngine.SceneManagement;
@@ -23,6 +24,12 @@ namespace AIFarm.Tests.EditMode
             AssertGeneratedScene();
 
             Assert.That(DemoSceneBuilder.BuildDemoScene(promptToSaveCurrentScenes: false), Is.True);
+            AssertGeneratedScene();
+
+            Scene reopened = EditorSceneManager.OpenScene(
+                DemoSceneBuilder.ScenePath,
+                OpenSceneMode.Single);
+            Assert.That(reopened.IsValid(), Is.True);
             AssertGeneratedScene();
         }
 
@@ -152,6 +159,34 @@ namespace AIFarm.Tests.EditMode
                 }
             }
 
+            GameObject conversationAnchorObject = GameObject.Find(
+                "Town_Locations/Plaza_Blockout/Conversation_Anchors");
+            Assert.That(conversationAnchorObject, Is.Not.Null);
+            Transform conversationAnchorRoot = conversationAnchorObject.transform;
+            Assert.That(conversationAnchorRoot.childCount, Is.EqualTo(2));
+            var conversationAnchorIds = new HashSet<string>();
+            var conversationPointIds = new HashSet<string>();
+            for (int index = 0; index < conversationAnchorRoot.childCount; index++)
+            {
+                ConversationAnchor anchor = conversationAnchorRoot
+                    .GetChild(index)
+                    .GetComponent<ConversationAnchor>();
+                Assert.That(anchor, Is.Not.Null);
+                Assert.That(conversationAnchorIds.Add(anchor.AnchorId), Is.True);
+                Assert.That(anchor.LocationId.Value, Is.EqualTo("location-plaza"));
+                Assert.That(anchor.FirstStandPoint, Is.Not.Null);
+                Assert.That(anchor.SecondStandPoint, Is.Not.Null);
+                Assert.That(
+                    conversationPointIds.Add(anchor.FirstStandPoint.InteractionPointId),
+                    Is.True);
+                Assert.That(
+                    conversationPointIds.Add(anchor.SecondStandPoint.InteractionPointId),
+                    Is.True);
+            }
+
+            Assert.That(conversationAnchorIds, Has.Count.EqualTo(2));
+            Assert.That(conversationPointIds, Has.Count.EqualTo(4));
+
             NavMeshSurface navMeshSurface =
                 GameObject.Find("Navigation_NavMeshSurface").GetComponent<NavMeshSurface>();
             Assert.That(navMeshSurface, Is.Not.Null);
@@ -199,6 +234,7 @@ namespace AIFarm.Tests.EditMode
             Assert.That(bootstrap.SceneConfig, Is.Not.Null);
             Assert.That(bootstrap.GetComponent<ReplanController>(), Is.Not.Null);
             Assert.That(bootstrap.GetComponent<TownScheduleCoordinator>(), Is.Not.Null);
+            Assert.That(bootstrap.GetComponent<TownSocialCoordinator>(), Is.Not.Null);
 
             DemoInventoryConfig inventoryConfig =
                 AssetDatabase.LoadAssetAtPath<DemoInventoryConfig>(DemoSceneBuilder.InventoryConfigPath);

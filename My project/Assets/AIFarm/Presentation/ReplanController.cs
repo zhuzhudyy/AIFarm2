@@ -414,6 +414,16 @@ namespace AIFarm.Presentation
                 }
             }
 
+            TownResidentScheduleController scheduleController = executor == null
+                ? null
+                : executor.GetComponent<TownResidentScheduleController>();
+            if (scheduleController != null && scheduleController.IsConversationSuspended)
+            {
+                return ActionResult.Failure(
+                    ActionFailureReason.InvalidState,
+                    "The resident is finishing a conversation; submit the player instruction afterward.");
+            }
+
             if (gatewayRequestPending || reflectionRequestPending || IsGoalActive || executor.IsBusy)
             {
                 return ActionResult.Failure(
