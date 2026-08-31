@@ -1,6 +1,10 @@
+using System.Collections.Generic;
+using AIFarm.Ai;
 using AIFarm.Core;
 using AIFarm.Farming;
+using AIFarm.Npc;
 using AIFarm.Presentation;
+using AIFarm.Town;
 using Unity.AI.Navigation;
 using UnityEditor;
 using UnityEditor.SceneManagement;
@@ -18,10 +22,146 @@ namespace AIFarm.Editor
         public const string ScenePath = "Assets/AIFarm/Scenes/DemoScene.unity";
         public const string InventoryConfigPath = "Assets/AIFarm/Config/DemoInventoryConfig.asset";
         public const string SceneConfigPath = "Assets/AIFarm/Config/DemoSceneConfig.asset";
+        public const string ResidentPrefabPath = "Assets/AIFarm/Prefabs/Resident_Blockout.prefab";
+
+        public const string ResidentConfigFolder = "Assets/AIFarm/Config/Residents";
+        public const string ScheduleConfigFolder = "Assets/AIFarm/Config/Schedules";
+        public const string LocationConfigFolder = "Assets/AIFarm/Config/TownLocations";
 
         private const string MaterialFolder = "Assets/AIFarm/Art/Materials";
-        private static readonly Vector3 CameraPosition = new Vector3(10f, 12f, -12f);
+        private static readonly Vector3 CameraPosition = new Vector3(12f, 15f, -16f);
         private static readonly Vector3 CameraTarget = new Vector3(0f, 0f, 0.5f);
+
+        private sealed class TownLocationBuildSpec
+        {
+            public TownLocationBuildSpec(
+                string id,
+                string assetName,
+                string objectName,
+                string displayName,
+                Vector3 position,
+                Vector3 scale,
+                PrimitiveType primitiveType = PrimitiveType.Cube,
+                bool blocksNavigation = true)
+            {
+                Id = id;
+                AssetName = assetName;
+                ObjectName = objectName;
+                DisplayName = displayName;
+                Position = position;
+                Scale = scale;
+                PrimitiveType = primitiveType;
+                BlocksNavigation = blocksNavigation;
+            }
+
+            public string Id { get; }
+
+            public string AssetName { get; }
+
+            public string ObjectName { get; }
+
+            public string DisplayName { get; }
+
+            public Vector3 Position { get; }
+
+            public Vector3 Scale { get; }
+
+            public PrimitiveType PrimitiveType { get; }
+
+            public bool BlocksNavigation { get; }
+        }
+
+        private sealed class ResidentBuildSpec
+        {
+            public ResidentBuildSpec(
+                ResidentDefinition definition,
+                string assetName,
+                string sceneObjectName,
+                string statusIcon,
+                Color color,
+                string homeLocationId,
+                string morningLocationId,
+                string afternoonLocationId)
+            {
+                Definition = definition;
+                AssetName = assetName;
+                SceneObjectName = sceneObjectName;
+                StatusIcon = statusIcon;
+                Color = color;
+                HomeLocationId = homeLocationId;
+                MorningLocationId = morningLocationId;
+                AfternoonLocationId = afternoonLocationId;
+            }
+
+            public ResidentDefinition Definition { get; }
+
+            public string AssetName { get; }
+
+            public string SceneObjectName { get; }
+
+            public string StatusIcon { get; }
+
+            public Color Color { get; }
+
+            public string HomeLocationId { get; }
+
+            public string MorningLocationId { get; }
+
+            public string AfternoonLocationId { get; }
+        }
+
+        private static readonly TownLocationBuildSpec[] TownLocationSpecs =
+        {
+            new TownLocationBuildSpec(
+                "location-workshop", "Workshop", "Workshop_Blockout", "工坊",
+                new Vector3(-7.5f, 0.65f, 2.4f), new Vector3(2.6f, 1.4f, 2.2f)),
+            new TownLocationBuildSpec(
+                "location-cafeteria", "Cafeteria", "Cafeteria_Blockout", "食堂",
+                new Vector3(-7.5f, 0.65f, -2.4f), new Vector3(2.6f, 1.4f, 2.2f)),
+            new TownLocationBuildSpec(
+                "location-library", "Library", "Library_Blockout", "图书馆",
+                new Vector3(7.5f, 0.65f, 2.4f), new Vector3(2.6f, 1.4f, 2.2f)),
+            new TownLocationBuildSpec(
+                "location-plaza", "Plaza", "Plaza_Blockout", "广场",
+                new Vector3(7.1f, 0.04f, -2.8f), new Vector3(3.4f, 0.12f, 3.0f),
+                PrimitiveType.Cube, blocksNavigation: false),
+            new TownLocationBuildSpec(
+                "location-well", "Well", "Well_Blockout", "水井",
+                new Vector3(0f, 0.45f, -6.2f), new Vector3(1.5f, 0.9f, 1.5f),
+                PrimitiveType.Cylinder),
+            new TownLocationBuildSpec(
+                "location-home-yaya", "Home_Yaya", "Home_Yaya_Blockout", "芽芽的家",
+                new Vector3(-7.2f, 0.6f, 6.2f), new Vector3(2.2f, 1.25f, 1.8f)),
+            new TownLocationBuildSpec(
+                "location-home-amu", "Home_Amu", "Home_Amu_Blockout", "阿木的家",
+                new Vector3(-2.4f, 0.6f, 6.2f), new Vector3(2.2f, 1.25f, 1.8f)),
+            new TownLocationBuildSpec(
+                "location-home-xiaosui", "Home_Xiaosui", "Home_Xiaosui_Blockout", "小穗的家",
+                new Vector3(2.4f, 0.6f, 6.2f), new Vector3(2.2f, 1.25f, 1.8f)),
+            new TownLocationBuildSpec(
+                "location-home-momo", "Home_Momo", "Home_Momo_Blockout", "墨墨的家",
+                new Vector3(7.2f, 0.6f, 6.2f), new Vector3(2.2f, 1.25f, 1.8f))
+        };
+
+        private static readonly ResidentBuildSpec[] ResidentSpecs =
+        {
+            new ResidentBuildSpec(
+                ResidentDefinition.Yaya, "Yaya", "NPC_Blockout_Capsule", "Y",
+                new Color(0.31f, 0.78f, 0.34f),
+                "location-home-yaya", "location-workshop", "location-well"),
+            new ResidentBuildSpec(
+                ResidentDefinition.Amu, "Amu", "Resident_Amu", "A",
+                new Color(0.88f, 0.46f, 0.17f),
+                "location-home-amu", "location-workshop", "location-workshop"),
+            new ResidentBuildSpec(
+                ResidentDefinition.Xiaosui, "Xiaosui", "Resident_Xiaosui", "S",
+                new Color(0.93f, 0.74f, 0.20f),
+                "location-home-xiaosui", "location-library", "location-library"),
+            new ResidentBuildSpec(
+                ResidentDefinition.Momo, "Momo", "Resident_Momo", "M",
+                new Color(0.43f, 0.39f, 0.80f),
+                "location-home-momo", "location-well", "location-plaza")
+        };
 
         [MenuItem("Tools/AIFarm/Create Demo Scene")]
         public static void CreateDemoScene()
@@ -46,34 +186,63 @@ namespace AIFarm.Editor
 
             EnsureFolder("Assets/AIFarm/Scenes");
             EnsureFolder("Assets/AIFarm/Config");
+            EnsureFolder("Assets/AIFarm/Prefabs");
+            EnsureFolder(ResidentConfigFolder);
+            EnsureFolder(ScheduleConfigFolder);
+            EnsureFolder(LocationConfigFolder);
             EnsureFolder(MaterialFolder);
 
             DemoInventoryConfig inventoryConfig = GetOrCreateInventoryConfig();
             DemoSceneConfig sceneConfig = GetOrCreateSceneConfig(inventoryConfig);
+            TownLocationDefinitionAsset[] locationAssets = GetOrCreateLocationAssets();
+            DailyScheduleDefinitionAsset[] scheduleAssets =
+                GetOrCreateScheduleAssets(locationAssets);
+            ResidentDefinitionAsset[] residentAssets =
+                GetOrCreateResidentAssets(scheduleAssets);
             Material groundMaterial = GetOrCreateMaterial(
                 $"{MaterialFolder}/Ground_Blockout.mat",
                 new Color(0.18f, 0.32f, 0.16f));
             Material plotMaterial = GetOrCreateMaterial(
                 $"{MaterialFolder}/Plot_Soil_Blockout.mat",
                 new Color(0.38f, 0.20f, 0.08f));
-            Material npcMaterial = GetOrCreateMaterial(
-                $"{MaterialFolder}/NPC_Blockout.mat",
-                new Color(0.95f, 0.55f, 0.12f));
+            Material townMaterial = GetOrCreateMaterial(
+                $"{MaterialFolder}/Town_Building_Blockout.mat",
+                new Color(0.62f, 0.48f, 0.31f));
+            Material townAccentMaterial = GetOrCreateMaterial(
+                $"{MaterialFolder}/Town_Accent_Blockout.mat",
+                new Color(0.84f, 0.76f, 0.52f));
+            Material[] residentMaterials = GetOrCreateResidentMaterials();
+            GameObject residentPrefab = GetOrCreateResidentPrefab(residentMaterials[0]);
 
             Scene scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
             CreateEnvironment(groundMaterial);
             GameBootstrap bootstrap = CreateBootstrap(sceneConfig);
             PlotInteractionPoint[] interactionPoints = CreateFarm(sceneConfig, plotMaterial, bootstrap);
+            LocationArrivalPoint[] arrivalPoints = CreateTownLocations(
+                locationAssets,
+                townMaterial,
+                townAccentMaterial);
             CreateLighting();
             CreateCamera();
             ReplanController replanController = bootstrap.gameObject.AddComponent<ReplanController>();
-            NpcPlanExecutor executor = CreateNpc(
-                npcMaterial,
+            TownResidentScheduleController[] residentControllers = CreateResidents(
+                residentPrefab,
+                residentAssets,
+                residentMaterials,
                 plotMaterial,
                 bootstrap,
                 interactionPoints,
-                replanController);
+                arrivalPoints,
+                replanController,
+                out NpcPlanExecutor executor);
             EnsureSucceeded(replanController.Configure(bootstrap, executor));
+            TownScheduleCoordinator coordinator =
+                bootstrap.gameObject.AddComponent<TownScheduleCoordinator>();
+            EnsureSucceeded(coordinator.Configure(
+                bootstrap,
+                scheduleAssets,
+                arrivalPoints,
+                residentControllers));
             CreateUi(bootstrap, executor, replanController, executor.transform);
             NavMeshSurface navMeshSurface = CreateNavigation();
             navMeshSurface.BuildNavMesh();
@@ -126,11 +295,239 @@ namespace AIFarm.Editor
                 waitSeconds: 0.2f,
                 expressionCooldown: 12f,
                 expressionDisplay: 2.5f,
-                gatewayMode: config.AiGatewayMode,
+                gatewayMode: AiGatewayMode.Local,
                 gatewayBaseUrl: config.AiGatewayBaseUrl,
                 requestTimeoutSeconds: config.AiRequestTimeoutSeconds);
             EditorUtility.SetDirty(config);
             return config;
+        }
+
+        private static TownLocationDefinitionAsset[] GetOrCreateLocationAssets()
+        {
+            var assets = new TownLocationDefinitionAsset[TownLocationSpecs.Length];
+            for (int index = 0; index < TownLocationSpecs.Length; index++)
+            {
+                TownLocationBuildSpec spec = TownLocationSpecs[index];
+                string path = $"{LocationConfigFolder}/TownLocation_{spec.AssetName}.asset";
+                TownLocationDefinitionAsset asset =
+                    AssetDatabase.LoadAssetAtPath<TownLocationDefinitionAsset>(path);
+                if (asset == null)
+                {
+                    asset = ScriptableObject.CreateInstance<TownLocationDefinitionAsset>();
+                    asset.name = $"TownLocation_{spec.AssetName}";
+                    AssetDatabase.CreateAsset(asset, path);
+                }
+
+                EnsureSucceeded(asset.Configure(spec.Id, spec.DisplayName));
+                EditorUtility.SetDirty(asset);
+                assets[index] = asset;
+            }
+
+            return assets;
+        }
+
+        private static DailyScheduleDefinitionAsset[] GetOrCreateScheduleAssets(
+            TownLocationDefinitionAsset[] locations)
+        {
+            var assets = new DailyScheduleDefinitionAsset[ResidentSpecs.Length];
+            for (int index = 0; index < ResidentSpecs.Length; index++)
+            {
+                ResidentBuildSpec spec = ResidentSpecs[index];
+                string path = $"{ScheduleConfigFolder}/DailySchedule_{spec.AssetName}.asset";
+                DailyScheduleDefinitionAsset asset =
+                    AssetDatabase.LoadAssetAtPath<DailyScheduleDefinitionAsset>(path);
+                if (asset == null)
+                {
+                    asset = ScriptableObject.CreateInstance<DailyScheduleDefinitionAsset>();
+                    asset.name = $"DailySchedule_{spec.AssetName}";
+                    AssetDatabase.CreateAsset(asset, path);
+                }
+
+                var slots = new[]
+                {
+                    CreateScheduleSlot("00:00", "07:00", spec.HomeLocationId, ResidentActivityKind.Home, locations),
+                    CreateScheduleSlot("07:00", "08:00", "location-cafeteria", ResidentActivityKind.Meal, locations),
+                    CreateScheduleSlot("08:00", "12:00", spec.MorningLocationId, ResidentActivityKind.Work, locations),
+                    CreateScheduleSlot("12:00", "13:00", "location-cafeteria", ResidentActivityKind.Meal, locations),
+                    CreateScheduleSlot("13:00", "17:00", spec.AfternoonLocationId, ResidentActivityKind.Work, locations),
+                    CreateScheduleSlot("17:00", "18:00", "location-plaza", ResidentActivityKind.Gather, locations),
+                    CreateScheduleSlot("18:00", "19:00", "location-well", ResidentActivityKind.FetchWater, locations),
+                    CreateScheduleSlot("19:00", "24:00", spec.HomeLocationId, ResidentActivityKind.Home, locations)
+                };
+                EnsureSucceeded(asset.Configure(spec.Definition.ResidentId.Value, slots));
+                EditorUtility.SetDirty(asset);
+                assets[index] = asset;
+            }
+
+            return assets;
+        }
+
+        private static DailyScheduleSlotAsset CreateScheduleSlot(
+            string startTime,
+            string endTime,
+            string locationId,
+            ResidentActivityKind activity,
+            TownLocationDefinitionAsset[] locations)
+        {
+            TownLocationDefinitionAsset location = FindLocationAsset(locations, locationId);
+            if (location == null)
+            {
+                throw new System.InvalidOperationException(
+                    $"No town location asset exists for '{locationId}'.");
+            }
+
+            return new DailyScheduleSlotAsset(startTime, endTime, location, activity);
+        }
+
+        private static ResidentDefinitionAsset[] GetOrCreateResidentAssets(
+            DailyScheduleDefinitionAsset[] schedules)
+        {
+            var assets = new ResidentDefinitionAsset[ResidentSpecs.Length];
+            for (int index = 0; index < ResidentSpecs.Length; index++)
+            {
+                ResidentBuildSpec spec = ResidentSpecs[index];
+                string path = $"{ResidentConfigFolder}/ResidentDefinition_{spec.AssetName}.asset";
+                ResidentDefinitionAsset asset =
+                    AssetDatabase.LoadAssetAtPath<ResidentDefinitionAsset>(path);
+                if (asset == null)
+                {
+                    asset = ScriptableObject.CreateInstance<ResidentDefinitionAsset>();
+                    asset.name = $"ResidentDefinition_{spec.AssetName}";
+                    AssetDatabase.CreateAsset(asset, path);
+                }
+
+                EnsureSucceeded(asset.Configure(
+                    spec.Definition.ResidentId.Value,
+                    spec.Definition.DisplayName,
+                    spec.Color,
+                    spec.StatusIcon,
+                    schedules[index]));
+                EditorUtility.SetDirty(asset);
+                assets[index] = asset;
+            }
+
+            return assets;
+        }
+
+        private static Material[] GetOrCreateResidentMaterials()
+        {
+            var materials = new Material[ResidentSpecs.Length];
+            for (int index = 0; index < ResidentSpecs.Length; index++)
+            {
+                ResidentBuildSpec spec = ResidentSpecs[index];
+                materials[index] = GetOrCreateMaterial(
+                    $"{MaterialFolder}/Resident_{spec.AssetName}_Blockout.mat",
+                    spec.Color);
+            }
+
+            return materials;
+        }
+
+        private static GameObject GetOrCreateResidentPrefab(Material defaultMaterial)
+        {
+            var root = new GameObject("Resident_Blockout");
+            try
+            {
+                CapsuleCollider capsuleCollider = root.AddComponent<CapsuleCollider>();
+                capsuleCollider.center = new Vector3(0f, 1.2f, 0f);
+                capsuleCollider.height = 2.4f;
+                capsuleCollider.radius = 0.6f;
+
+                NavMeshAgent agent = root.AddComponent<NavMeshAgent>();
+                agent.height = 2.4f;
+                agent.radius = 0.45f;
+                agent.speed = 3.2f;
+                agent.angularSpeed = 720f;
+                agent.acceleration = 20f;
+                agent.stoppingDistance = 0.08f;
+                agent.autoBraking = true;
+
+                GameObject visual = GameObject.CreatePrimitive(PrimitiveType.Capsule);
+                visual.name = "NPC_Visual_Capsule";
+                visual.transform.SetParent(root.transform, false);
+                visual.transform.localPosition = new Vector3(0f, 1.2f, 0f);
+                visual.transform.localScale = Vector3.one * 1.2f;
+                visual.GetComponent<Renderer>().sharedMaterial = defaultMaterial;
+                Object.DestroyImmediate(visual.GetComponent<Collider>());
+
+                GameObject accent = GameObject.CreatePrimitive(PrimitiveType.Cube);
+                accent.name = "Resident_Accent_Block";
+                accent.transform.SetParent(visual.transform, false);
+                accent.transform.localPosition = new Vector3(0f, 0.55f, 0.48f);
+                accent.transform.localScale = new Vector3(0.55f, 0.2f, 0.18f);
+                accent.GetComponent<Renderer>().sharedMaterial = defaultMaterial;
+                Object.DestroyImmediate(accent.GetComponent<Collider>());
+
+                TextMesh nameLabel = CreateResidentWorldLabel(
+                    "Resident_Name_Label",
+                    root.transform,
+                    "居民",
+                    new Vector3(0f, 3.0f, 0f),
+                    56,
+                    0.065f);
+                nameLabel.color = Color.white;
+                TextMesh statusIcon = CreateResidentWorldLabel(
+                    "Resident_Status_Icon",
+                    root.transform,
+                    "?.",
+                    new Vector3(0f, 3.45f, 0f),
+                    54,
+                    0.065f);
+                statusIcon.color = new Color(1f, 0.95f, 0.58f);
+
+                root.AddComponent<ResidentBlockoutView>();
+                root.AddComponent<TownResidentNavigator>();
+                root.AddComponent<TownResidentScheduleController>();
+
+                GameObject saved = PrefabUtility.SaveAsPrefabAsset(root, ResidentPrefabPath);
+                if (saved == null)
+                {
+                    throw new System.InvalidOperationException(
+                        $"Unable to save resident prefab at {ResidentPrefabPath}.");
+                }
+            }
+            finally
+            {
+                Object.DestroyImmediate(root);
+            }
+
+            return AssetDatabase.LoadAssetAtPath<GameObject>(ResidentPrefabPath);
+        }
+
+        private static TextMesh CreateResidentWorldLabel(
+            string name,
+            Transform parent,
+            string content,
+            Vector3 localPosition,
+            int fontSize,
+            float characterSize)
+        {
+            var labelObject = new GameObject(name);
+            labelObject.transform.SetParent(parent, false);
+            labelObject.transform.localPosition = localPosition;
+            TextMesh label = labelObject.AddComponent<TextMesh>();
+            label.text = content;
+            label.anchor = TextAnchor.MiddleCenter;
+            label.alignment = TextAlignment.Center;
+            label.fontSize = fontSize;
+            label.characterSize = characterSize;
+            labelObject.AddComponent<WorldSpaceBillboard>();
+            return label;
+        }
+
+        private static TownLocationDefinitionAsset FindLocationAsset(
+            TownLocationDefinitionAsset[] locations,
+            string locationId)
+        {
+            foreach (TownLocationDefinitionAsset location in locations)
+            {
+                if (location != null && location.LocationIdValue == locationId)
+                {
+                    return location;
+                }
+            }
+
+            return null;
         }
 
         private static Material GetOrCreateMaterial(string path, Color color)
@@ -168,7 +565,7 @@ namespace AIFarm.Editor
             ground.name = "Ground_Blockout";
             ground.transform.SetParent(environment.transform, false);
             ground.transform.position = new Vector3(0f, -0.3f, 0.5f);
-            ground.transform.localScale = new Vector3(18f, 0.5f, 14f);
+            ground.transform.localScale = new Vector3(22f, 0.5f, 16f);
             ground.GetComponent<Renderer>().sharedMaterial = groundMaterial;
         }
 
@@ -296,56 +693,237 @@ namespace AIFarm.Editor
             label.color = Color.white;
         }
 
-        private static NpcPlanExecutor CreateNpc(
-            Material npcMaterial,
+        private static LocationArrivalPoint[] CreateTownLocations(
+            TownLocationDefinitionAsset[] locationAssets,
+            Material buildingMaterial,
+            Material accentMaterial)
+        {
+            var townRoot = new GameObject("Town_Locations");
+            var points = new List<LocationArrivalPoint>();
+            for (int index = 0; index < TownLocationSpecs.Length; index++)
+            {
+                TownLocationBuildSpec spec = TownLocationSpecs[index];
+                TownLocationDefinitionAsset location = locationAssets[index];
+                GameObject locationRoot = new GameObject(spec.ObjectName);
+                locationRoot.transform.SetParent(townRoot.transform, false);
+
+                GameObject structure = GameObject.CreatePrimitive(spec.PrimitiveType);
+                structure.name = "Structure";
+                structure.transform.SetParent(locationRoot.transform, false);
+                structure.transform.position = spec.Position;
+                structure.transform.localScale = spec.Scale;
+                structure.GetComponent<Renderer>().sharedMaterial = buildingMaterial;
+                if (!spec.BlocksNavigation)
+                {
+                    Object.DestroyImmediate(structure.GetComponent<Collider>());
+                }
+
+                GameObject accent = GameObject.CreatePrimitive(PrimitiveType.Cube);
+                accent.name = "Accent";
+                accent.transform.SetParent(locationRoot.transform, false);
+                accent.transform.position = spec.Position +
+                    Vector3.up * (spec.Scale.y * 0.5f + 0.18f);
+                accent.transform.localScale = new Vector3(
+                    Mathf.Max(0.65f, spec.Scale.x * 0.72f),
+                    0.22f,
+                    Mathf.Max(0.65f, spec.Scale.z * 0.72f));
+                accent.GetComponent<Renderer>().sharedMaterial = accentMaterial;
+                Object.DestroyImmediate(accent.GetComponent<Collider>());
+
+                Vector3 labelPosition = spec.Position +
+                    Vector3.up * (spec.Scale.y * 0.5f + 0.75f);
+                var labelObject = new GameObject("Location_Label");
+                labelObject.transform.SetParent(locationRoot.transform, false);
+                labelObject.transform.position = labelPosition;
+                labelObject.transform.rotation = Quaternion.LookRotation(
+                    labelPosition - CameraPosition,
+                    Vector3.up);
+                TextMesh label = labelObject.AddComponent<TextMesh>();
+                label.text = spec.DisplayName;
+                label.anchor = TextAnchor.MiddleCenter;
+                label.alignment = TextAlignment.Center;
+                label.fontSize = 58;
+                label.characterSize = 0.07f;
+                label.color = Color.white;
+
+                Vector3 inward = new Vector3(-spec.Position.x, 0f, -spec.Position.z);
+                if (inward.sqrMagnitude < 0.01f)
+                {
+                    inward = Vector3.back;
+                }
+
+                inward.Normalize();
+                Vector3 tangent = new Vector3(-inward.z, 0f, inward.x);
+                float distance = Mathf.Max(spec.Scale.x, spec.Scale.z) * 0.5f + 0.75f;
+                Vector3 pointCenter = new Vector3(spec.Position.x, -0.04f, spec.Position.z) +
+                    inward * distance;
+                var arrivalRoot = new GameObject("Arrival_Points");
+                arrivalRoot.transform.SetParent(locationRoot.transform, false);
+                for (int pointIndex = 0; pointIndex < ResidentSpecs.Length; pointIndex++)
+                {
+                    string pointId = $"{spec.Id}-point-{pointIndex + 1:00}";
+                    var pointObject = new GameObject($"ArrivalPoint_{pointIndex + 1:00}");
+                    pointObject.transform.SetParent(arrivalRoot.transform, false);
+                    pointObject.transform.position = pointCenter +
+                        tangent * ((pointIndex - 1.5f) * 0.55f);
+                    LocationArrivalPoint point = pointObject.AddComponent<LocationArrivalPoint>();
+                    EnsureSucceeded(point.Configure(location, pointId, structure.transform));
+                    points.Add(point);
+
+                    GameObject marker = GameObject.CreatePrimitive(PrimitiveType.Cube);
+                    marker.name = "Marker";
+                    marker.transform.SetParent(pointObject.transform, false);
+                    marker.transform.localPosition = new Vector3(0f, 0.045f, 0f);
+                    marker.transform.localScale = new Vector3(0.16f, 0.06f, 0.16f);
+                    marker.GetComponent<Renderer>().sharedMaterial = accentMaterial;
+                    Object.DestroyImmediate(marker.GetComponent<Collider>());
+                }
+            }
+
+            return points.ToArray();
+        }
+
+        private static TownResidentScheduleController[] CreateResidents(
+            GameObject residentPrefab,
+            ResidentDefinitionAsset[] residentAssets,
+            Material[] residentMaterials,
             Material feedbackBackgroundMaterial,
             GameBootstrap bootstrap,
             PlotInteractionPoint[] interactionPoints,
-            ReplanController replanController)
+            LocationArrivalPoint[] arrivalPoints,
+            ReplanController replanController,
+            out NpcPlanExecutor yayaExecutor)
         {
-            var npc = new GameObject("NPC_Blockout_Capsule");
-            npc.name = "NPC_Blockout_Capsule";
-            npc.transform.position = new Vector3(-5f, -0.04f, 0f);
+            if (residentPrefab == null || residentAssets == null || residentMaterials == null ||
+                residentAssets.Length != ResidentSpecs.Length ||
+                residentMaterials.Length != ResidentSpecs.Length)
+            {
+                throw new System.InvalidOperationException(
+                    "Resident prefab and four matching resident assets are required.");
+            }
 
-            CapsuleCollider capsuleCollider = npc.AddComponent<CapsuleCollider>();
-            capsuleCollider.center = new Vector3(0f, 1.2f, 0f);
-            capsuleCollider.height = 2.4f;
-            capsuleCollider.radius = 0.6f;
+            yayaExecutor = null;
+            var controllers = new TownResidentScheduleController[ResidentSpecs.Length];
+            for (int index = 0; index < ResidentSpecs.Length; index++)
+            {
+                ResidentBuildSpec spec = ResidentSpecs[index];
+                GameObject resident = (GameObject)PrefabUtility.InstantiatePrefab(residentPrefab);
+                resident.name = spec.SceneObjectName;
+                LocationArrivalPoint homePoint = FindArrivalPoint(
+                    arrivalPoints,
+                    spec.HomeLocationId,
+                    preferredIndex: index);
+                if (homePoint == null)
+                {
+                    throw new System.InvalidOperationException(
+                        $"No home arrival point exists for {spec.Definition.DisplayName}.");
+                }
 
-            NavMeshAgent agent = npc.AddComponent<NavMeshAgent>();
-            agent.height = 2.4f;
-            agent.radius = 0.45f;
-            agent.speed = 3.5f;
-            agent.angularSpeed = 720f;
-            agent.acceleration = 20f;
-            agent.stoppingDistance = 0.05f;
-            agent.autoBraking = true;
+                resident.transform.position = homePoint.Position;
+                NavMeshAgent agent = resident.GetComponent<NavMeshAgent>();
+                agent.speed = 3.2f;
+                agent.angularSpeed = 720f;
+                agent.acceleration = 20f;
+                agent.stoppingDistance = 0.08f;
 
-            GameObject visual = GameObject.CreatePrimitive(PrimitiveType.Capsule);
-            visual.name = "NPC_Visual_Capsule";
-            visual.transform.SetParent(npc.transform, false);
-            visual.transform.localPosition = new Vector3(0f, 1.2f, 0f);
-            visual.transform.localScale = Vector3.one * 1.2f;
-            visual.GetComponent<Renderer>().sharedMaterial = npcMaterial;
-            Object.DestroyImmediate(visual.GetComponent<Collider>());
+                Transform visual = resident.transform.Find("NPC_Visual_Capsule");
+                Renderer[] renderers = visual.GetComponentsInChildren<Renderer>(true);
+                TextMesh nameLabel = resident.transform
+                    .Find("Resident_Name_Label")
+                    .GetComponent<TextMesh>();
+                TextMesh statusIcon = resident.transform
+                    .Find("Resident_Status_Icon")
+                    .GetComponent<TextMesh>();
+                ResidentBlockoutView view = resident.GetComponent<ResidentBlockoutView>();
+                EnsureSucceeded(view.Configure(
+                    residentAssets[index],
+                    renderers,
+                    nameLabel,
+                    statusIcon,
+                    visual,
+                    residentMaterials[index]));
 
-            CreateFeedbackBar(
-                npc.transform,
-                npcMaterial,
-                feedbackBackgroundMaterial,
-                out GameObject progressRoot,
-                out Transform progressFill);
-            CreateNpcDialogueBubble(npc.transform, replanController);
+                TownResidentNavigator townNavigator =
+                    resident.GetComponent<TownResidentNavigator>();
+                EnsureSucceeded(townNavigator.Configure(
+                    agent,
+                    arrivalPoints,
+                    requireNavMesh: true,
+                    movementSpeed: 3.2f));
 
-            NpcNavigator navigator = npc.AddComponent<NpcNavigator>();
-            EnsureSucceeded(navigator.Configure(agent, interactionPoints, requireNavMesh: true, movementSpeed: 3.5f));
+                NpcPlanExecutor farmExecutor = null;
+                if (spec.Definition.ResidentId == ResidentIds.Yaya)
+                {
+                    CreateFeedbackBar(
+                        resident.transform,
+                        residentMaterials[index],
+                        feedbackBackgroundMaterial,
+                        out GameObject progressRoot,
+                        out Transform progressFill);
+                    CreateNpcDialogueBubble(resident.transform, replanController);
 
-            BlockoutActionFeedback feedback = npc.AddComponent<BlockoutActionFeedback>();
-            EnsureSucceeded(feedback.Configure(visual.transform, progressRoot, progressFill));
+                    NpcNavigator farmNavigator = resident.AddComponent<NpcNavigator>();
+                    EnsureSucceeded(farmNavigator.Configure(
+                        agent,
+                        interactionPoints,
+                        requireNavMesh: true,
+                        movementSpeed: 3.5f));
+                    BlockoutActionFeedback feedback =
+                        resident.AddComponent<BlockoutActionFeedback>();
+                    EnsureSucceeded(feedback.Configure(
+                        visual,
+                        progressRoot,
+                        progressFill));
+                    farmExecutor = resident.AddComponent<NpcPlanExecutor>();
+                    EnsureSucceeded(farmExecutor.Configure(
+                        ResidentIds.Yaya,
+                        bootstrap,
+                        farmNavigator,
+                        feedback));
+                    yayaExecutor = farmExecutor;
+                }
 
-            NpcPlanExecutor executor = npc.AddComponent<NpcPlanExecutor>();
-            EnsureSucceeded(executor.Configure(bootstrap, navigator, feedback));
-            return executor;
+                TownResidentScheduleController controller =
+                    resident.GetComponent<TownResidentScheduleController>();
+                EnsureSucceeded(controller.Configure(
+                    residentAssets[index],
+                    townNavigator,
+                    view,
+                    farmExecutor));
+                controllers[index] = controller;
+            }
+
+            if (yayaExecutor == null)
+            {
+                throw new System.InvalidOperationException("The scene requires the 芽芽 farm executor.");
+            }
+
+            return controllers;
+        }
+
+        private static LocationArrivalPoint FindArrivalPoint(
+            LocationArrivalPoint[] points,
+            string locationId,
+            int preferredIndex)
+        {
+            var matches = new List<LocationArrivalPoint>();
+            foreach (LocationArrivalPoint point in points)
+            {
+                if (point != null && point.LocationId.Value == locationId)
+                {
+                    matches.Add(point);
+                }
+            }
+
+            matches.Sort((left, right) => string.CompareOrdinal(
+                left.InteractionPointId,
+                right.InteractionPointId));
+            if (matches.Count == 0)
+            {
+                return null;
+            }
+
+            return matches[Mathf.Clamp(preferredIndex, 0, matches.Count - 1)];
         }
 
         private static void CreateNpcDialogueBubble(
@@ -490,7 +1068,7 @@ namespace AIFarm.Editor
 
             Camera camera = cameraObject.AddComponent<Camera>();
             camera.orthographic = true;
-            camera.orthographicSize = 8.5f;
+            camera.orthographicSize = 10.5f;
             camera.clearFlags = CameraClearFlags.SolidColor;
             camera.backgroundColor = new Color(0.52f, 0.72f, 0.82f);
             cameraObject.AddComponent<AudioListener>();

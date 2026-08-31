@@ -1,0 +1,48 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 9a4751400e9bb124489b1c9233d8e9fa, type: 3}
+  m_Name: DailySchedule_Amu
+  m_EditorClassIdentifier: AIFarm.Presentation::AIFarm.Presentation.DailyScheduleDefinitionAsset
+  residentIdValue: resident-002
+  slots:
+  - startTime: 00:00
+    endTime: 07:00
+    targetLocation: {fileID: 11400000, guid: a1a3197a7c67552468a277df2c7722bd, type: 2}
+    activity: 0
+  - startTime: 07:00
+    endTime: 08:00
+    targetLocation: {fileID: 11400000, guid: e57f101631226db49b23fda5dc951094, type: 2}
+    activity: 1
+  - startTime: 08:00
+    endTime: 12:00
+    targetLocation: {fileID: 11400000, guid: 5c0dbee9e7c51b945b2dcb6b961d682b, type: 2}
+    activity: 2
+  - startTime: 12:00
+    endTime: 13:00
+    targetLocation: {fileID: 11400000, guid: e57f101631226db49b23fda5dc951094, type: 2}
+    activity: 1
+  - startTime: 13:00
+    endTime: 17:00
+    targetLocation: {fileID: 11400000, guid: 5c0dbee9e7c51b945b2dcb6b961d682b, type: 2}
+    activity: 2
+  - startTime: 17:00
+    endTime: 18:00
+    targetLocation: {fileID: 11400000, guid: f3b6c02c05bb7eb4e8b4d43e5b3d17e5, type: 2}
+    activity: 4
+  - startTime: 18:00
+    endTime: 19:00
+    targetLocation: {fileID: 11400000, guid: 807951c05c050de4c9753ba56283a094, type: 2}
+    activity: 5
+  - startTime: 19:00
+    endTime: 24:00
+    targetLocation: {fileID: 11400000, guid: a1a3197a7c67552468a277df2c7722bd, type: 2}
+    activity: 0

@@ -917,12 +917,10 @@ namespace AIFarm.Presentation
                     reflectionData.text));
             }
 
-            ResidentDefinition definition = residentId == ResidentIds.Yaya
-                ? ResidentDefinition.Yaya
-                : new ResidentDefinition(
-                    residentId,
-                    data.displayName,
-                    NpcPersonaDefinition.Yaya);
+            ResidentDefinition definition = new ResidentDefinition(
+                residentId,
+                data.displayName,
+                NpcPersonaDefinition.ForResident(residentId));
             var restoredRuntime = new ResidentRuntimeState(
                 definition,
                 memoryStore);

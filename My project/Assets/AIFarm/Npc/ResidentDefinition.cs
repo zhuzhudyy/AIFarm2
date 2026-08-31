@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Collections.ObjectModel;
 
 namespace AIFarm.Npc
 {
@@ -28,6 +30,30 @@ namespace AIFarm.Npc
             ResidentIds.Yaya,
             "芽芽",
             NpcPersonaDefinition.Yaya);
+
+        public static ResidentDefinition Amu { get; } = new ResidentDefinition(
+            ResidentIds.Amu,
+            "阿木",
+            NpcPersonaDefinition.Amu);
+
+        public static ResidentDefinition Xiaosui { get; } = new ResidentDefinition(
+            ResidentIds.Xiaosui,
+            "小穗",
+            NpcPersonaDefinition.Xiaosui);
+
+        public static ResidentDefinition Momo { get; } = new ResidentDefinition(
+            ResidentIds.Momo,
+            "墨墨",
+            NpcPersonaDefinition.Momo);
+
+        public static IReadOnlyList<ResidentDefinition> TownResidents { get; } =
+            new ReadOnlyCollection<ResidentDefinition>(new[]
+            {
+                Yaya,
+                Amu,
+                Xiaosui,
+                Momo
+            });
 
         public ResidentId ResidentId { get; }
 

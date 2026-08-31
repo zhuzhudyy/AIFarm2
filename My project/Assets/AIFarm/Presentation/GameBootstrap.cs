@@ -57,12 +57,16 @@ namespace AIFarm.Presentation
 
             DemoInventoryConfig inventoryConfig = sceneConfig.InventoryConfig;
             ResidentRegistry = new ResidentRegistry();
-            ActionResult residentResult = ResidentRegistry.Register(
-                ResidentDefinition.Yaya,
-                new NpcRuntimeState(ResidentDefinition.Yaya));
-            if (residentResult.Failed)
+            foreach (ResidentDefinition definition in ResidentDefinition.TownResidents)
             {
-                return residentResult;
+                ResidentRuntimeState runtimeState = definition.ResidentId == ResidentIds.Yaya
+                    ? new NpcRuntimeState(definition)
+                    : new ResidentRuntimeState(definition);
+                ActionResult residentResult = ResidentRegistry.Register(definition, runtimeState);
+                if (residentResult.Failed)
+                {
+                    return residentResult;
+                }
             }
 
             Field = new FarmField();

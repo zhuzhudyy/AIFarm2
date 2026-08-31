@@ -1,0 +1,19 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 6234dbb28d15a2a4fb0d098711aa9ed9, type: 3}
+  m_Name: ResidentDefinition_Momo
+  m_EditorClassIdentifier: AIFarm.Presentation::AIFarm.Presentation.ResidentDefinitionAsset
+  residentIdValue: resident-004
+  displayName: "\u58A8\u58A8"
+  residentColor: {r: 0.43, g: 0.39, b: 0.8, a: 1}
+  statusIcon: M
+  dailySchedule: {fileID: 11400000, guid: 6379faf75a705d34e9d91818a111966f, type: 2}

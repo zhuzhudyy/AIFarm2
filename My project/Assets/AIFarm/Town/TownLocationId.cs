@@ -1,22 +1,20 @@
 using System;
-using System.Collections.Generic;
-using System.Collections.ObjectModel;
 
-namespace AIFarm.Npc
+namespace AIFarm.Town
 {
-    public readonly struct ResidentId : IEquatable<ResidentId>, IComparable<ResidentId>
+    public readonly struct TownLocationId : IEquatable<TownLocationId>, IComparable<TownLocationId>
     {
         public const int MaximumLength = 64;
 
         private readonly string value;
 
-        public ResidentId(string value)
+        public TownLocationId(string value)
         {
             string normalized = (value ?? string.Empty).Trim();
             if (!IsValidValue(normalized))
             {
                 throw new ArgumentException(
-                    $"ResidentId must contain 1-{MaximumLength} lowercase ASCII letters, digits, or hyphens.",
+                    $"TownLocationId must contain 1-{MaximumLength} lowercase ASCII letters, digits, or hyphens.",
                     nameof(value));
             }
 
@@ -27,19 +25,19 @@ namespace AIFarm.Npc
 
         public bool IsValid => IsValidValue(value);
 
-        public int CompareTo(ResidentId other)
+        public int CompareTo(TownLocationId other)
         {
             return string.Compare(Value, other.Value, StringComparison.Ordinal);
         }
 
-        public bool Equals(ResidentId other)
+        public bool Equals(TownLocationId other)
         {
             return string.Equals(Value, other.Value, StringComparison.Ordinal);
         }
 
         public override bool Equals(object obj)
         {
-            return obj is ResidentId other && Equals(other);
+            return obj is TownLocationId other && Equals(other);
         }
 
         public override int GetHashCode()
@@ -52,25 +50,25 @@ namespace AIFarm.Npc
             return Value;
         }
 
-        public static bool TryCreate(string value, out ResidentId residentId)
+        public static bool TryCreate(string value, out TownLocationId locationId)
         {
             string normalized = (value ?? string.Empty).Trim();
             if (!IsValidValue(normalized))
             {
-                residentId = default;
+                locationId = default;
                 return false;
             }
 
-            residentId = new ResidentId(normalized);
+            locationId = new TownLocationId(normalized);
             return true;
         }
 
-        public static bool operator ==(ResidentId left, ResidentId right)
+        public static bool operator ==(TownLocationId left, TownLocationId right)
         {
             return left.Equals(right);
         }
 
-        public static bool operator !=(ResidentId left, ResidentId right)
+        public static bool operator !=(TownLocationId left, TownLocationId right)
         {
             return !left.Equals(right);
         }
@@ -96,33 +94,5 @@ namespace AIFarm.Npc
 
             return true;
         }
-    }
-
-    public static class ResidentIds
-    {
-        public const string YayaValue = "resident-001";
-
-        public const string AmuValue = "resident-002";
-
-        public const string XiaosuiValue = "resident-003";
-
-        public const string MomoValue = "resident-004";
-
-        public static ResidentId Yaya => new ResidentId(YayaValue);
-
-        public static ResidentId Amu => new ResidentId(AmuValue);
-
-        public static ResidentId Xiaosui => new ResidentId(XiaosuiValue);
-
-        public static ResidentId Momo => new ResidentId(MomoValue);
-
-        public static IReadOnlyList<ResidentId> TownResidents { get; } =
-            new ReadOnlyCollection<ResidentId>(new[]
-            {
-                Yaya,
-                Amu,
-                Xiaosui,
-                Momo
-            });
     }
 }

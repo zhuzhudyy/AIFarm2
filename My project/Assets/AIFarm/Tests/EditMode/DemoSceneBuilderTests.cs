@@ -1,6 +1,9 @@
+using System.Collections.Generic;
+using AIFarm.Ai;
 using AIFarm.Editor;
 using AIFarm.Npc;
 using AIFarm.Presentation;
+using AIFarm.Town;
 using NUnit.Framework;
 using Unity.AI.Navigation;
 using UnityEditor;
@@ -38,6 +41,10 @@ namespace AIFarm.Tests.EditMode
             AssertSingleRoot(scene, "UI_Canvas");
             AssertSingleRoot(scene, "EventSystem_InputSystem");
             AssertSingleRoot(scene, "Navigation_NavMeshSurface");
+            AssertSingleRoot(scene, "Town_Locations");
+            AssertSingleRoot(scene, "Resident_Amu");
+            AssertSingleRoot(scene, "Resident_Xiaosui");
+            AssertSingleRoot(scene, "Resident_Momo");
 
             GameObject plotsRoot = GameObject.Find("Farm_3x3/Plots_1_to_9");
             Assert.That(plotsRoot, Is.Not.Null);
@@ -81,6 +88,69 @@ namespace AIFarm.Tests.EditMode
             Assert.That(dialogueBubble.Find("DialogueText"), Is.Not.Null);
             Assert.That(dialogueBubble.Find("EmojiText"), Is.Not.Null);
             Assert.That(dialogueBubble.Find("MoodText"), Is.Not.Null);
+
+            string[] residentObjectNames =
+            {
+                "NPC_Blockout_Capsule",
+                "Resident_Amu",
+                "Resident_Xiaosui",
+                "Resident_Momo"
+            };
+            var residentIds = new HashSet<ResidentId>();
+            var residentColors = new HashSet<string>();
+            foreach (string residentObjectName in residentObjectNames)
+            {
+                GameObject resident = GameObject.Find(residentObjectName);
+                Assert.That(resident, Is.Not.Null);
+                Assert.That(resident.GetComponent<NavMeshAgent>(), Is.Not.Null);
+                Assert.That(resident.GetComponent<TownResidentNavigator>(), Is.Not.Null);
+                TownResidentScheduleController scheduleController =
+                    resident.GetComponent<TownResidentScheduleController>();
+                Assert.That(scheduleController, Is.Not.Null);
+                Assert.That(residentIds.Add(scheduleController.ResidentId), Is.True);
+                ResidentBlockoutView residentView = resident.GetComponent<ResidentBlockoutView>();
+                Assert.That(residentView, Is.Not.Null);
+                Assert.That(residentView.NameLabel.text, Is.Not.Empty);
+                Assert.That(residentView.StatusIcon.text, Is.Not.Empty);
+                Renderer bodyRenderer = resident.transform
+                    .Find("NPC_Visual_Capsule")
+                    .GetComponent<Renderer>();
+                residentColors.Add(ColorUtility.ToHtmlStringRGB(bodyRenderer.sharedMaterial.color));
+            }
+
+            Assert.That(residentIds, Has.Count.EqualTo(4));
+            Assert.That(residentColors, Has.Count.EqualTo(4));
+            Assert.That(GameObject.Find("Resident_Amu").GetComponent<NpcPlanExecutor>(), Is.Null);
+            Assert.That(GameObject.Find("Resident_Xiaosui").GetComponent<NpcPlanExecutor>(), Is.Null);
+            Assert.That(GameObject.Find("Resident_Momo").GetComponent<NpcPlanExecutor>(), Is.Null);
+
+            string[] townObjectNames =
+            {
+                "Workshop_Blockout",
+                "Cafeteria_Blockout",
+                "Library_Blockout",
+                "Plaza_Blockout",
+                "Well_Blockout",
+                "Home_Yaya_Blockout",
+                "Home_Amu_Blockout",
+                "Home_Xiaosui_Blockout",
+                "Home_Momo_Blockout"
+            };
+            foreach (string townObjectName in townObjectNames)
+            {
+                GameObject location = GameObject.Find($"Town_Locations/{townObjectName}");
+                Assert.That(location, Is.Not.Null);
+                Assert.That(location.transform.Find("Location_Label"), Is.Not.Null);
+                Transform arrivalRoot = location.transform.Find("Arrival_Points");
+                Assert.That(arrivalRoot, Is.Not.Null);
+                Assert.That(arrivalRoot.childCount, Is.EqualTo(4));
+                for (int index = 0; index < arrivalRoot.childCount; index++)
+                {
+                    Assert.That(
+                        arrivalRoot.GetChild(index).GetComponent<LocationArrivalPoint>(),
+                        Is.Not.Null);
+                }
+            }
 
             NavMeshSurface navMeshSurface =
                 GameObject.Find("Navigation_NavMeshSurface").GetComponent<NavMeshSurface>();
@@ -128,6 +198,7 @@ namespace AIFarm.Tests.EditMode
             Assert.That(bootstrap, Is.Not.Null);
             Assert.That(bootstrap.SceneConfig, Is.Not.Null);
             Assert.That(bootstrap.GetComponent<ReplanController>(), Is.Not.Null);
+            Assert.That(bootstrap.GetComponent<TownScheduleCoordinator>(), Is.Not.Null);
 
             DemoInventoryConfig inventoryConfig =
                 AssetDatabase.LoadAssetAtPath<DemoInventoryConfig>(DemoSceneBuilder.InventoryConfigPath);
@@ -146,6 +217,7 @@ namespace AIFarm.Tests.EditMode
             Assert.That(sceneConfig.ExpressionDisplaySeconds, Is.GreaterThan(0f));
             Assert.That(sceneConfig.AiGatewayBaseUrl, Is.Not.Empty);
             Assert.That(sceneConfig.AiRequestTimeoutSeconds, Is.InRange(1, 3));
+            Assert.That(sceneConfig.AiGatewayMode, Is.EqualTo(AiGatewayMode.Local));
             Assert.That(sceneConfig.CreateDemoMode().IsAiServiceRequired, Is.False);
 
             Assert.That(
@@ -154,6 +226,24 @@ namespace AIFarm.Tests.EditMode
             Assert.That(
                 AssetDatabase.FindAssets("t:DemoSceneConfig", new[] { "Assets/AIFarm/Config" }),
                 Has.Length.EqualTo(1));
+            Assert.That(
+                AssetDatabase.FindAssets(
+                    "t:ResidentDefinitionAsset",
+                    new[] { DemoSceneBuilder.ResidentConfigFolder }),
+                Has.Length.EqualTo(4));
+            Assert.That(
+                AssetDatabase.FindAssets(
+                    "t:DailyScheduleDefinitionAsset",
+                    new[] { DemoSceneBuilder.ScheduleConfigFolder }),
+                Has.Length.EqualTo(4));
+            Assert.That(
+                AssetDatabase.FindAssets(
+                    "t:TownLocationDefinitionAsset",
+                    new[] { DemoSceneBuilder.LocationConfigFolder }),
+                Has.Length.EqualTo(9));
+            Assert.That(
+                AssetDatabase.LoadAssetAtPath<GameObject>(DemoSceneBuilder.ResidentPrefabPath),
+                Is.Not.Null);
         }
 
         private static void AssertSingleRoot(Scene scene, string expectedName)
