@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Linq;
+using AIFarm.Ai;
 using AIFarm.Core;
 using AIFarm.Npc;
 using AIFarm.Social;
@@ -299,6 +300,176 @@ namespace AIFarm.Tests.EditMode
             Assert.That(playerInstructionBlocked.Failed, Is.True);
             Assert.That(fixture.Detector.IsCooldownComplete(ResidentIds.Yaya, 150d), Is.True);
             Assert.That(fixture.Detector.IsCooldownComplete(ResidentIds.Yaya, 0d), Is.True);
+        }
+
+        [Test]
+        public void PreparedRemoteScript_PlaysMoodEmojiAndAppliesOnlyOutcomeTagRules()
+        {
+            SocialFixture fixture = CreateFixture();
+            fixture.Graph.TryGetRelationship(
+                ResidentIds.Yaya,
+                ResidentIds.Amu,
+                out RelationshipState relationship);
+            ConversationSession session = Start(
+                fixture,
+                ResidentIds.Yaya,
+                ResidentIds.Amu,
+                "seat-remote-a",
+                "seat-remote-b",
+                targetSentenceCount: 4);
+            var script = new ConversationScriptSpec(
+                session.FirstResidentId,
+                new[]
+                {
+                    new ConversationLineSpec(
+                        session.FirstResidentId,
+                        NpcMood.Happy,
+                        "🙂",
+                        "第一句已经实际播放。"),
+                    new ConversationLineSpec(
+                        session.SecondResidentId,
+                        NpcMood.Focused,
+                        "✓",
+                        "第二句也已经实际播放。")
+                },
+                ConversationOutcome.Helpful,
+                "openai");
+
+            Assert.That(
+                fixture.Coordinator.SetConversationScript(
+                    session.ConversationId,
+                    script).Succeeded,
+                Is.True);
+            Assert.That(
+                fixture.Coordinator.AdvanceConversation(
+                    session.ConversationId,
+                    0.1d,
+                    10d,
+                    out ConversationUtterance first).Succeeded,
+                Is.True);
+            Assert.That(first.Mood, Is.EqualTo(NpcMood.Happy));
+            Assert.That(first.Emoji, Is.EqualTo("🙂"));
+            Assert.That(
+                fixture.Coordinator.AdvanceConversation(
+                    session.ConversationId,
+                    0.2d,
+                    11d,
+                    out ConversationUtterance second).Succeeded,
+                Is.True);
+
+            Assert.That(second.Mood, Is.EqualTo(NpcMood.Focused));
+            Assert.That(session.State, Is.EqualTo(ConversationState.Completed));
+            Assert.That(
+                relationship.Trust,
+                Is.EqualTo(ConversationOutcomeApplier.HelpfulTrustIncrease));
+            Assert.That(
+                Runtime(fixture, ResidentIds.Yaya).Memories.Entries.Single().Text,
+                Does.Contain("第一句已经实际播放。"));
+            Assert.That(
+                Runtime(fixture, ResidentIds.Amu).Memories.Entries.Single().Text,
+                Does.Contain("第二句也已经实际播放。"));
+        }
+
+        [Test]
+        public void CancelledPreparedScript_RecordsPlayedLineButNotUnplayedContentOrOutcome()
+        {
+            SocialFixture fixture = CreateFixture();
+            fixture.Graph.TryGetRelationship(
+                ResidentIds.Yaya,
+                ResidentIds.Amu,
+                out RelationshipState relationship);
+            ConversationSession session = Start(
+                fixture,
+                ResidentIds.Yaya,
+                ResidentIds.Amu,
+                "seat-cancel-a",
+                "seat-cancel-b",
+                targetSentenceCount: 3);
+            var script = new ConversationScriptSpec(
+                session.FirstResidentId,
+                new[]
+                {
+                    new ConversationLineSpec(
+                        session.FirstResidentId,
+                        NpcMood.Happy,
+                        "1",
+                        "只播放这一句。"),
+                    new ConversationLineSpec(
+                        session.SecondResidentId,
+                        NpcMood.Focused,
+                        "2",
+                        "这句尚未播放。"),
+                    new ConversationLineSpec(
+                        session.FirstResidentId,
+                        NpcMood.Proud,
+                        "3",
+                        "这一句也没有播放。")
+                },
+                ConversationOutcome.Conflict,
+                "openai");
+            Assert.That(
+                fixture.Coordinator.SetConversationScript(
+                    session.ConversationId,
+                    script).Succeeded,
+                Is.True);
+            Assert.That(
+                fixture.Coordinator.AdvanceConversation(
+                    session.ConversationId,
+                    0.1d,
+                    12d,
+                    out _).Succeeded,
+                Is.True);
+
+            Assert.That(
+                fixture.Coordinator.CancelConversation(session.ConversationId).Succeeded,
+                Is.True);
+
+            string memory = Runtime(
+                fixture,
+                ResidentIds.Yaya).Memories.Entries.Single().Text;
+            Assert.That(memory, Does.Contain("只播放这一句。"));
+            Assert.That(memory, Does.Not.Contain("这句尚未播放。"));
+            Assert.That(memory, Does.Not.Contain("Conflict"));
+            Assert.That(relationship.RelationVersion, Is.Zero);
+            Assert.That(fixture.ParticipantLock.LockedResidentCount, Is.Zero);
+            Assert.That(fixture.Reservations.ReservationCount, Is.Zero);
+        }
+
+        [Test]
+        public void PreparedScript_RejectsSpeakerOutsideSessionParticipants()
+        {
+            SocialFixture fixture = CreateFixture();
+            ConversationSession session = Start(
+                fixture,
+                ResidentIds.Yaya,
+                ResidentIds.Amu,
+                "seat-invalid-a",
+                "seat-invalid-b");
+            var script = new ConversationScriptSpec(
+                session.FirstResidentId,
+                new[]
+                {
+                    new ConversationLineSpec(
+                        new ResidentId("resident-not-in-town"),
+                        NpcMood.Happy,
+                        "!",
+                        "非法说话者。"),
+                    new ConversationLineSpec(
+                        session.SecondResidentId,
+                        NpcMood.Focused,
+                        "?",
+                        "合法说话者。")
+                },
+                ConversationOutcome.Neutral,
+                "openai");
+
+            ActionResult attached = fixture.Coordinator.SetConversationScript(
+                session.ConversationId,
+                script);
+
+            Assert.That(attached.Failed, Is.True);
+            Assert.That(session.HasPreparedScript, Is.False);
+            Assert.That(session.Utterances, Is.Empty);
         }
 
         private static SocialFixture CreateFixture(

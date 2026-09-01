@@ -142,6 +142,25 @@ namespace AIFarm.Ai
                 "Local NPC reflection generated."));
         }
 
+        public IEnumerator GenerateConversationScript(
+            ConversationScriptRequest request,
+            Action<AiGatewayResult<ConversationScriptSpec>> completed)
+        {
+            if (request == null)
+            {
+                throw new ArgumentNullException(nameof(request));
+            }
+
+            EnsureCallback(completed);
+            completed(AiGatewayResult<ConversationScriptSpec>.Failure(
+                request.ResidentId,
+                ActionResult.Failure(
+                    ActionFailureReason.ServiceUnavailable,
+                    "Conversation scripts use LocalConversationTemplateService when remote AI is unavailable."),
+                AiGatewayMode.Local));
+            yield break;
+        }
+
         private static NpcExpressionTrigger SelectReflectionTrigger(
             NpcReflectionOutcome outcome)
         {

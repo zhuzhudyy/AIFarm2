@@ -73,6 +73,10 @@ namespace AIFarm.Presentation
         [SerializeField]
         private int aiRequestTimeoutSeconds = 3;
 
+        [Range(1, 4)]
+        [SerializeField]
+        private int maximumConcurrentAiRequests = 2;
+
         public DemoInventoryConfig InventoryConfig => inventoryConfig;
 
         public int StartDay => startDay;
@@ -104,6 +108,10 @@ namespace AIFarm.Presentation
         public int AiRequestTimeoutSeconds => aiRequestTimeoutSeconds > 0
             ? aiRequestTimeoutSeconds
             : 3;
+
+        public int MaximumConcurrentAiRequests => maximumConcurrentAiRequests > 0
+            ? maximumConcurrentAiRequests
+            : AiRequestCoordinator.DefaultMaximumConcurrentRequests;
 
         public double InitialElapsedGameSeconds => ((startDay - 1) * 24d + startHour) * 60d * 60d;
 
@@ -140,7 +148,8 @@ namespace AIFarm.Presentation
             float expressionDisplay = 2.5f,
             AiGatewayMode gatewayMode = AiGatewayMode.Local,
             string gatewayBaseUrl = DefaultAiGatewayBaseUrl,
-            int requestTimeoutSeconds = 3)
+            int requestTimeoutSeconds = 3,
+            int maxConcurrentAiRequests = AiRequestCoordinator.DefaultMaximumConcurrentRequests)
         {
             if (inventory == null)
             {
@@ -174,6 +183,13 @@ namespace AIFarm.Presentation
                     "AI gateway timeout must be between 1 and 3 seconds for the demo.");
             }
 
+            if (maxConcurrentAiRequests < 1 || maxConcurrentAiRequests > 4)
+            {
+                throw new ArgumentOutOfRangeException(
+                    nameof(maxConcurrentAiRequests),
+                    "AI concurrency must be between 1 and 4 for the demo.");
+            }
+
             inventoryConfig = inventory;
             startDay = day;
             startHour = hour;
@@ -190,6 +206,7 @@ namespace AIFarm.Presentation
             aiGatewayMode = gatewayMode;
             aiGatewayBaseUrl = gatewayBaseUrl.Trim().TrimEnd('/');
             aiRequestTimeoutSeconds = requestTimeoutSeconds;
+            maximumConcurrentAiRequests = maxConcurrentAiRequests;
         }
 
         private static bool IsSafeGatewayBaseUrl(string value)

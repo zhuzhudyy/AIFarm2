@@ -260,6 +260,60 @@ namespace AIFarm.Presentation
                 completed);
         }
 
+        public IEnumerator GenerateConversationScript(
+            ConversationScriptRequest request,
+            Action<AiGatewayResult<ConversationScriptSpec>> completed)
+        {
+            if (request == null)
+            {
+                throw new ArgumentNullException(nameof(request));
+            }
+
+            EnsureCallback(completed);
+            AiGatewayHttpResult httpResult = null;
+            LogRequest(request.ResidentId, "conversation-script");
+            yield return transport.PostJson(
+                Endpoint("/v1/conversation-script"),
+                AiGatewayJsonCodec.SerializeConversationScriptRequest(request),
+                timeoutSeconds,
+                result => httpResult = result);
+
+            ActionResult transportOutcome = ValidateHttpResult(httpResult);
+            if (transportOutcome.Succeeded)
+            {
+                ActionResult parsed = AiGatewayJsonCodec.TryParseConversationScript(
+                    httpResult.Body,
+                    request,
+                    out ConversationScriptSpec script);
+                if (parsed.Succeeded)
+                {
+                    CompleteRemote(
+                        AiGatewayResult<ConversationScriptSpec>.Success(
+                            request.ResidentId,
+                            script,
+                            AiGatewayMode.Remote,
+                            parsed.Message),
+                        completed);
+                    yield break;
+                }
+
+                LastRemoteFailure = parsed.Message;
+            }
+            else
+            {
+                LastRemoteFailure = transportOutcome.Message;
+            }
+
+            ActiveMode = AiGatewayMode.Local;
+            LogResponse(request.ResidentId, AiGatewayMode.Local, succeeded: false);
+            completed(AiGatewayResult<ConversationScriptSpec>.Failure(
+                request.ResidentId,
+                ActionResult.Failure(
+                    ActionFailureReason.ServiceUnavailable,
+                    $"Remote conversation script unavailable: {LastRemoteFailure}"),
+                AiGatewayMode.Local));
+        }
+
         private IEnumerator CompleteLocalInterpretation(
             ResidentId residentId,
             string command,

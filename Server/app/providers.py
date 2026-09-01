@@ -3,6 +3,7 @@ import logging
 import os
 import re
 from collections.abc import Callable, Mapping
+from dataclasses import dataclass
 from time import perf_counter
 from typing import Any, Protocol, TypeVar
 from uuid import uuid4
@@ -11,13 +12,22 @@ from openai import OpenAI, OpenAIError
 from pydantic import BaseModel, ValidationError
 
 from app.schemas import (
+    ConversationLineSpec,
+    ConversationOutcome,
+    ConversationScriptRequest,
+    ConversationScriptSpec,
     FarmGoalSpec,
     GenerateUtteranceRequest,
+    InterpretCommandRequest,
     NpcExpressionTrigger,
     NpcMood,
     ReflectRequest,
     ReflectionOutcome,
     ReflectionSpec,
+    ResidentDecisionRequest,
+    ResidentDecisionSpec,
+    ResidentReflectionRequest,
+    ResidentReflectionSpec,
     UtteranceSpec,
 )
 
@@ -34,7 +44,10 @@ class FarmProvider(Protocol):
     requires_api_key: bool
     api_key_configured: bool
 
-    def interpret_command(self, command: str) -> FarmGoalSpec: ...
+    def interpret_command(
+        self,
+        request: InterpretCommandRequest,
+    ) -> FarmGoalSpec: ...
 
     def generate_utterance(
         self,
@@ -42,6 +55,30 @@ class FarmProvider(Protocol):
     ) -> UtteranceSpec: ...
 
     def reflect(self, request: ReflectRequest) -> ReflectionSpec: ...
+
+    def decide_resident(
+        self,
+        request: ResidentDecisionRequest,
+    ) -> ResidentDecisionSpec: ...
+
+    def generate_conversation_script(
+        self,
+        request: ConversationScriptRequest,
+    ) -> ConversationScriptSpec: ...
+
+    def reflect_resident(
+        self,
+        request: ResidentReflectionRequest,
+    ) -> ResidentReflectionSpec: ...
+
+    def probe(self) -> "ProviderProbeResult": ...
+
+
+@dataclass(frozen=True)
+class ProviderProbeResult:
+    ok: bool
+    code: str
+    message: str
 
 
 class ProviderInputError(ValueError):
@@ -63,6 +100,13 @@ class MockProvider:
     name = "mock"
     requires_api_key = False
     api_key_configured = False
+
+    def probe(self) -> ProviderProbeResult:
+        return ProviderProbeResult(
+            ok=True,
+            code="offline",
+            message="离线 Mock 已就绪，不会访问网络。",
+        )
 
     _supported_commands = (
         "把地种满胡萝卜并照顾到收获",
@@ -117,8 +161,11 @@ class MockProvider:
         ),
     }
 
-    def interpret_command(self, command: str) -> FarmGoalSpec:
-        normalized = self._normalize_command(command)
+    def interpret_command(
+        self,
+        request: InterpretCommandRequest,
+    ) -> FarmGoalSpec:
+        normalized = self._normalize_command(request.command)
         if normalized not in self._supported_commands:
             raise ProviderInputError(
                 "unsupported_intent",
@@ -176,6 +223,109 @@ class MockProvider:
             provider="mock",
         )
 
+    def decide_resident(
+        self,
+        request: ResidentDecisionRequest,
+    ) -> ResidentDecisionSpec:
+        intent = request.allowed_intents[0]
+        target_required = intent in {
+            "RequestConversation",
+            "ContinueConversation",
+            "ShareKnownFact",
+        }
+        return ResidentDecisionSpec(
+            resident_id=request.resident_id,
+            intent=intent,
+            target_resident_id=(
+                request.allowed_target_resident_ids[0]
+                if target_required and request.allowed_target_resident_ids
+                else None
+            ),
+            reason="本地规则从本次请求的允许集合中选择安全的高层意图。",
+            provider="mock",
+        )
+
+    def generate_conversation_script(
+        self,
+        request: ConversationScriptRequest,
+    ) -> ConversationScriptSpec:
+        contexts = {
+            participant.resident_id: participant
+            for participant in request.participants
+        }
+        topic = request.topic or "今天的小镇生活"
+        lines: list[ConversationLineSpec] = []
+        for index in range(request.max_lines):
+            speaker_id = request.participant_ids[index % 2]
+            listener_id = request.participant_ids[(index + 1) % 2]
+            speaker = contexts[speaker_id]
+            listener = contexts[listener_id]
+            if index % 3 == 0:
+                text = (
+                    f"{listener.persona.display_name}，我是"
+                    f"{speaker.persona.display_name}。作为{speaker.persona.role}，"
+                    f"想和你聊聊{topic}。"
+                )
+            elif index % 3 == 1:
+                style = speaker.persona.speaking_style or "自然"
+                text = (
+                    f"{speaker.persona.display_name}，我会用{style}的方式回应；"
+                    f"也想听听你作为{listener.persona.role}的看法。"
+                )
+            else:
+                preference = speaker.persona.preference or "小镇近况"
+                text = (
+                    f"{listener.persona.display_name}，我最近在留意{preference}，"
+                    "谢谢你愿意交换消息。"
+                )
+            moods = (NpcMood.HAPPY, NpcMood.FOCUSED, NpcMood.PROUD)
+            emojis = ("💬", "🙂", "🌱")
+            lines.append(
+                ConversationLineSpec(
+                    speaker_id=speaker_id,
+                    mood=moods[index % len(moods)],
+                    emoji=emojis[index % len(emojis)],
+                    text=text,
+                )
+            )
+
+        return ConversationScriptSpec(
+            resident_id=request.resident_id,
+            lines=lines,
+            outcome=ConversationOutcome.NEUTRAL,
+            provider="mock",
+        )
+
+    def reflect_resident(
+        self,
+        request: ResidentReflectionRequest,
+    ) -> ResidentReflectionSpec:
+        outcome = ReflectionOutcome(request.outcome)
+        if outcome is ReflectionOutcome.COMPLETED:
+            mood = NpcMood.PROUD
+            emoji = "★"
+            prefix = "已经完成"
+        elif outcome is ReflectionOutcome.FAILED:
+            mood = NpcMood.WORRIED
+            emoji = "⚠"
+            prefix = "遇到问题"
+        else:
+            mood = NpcMood.FOCUSED
+            emoji = "🌱"
+            prefix = "仍在进行"
+
+        return ResidentReflectionSpec(
+            resident_id=request.resident_id,
+            outcome=outcome,
+            mood=mood,
+            emoji=emoji,
+            text=(
+                f"{request.context.persona.display_name}想到：{prefix}，"
+                f"{request.event_summary}"
+            ),
+            provider="mock",
+        )
+
     @staticmethod
     def _normalize_command(command: str) -> str:
         return re.sub(r"[\s，。！？、,!.?：:；;]", "", command)
@@ -203,6 +353,28 @@ class OpenAIProvider:
         "Generate exactly one short Chinese NPC reflection as a ReflectionSpec. Return "
         "only JSON that matches the supplied schema, preserve goal_id and outcome, and "
         "set provider to openai. Use only the bounded event summary supplied."
+    )
+    _resident_decision_instructions = (
+        "Choose exactly one safe high-level resident intent as a ResidentDecisionSpec. "
+        "Use only this request's resident context. Preserve resident_id, choose intent "
+        "only from allowed_intents, choose target_resident_id only from "
+        "allowed_target_resident_ids (or null), and set provider to openai. Never emit "
+        "positions, low-level actions, schedules, relationship changes, memory writes, "
+        "or world-state mutations."
+    )
+    _conversation_script_instructions = (
+        "Generate a bounded two-resident Chinese ConversationScriptSpec. Use each "
+        "participant's persona, relationship snapshot, and only that participant's "
+        "current state and owned relevant memories. Preserve resident_id. Every line "
+        "must contain speaker_id, mood, emoji and text; speaker_id must be in "
+        "participant_ids, return no more than max_lines and never more than six lines, "
+        "and set provider to openai. Do not merge or transfer private memories between "
+        "participant contexts."
+    )
+    _resident_reflection_instructions = (
+        "Generate one short Chinese ResidentReflectionSpec for the request owner. Use "
+        "only that ResidentContext and bounded event summary. Preserve resident_id and "
+        "outcome, set provider to openai, and do not mutate memory or world state."
     )
 
     def __init__(
@@ -245,21 +417,30 @@ class OpenAIProvider:
             model=os.getenv("OPENAI_MODEL", ""),
         )
 
-    def interpret_command(self, command: str) -> FarmGoalSpec:
+    def interpret_command(
+        self,
+        request: InterpretCommandRequest,
+    ) -> FarmGoalSpec:
         return self._request_structured_output(
             operation="interpret-command",
+            resident_id=request.resident_id,
             instructions=self._interpret_instructions,
-            snapshot={"command": command},
+            snapshot={
+                "resident_id": request.resident_id,
+                "command": request.command,
+            },
             response_model=FarmGoalSpec,
             schema_name="farm_goal_spec",
-            fallback_call=lambda: self._fallback.interpret_command(command),
+            fallback_call=lambda: self._fallback.interpret_command(request),
         )
 
     def generate_utterance(self, request: GenerateUtteranceRequest) -> UtteranceSpec:
         return self._request_structured_output(
             operation="generate-utterance",
+            resident_id=request.resident_id,
             instructions=self._utterance_instructions,
             snapshot={
+                "resident_id": request.resident_id,
                 "trigger": request.trigger,
                 "context": request.context,
             },
@@ -271,8 +452,10 @@ class OpenAIProvider:
     def reflect(self, request: ReflectRequest) -> ReflectionSpec:
         return self._request_structured_output(
             operation="reflect",
+            resident_id=request.resident_id,
             instructions=self._reflection_instructions,
             snapshot={
+                "resident_id": request.resident_id,
                 "goal_id": request.goal.goal_id,
                 "outcome": request.outcome,
                 "event_summary": request.event_summary,
@@ -282,15 +465,128 @@ class OpenAIProvider:
             fallback_call=lambda: self._fallback.reflect(request),
         )
 
+    def decide_resident(
+        self,
+        request: ResidentDecisionRequest,
+    ) -> ResidentDecisionSpec:
+        return self._request_structured_output(
+            operation="resident-decision",
+            resident_id=request.resident_id,
+            instructions=self._resident_decision_instructions,
+            snapshot=request.model_dump(mode="json"),
+            response_model=ResidentDecisionSpec,
+            schema_name="resident_decision_spec",
+            fallback_call=lambda: self._fallback.decide_resident(request),
+            validate_result=lambda result: self._validate_resident_decision(
+                request,
+                result,
+            ),
+        )
+
+    def generate_conversation_script(
+        self,
+        request: ConversationScriptRequest,
+    ) -> ConversationScriptSpec:
+        return self._request_structured_output(
+            operation="conversation-script",
+            resident_id=request.resident_id,
+            instructions=self._conversation_script_instructions,
+            snapshot=request.model_dump(mode="json"),
+            response_model=ConversationScriptSpec,
+            schema_name="conversation_script_spec",
+            fallback_call=lambda: self._fallback.generate_conversation_script(request),
+            validate_result=lambda result: self._validate_conversation_script(
+                request,
+                result,
+            ),
+            max_output_tokens=1024,
+        )
+
+    def reflect_resident(
+        self,
+        request: ResidentReflectionRequest,
+    ) -> ResidentReflectionSpec:
+        return self._request_structured_output(
+            operation="resident-reflection",
+            resident_id=request.resident_id,
+            instructions=self._resident_reflection_instructions,
+            snapshot=request.model_dump(mode="json"),
+            response_model=ResidentReflectionSpec,
+            schema_name="resident_reflection_spec",
+            fallback_call=lambda: self._fallback.reflect_resident(request),
+            validate_result=lambda result: self._validate_resident_reflection(
+                request,
+                result,
+            ),
+        )
+
+    def probe(self) -> ProviderProbeResult:
+        started_at = self._clock()
+        try:
+            response = self._client.models.list()
+            model_ids = {
+                str(self._read_value(item, "id"))
+                for item in self._read_value(response, "data") or ()
+                if self._read_value(item, "id")
+            }
+            if self._model not in model_ids:
+                result = ProviderProbeResult(
+                    ok=False,
+                    code="model_not_found",
+                    message="连接成功，但当前账号未返回所选模型。",
+                )
+            else:
+                result = ProviderProbeResult(
+                    ok=True,
+                    code="ok",
+                    message="鉴权成功，所选模型可用。",
+                )
+        except (ConnectionError, OpenAIError, TimeoutError) as error:
+            error_name = type(error).__name__
+            code_by_error = {
+                "AuthenticationError": "authentication_failed",
+                "APITimeoutError": "timeout",
+                "APIConnectionError": "connection_failed",
+                "RateLimitError": "rate_limited",
+                "NotFoundError": "model_not_found",
+            }
+            code = code_by_error.get(error_name, "upstream_error")
+            message_by_code = {
+                "authentication_failed": "鉴权失败，请检查 API Key。",
+                "timeout": "连接测试超时，请稍后重试。",
+                "connection_failed": "无法连接到模型服务。",
+                "rate_limited": "服务当前限流，请稍后重试。",
+                "model_not_found": "所选模型不存在或当前账号无权访问。",
+                "upstream_error": "模型服务拒绝了连接测试。",
+            }
+            result = ProviderProbeResult(
+                ok=False,
+                code=code,
+                message=message_by_code[code],
+            )
+
+        elapsed_ms = max(0.0, (self._clock() - started_at) * 1000)
+        _logger.info(
+            "provider_probe model=%s elapsed_ms=%.2f ok=%s code=%s",
+            self._model,
+            elapsed_ms,
+            result.ok,
+            result.code,
+        )
+        return result
+
     def _request_structured_output(
         self,
         *,
         operation: str,
+        resident_id: str,
         instructions: str,
         snapshot: Mapping[str, object],
         response_model: type[_OutputModel],
         schema_name: str,
         fallback_call: Callable[[], _OutputModel],
+        validate_result: Callable[[_OutputModel], None] | None = None,
+        max_output_tokens: int = 512,
     ) -> _OutputModel:
         request_id = self._request_id_factory()
         started_at = self._clock()
@@ -311,11 +607,13 @@ class OpenAIProvider:
                         "schema": response_model.model_json_schema(),
                     }
                 },
-                max_output_tokens=512,
+                max_output_tokens=max_output_tokens,
             )
             output_text = self._extract_output_text(response)
             result = response_model.model_validate_json(output_text)
             self._require_openai_provider_marker(result)
+            if validate_result is not None:
+                validate_result(result)
         except (
             ConnectionError,
             OpenAIError,
@@ -325,6 +623,7 @@ class OpenAIProvider:
         ) as error:
             return self._use_fallback(
                 operation=operation,
+                resident_id=resident_id,
                 request_id=request_id,
                 started_at=started_at,
                 reason=type(error).__name__,
@@ -333,6 +632,7 @@ class OpenAIProvider:
 
         self._log_result(
             operation=operation,
+            resident_id=resident_id,
             request_id=request_id,
             started_at=started_at,
             result_type=type(result).__name__,
@@ -345,6 +645,7 @@ class OpenAIProvider:
         self,
         *,
         operation: str,
+        resident_id: str,
         request_id: str,
         started_at: float,
         reason: str,
@@ -355,6 +656,7 @@ class OpenAIProvider:
         except Exception as fallback_error:
             self._log_result(
                 operation=operation,
+                resident_id=resident_id,
                 request_id=request_id,
                 started_at=started_at,
                 result_type=type(fallback_error).__name__,
@@ -365,6 +667,7 @@ class OpenAIProvider:
 
         self._log_result(
             operation=operation,
+            resident_id=resident_id,
             request_id=request_id,
             started_at=started_at,
             result_type=type(result).__name__,
@@ -377,6 +680,7 @@ class OpenAIProvider:
         self,
         *,
         operation: str,
+        resident_id: str,
         request_id: str,
         started_at: float,
         result_type: str,
@@ -386,9 +690,10 @@ class OpenAIProvider:
     ) -> None:
         elapsed_ms = max(0.0, (self._clock() - started_at) * 1000)
         _logger.info(
-            "provider_request request_id=%s operation=%s elapsed_ms=%.2f "
+            "provider_request request_id=%s resident_id=%s operation=%s elapsed_ms=%.2f "
             "result_type=%s source=%s fallback_reason=%s upstream_request_id=%s",
             request_id,
+            resident_id,
             operation,
             elapsed_ms,
             result_type,
@@ -429,8 +734,74 @@ class OpenAIProvider:
 
     @staticmethod
     def _require_openai_provider_marker(result: BaseModel) -> None:
-        if isinstance(result, (UtteranceSpec, ReflectionSpec)):
+        if isinstance(
+            result,
+            (
+                UtteranceSpec,
+                ReflectionSpec,
+                ResidentDecisionSpec,
+                ConversationScriptSpec,
+                ResidentReflectionSpec,
+            ),
+        ):
             if result.provider != OpenAIProvider.name:
                 raise ProviderResponseError(
                     "The upstream response used an invalid provider marker."
                 )
+
+    @staticmethod
+    def _validate_resident_decision(
+        request: ResidentDecisionRequest,
+        result: ResidentDecisionSpec,
+    ) -> None:
+        if result.resident_id != request.resident_id:
+            raise ProviderResponseError(
+                "The decision resident_id does not match the request owner."
+            )
+        if result.intent not in request.allowed_intents:
+            raise ProviderResponseError(
+                "The decision intent is not in allowed_intents."
+            )
+        if (
+            result.target_resident_id is not None
+            and result.target_resident_id
+            not in request.allowed_target_resident_ids
+        ):
+            raise ProviderResponseError(
+                "The decision target_resident_id is not in the allowed target set."
+            )
+
+    @staticmethod
+    def _validate_conversation_script(
+        request: ConversationScriptRequest,
+        result: ConversationScriptSpec,
+    ) -> None:
+        if result.resident_id != request.resident_id:
+            raise ProviderResponseError(
+                "The conversation resident_id does not match the request owner."
+            )
+        if len(result.lines) > request.max_lines:
+            raise ProviderResponseError(
+                "The conversation script exceeds the request max_lines."
+            )
+
+        participant_ids = set(request.participant_ids)
+        for line in result.lines:
+            if line.speaker_id not in participant_ids:
+                raise ProviderResponseError(
+                    "Every conversation speaker_id must belong to participant_ids."
+                )
+
+    @staticmethod
+    def _validate_resident_reflection(
+        request: ResidentReflectionRequest,
+        result: ResidentReflectionSpec,
+    ) -> None:
+        if result.resident_id != request.resident_id:
+            raise ProviderResponseError(
+                "The reflection resident_id does not match the request owner."
+            )
+        if result.outcome.value != request.outcome:
+            raise ProviderResponseError(
+                "The reflection outcome does not match the request."
+            )

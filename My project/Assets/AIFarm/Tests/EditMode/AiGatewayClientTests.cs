@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using AIFarm.Ai;
 using AIFarm.Npc;
 using AIFarm.Presentation;
+using AIFarm.Social;
 using NUnit.Framework;
 
 namespace AIFarm.Tests.EditMode
@@ -235,6 +236,125 @@ namespace AIFarm.Tests.EditMode
                     requestTimeoutSeconds: 5,
                     gatewayTransport: new FakeTransport(
                         AiGatewayHttpResult.Success(200, ValidGoalJson))));
+        }
+
+        [TestCase("http://127.0.0.1:8000", "http://127.0.0.1:8000/setup")]
+        [TestCase("http://localhost:8000/gateway/", "http://localhost:8000/gateway/setup")]
+        [TestCase("https://[::1]:8443", "https://[::1]:8443/setup")]
+        public void ApiSettingsUrl_LoopbackGatewayBuildsLocalSetupPage(
+            string baseUrl,
+            string expected)
+        {
+            bool succeeded = DemoHud.TryBuildLocalApiSettingsUrl(
+                baseUrl,
+                out string settingsUrl);
+
+            Assert.That(succeeded, Is.True);
+            Assert.That(settingsUrl, Is.EqualTo(expected));
+        }
+
+        [TestCase("https://gateway.example")]
+        [TestCase("http://127.0.0.1:8000?token=secret")]
+        [TestCase("http://user:secret@127.0.0.1:8000")]
+        [TestCase("")]
+        public void ApiSettingsUrl_NonLocalOrCredentialedGatewayIsRejected(string baseUrl)
+        {
+            Assert.That(
+                DemoHud.TryBuildLocalApiSettingsUrl(baseUrl, out string settingsUrl),
+                Is.False);
+            Assert.That(settingsUrl, Is.Empty);
+        }
+
+        [Test]
+        public void RemoteClient_ConversationScript_SendsIsolatedContextsAndValidatesPresentation()
+        {
+            ConversationScriptRequest request = CreateConversationRequest();
+            const string response =
+                "{\"resident_id\":\"resident-001\",\"lines\":[" +
+                "{\"speaker_id\":\"resident-001\",\"mood\":\"Happy\",\"emoji\":\"🙂\",\"text\":\"阿木，早上好。\"}," +
+                "{\"speaker_id\":\"resident-002\",\"mood\":\"Focused\",\"emoji\":\"✓\",\"text\":\"芽芽，水井已经检查好了。\"}]," +
+                "\"outcome\":\"Helpful\",\"provider\":\"openai\"}";
+            var transport = new FakeTransport(AiGatewayHttpResult.Success(200, response));
+            var client = new RemoteAiGatewayClient(
+                "https://gateway.example",
+                requestTimeoutSeconds: 5,
+                gatewayTransport: transport);
+            AiGatewayResult<ConversationScriptSpec> result = null;
+
+            RunCoroutine(client.GenerateConversationScript(
+                request,
+                value => result = value));
+
+            Assert.That(result, Is.Not.Null);
+            Assert.That(result.Succeeded, Is.True, result.Outcome.Message);
+            Assert.That(result.Value.Outcome, Is.EqualTo(ConversationOutcome.Helpful));
+            Assert.That(result.Value.Lines[0].Mood, Is.EqualTo(NpcMood.Happy));
+            Assert.That(result.Value.Lines[0].Emoji, Is.EqualTo("🙂"));
+            Assert.That(transport.LastUrl, Does.EndWith("/v1/conversation-script"));
+            Assert.That(transport.LastJson, Does.Contain("\"current_state\""));
+            Assert.That(transport.LastJson, Does.Contain("YAYA-PRIVATE"));
+            Assert.That(transport.LastJson, Does.Contain("AMU-PRIVATE"));
+            Assert.That(transport.LastJson, Does.Not.Contain("api_key").IgnoreCase);
+        }
+
+        [Test]
+        public void RemoteClient_ConversationScriptRejectsUnknownSpeakerForLocalTemplateFallback()
+        {
+            ConversationScriptRequest request = CreateConversationRequest();
+            const string response =
+                "{\"resident_id\":\"resident-001\",\"lines\":[" +
+                "{\"speaker_id\":\"resident-unknown\",\"mood\":\"Happy\",\"emoji\":\"!\",\"text\":\"非法台词。\"}," +
+                "{\"speaker_id\":\"resident-002\",\"mood\":\"Focused\",\"emoji\":\"?\",\"text\":\"合法台词。\"}]," +
+                "\"outcome\":\"Neutral\",\"provider\":\"openai\"}";
+            var transport = new FakeTransport(AiGatewayHttpResult.Success(200, response));
+            var client = new RemoteAiGatewayClient(
+                "https://gateway.example",
+                requestTimeoutSeconds: 5,
+                gatewayTransport: transport);
+            AiGatewayResult<ConversationScriptSpec> result = null;
+
+            RunCoroutine(client.GenerateConversationScript(
+                request,
+                value => result = value));
+
+            Assert.That(result, Is.Not.Null);
+            Assert.That(result.Failed, Is.True);
+            Assert.That(result.Source, Is.EqualTo(AiGatewayMode.Local));
+            Assert.That(client.LastRemoteFailure, Does.Contain("participant"));
+        }
+
+        private static ConversationScriptRequest CreateConversationRequest()
+        {
+            var yaya = new ResidentContext(
+                ResidentIds.Yaya,
+                ResidentPersonaSnapshot.FromDefinition(ResidentDefinition.Yaya),
+                "schedule=Working;activity=Gather",
+                new[]
+                {
+                    new RelationshipSnapshot(ResidentIds.Yaya, ResidentIds.Amu, 10, 5)
+                },
+                new[]
+                {
+                    new ResidentMemorySnapshot(ResidentIds.Yaya, "YAYA-PRIVATE", 7)
+                });
+            var amu = new ResidentContext(
+                ResidentIds.Amu,
+                ResidentPersonaSnapshot.FromDefinition(ResidentDefinition.Amu),
+                "schedule=Working;activity=Gather",
+                new[]
+                {
+                    new RelationshipSnapshot(ResidentIds.Amu, ResidentIds.Yaya, 8, 4)
+                },
+                new[]
+                {
+                    new ResidentMemorySnapshot(ResidentIds.Amu, "AMU-PRIVATE", 6)
+                });
+            return new ConversationScriptRequest(
+                ResidentIds.Yaya,
+                new[] { ResidentIds.Yaya, ResidentIds.Amu },
+                new[] { yaya, amu },
+                "水井维护",
+                4);
         }
 
         private static void RunCoroutine(IEnumerator root)

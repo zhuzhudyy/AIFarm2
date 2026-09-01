@@ -1,6 +1,7 @@
 using AIFarm.Core;
 using AIFarm.Farming;
 using AIFarm.Inventory;
+using AIFarm.Ai;
 using AIFarm.Npc;
 using AIFarm.Time;
 using UnityEngine;
@@ -29,6 +30,8 @@ namespace AIFarm.Presentation
         public WorldEventLog Events { get; private set; }
 
         public ResidentRegistry ResidentRegistry { get; private set; }
+
+        public AiRequestCoordinator AiRequests { get; private set; }
 
         public ActionResult? LastSimulationResult { get; private set; }
 
@@ -79,6 +82,15 @@ namespace AIFarm.Presentation
             Mode = sceneConfig.CreateDemoMode();
             Events = new WorldEventLog();
             Simulation = new FarmSimulation(Field, Clock, Mode, Events);
+            IAiGatewayClient sharedGateway = sceneConfig.AiGatewayMode == AiGatewayMode.Local
+                ? (IAiGatewayClient)new LocalAiGatewayClient()
+                : new RemoteAiGatewayClient(
+                    sceneConfig.AiGatewayBaseUrl,
+                    sceneConfig.AiRequestTimeoutSeconds);
+            AiRequests = new AiRequestCoordinator(
+                sharedGateway,
+                sceneConfig.MaximumConcurrentAiRequests,
+                new LocalAiGatewayClient());
             Events.Record(
                 Clock.ElapsedGameSeconds,
                 WorldEventKind.System,
@@ -146,6 +158,11 @@ namespace AIFarm.Presentation
                 "已创建新 Demo；本地规划与表达服务可用。");
             LastSimulationResult = null;
             return ActionResult.Success("New demo state initialized.");
+        }
+
+        private void OnDestroy()
+        {
+            AiRequests?.Shutdown();
         }
 
         private void Awake()

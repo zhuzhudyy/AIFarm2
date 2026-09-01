@@ -42,5 +42,9 @@ namespace AIFarm.Ai
             NpcReflectionOutcome outcome,
             string eventSummary,
             Action<AiGatewayResult<NpcReflection>> completed);
+
+        IEnumerator GenerateConversationScript(
+            ConversationScriptRequest request,
+            Action<AiGatewayResult<ConversationScriptSpec>> completed);
     }
 }

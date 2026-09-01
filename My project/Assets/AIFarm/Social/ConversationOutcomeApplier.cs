@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Text;
 using AIFarm.Core;
 using AIFarm.Npc;
 
@@ -10,6 +12,8 @@ namespace AIFarm.Social
 
         private readonly ResidentRegistry residentRegistry;
         private readonly SocialGraph socialGraph;
+        private readonly HashSet<ConversationId> recordedTranscripts =
+            new HashSet<ConversationId>();
 
         public ConversationOutcomeApplier(
             ResidentRegistry registry,
@@ -36,16 +40,16 @@ namespace AIFarm.Social
 
             ActionResult firstDefinitionResult = residentRegistry.TryGetDefinition(
                 session.FirstResidentId,
-                out ResidentDefinition firstDefinition);
+                out _);
             ActionResult secondDefinitionResult = residentRegistry.TryGetDefinition(
                 session.SecondResidentId,
-                out ResidentDefinition secondDefinition);
+                out _);
             ActionResult firstRuntimeResult = residentRegistry.TryGetRuntimeState(
                 session.FirstResidentId,
-                out ResidentRuntimeState firstRuntime);
+                out _);
             ActionResult secondRuntimeResult = residentRegistry.TryGetRuntimeState(
                 session.SecondResidentId,
-                out ResidentRuntimeState secondRuntime);
+                out _);
             ActionResult firstRelationshipResult = socialGraph.TryGetRelationship(
                 session.FirstResidentId,
                 session.SecondResidentId,
@@ -85,14 +89,61 @@ namespace AIFarm.Social
                 return firstRelationship.Failed ? firstRelationship : secondRelationship;
             }
 
+            return RecordPlayedTranscript(session, gameSeconds, includeOutcome: true);
+        }
+
+        internal ActionResult RecordPlayedTranscript(
+            ConversationSession session,
+            double gameSeconds,
+            bool includeOutcome)
+        {
+            if (session != null && recordedTranscripts.Contains(session.ConversationId))
+            {
+                return ActionResult.Success("Played conversation transcript was already recorded.");
+            }
+
+            if (session == null || session.Utterances.Count == 0 ||
+                !IsFiniteNonNegative(gameSeconds) ||
+                (includeOutcome &&
+                    (session.State != ConversationState.Completed || !session.Outcome.HasValue)))
+            {
+                return ActionResult.Failure(
+                    ActionFailureReason.InvalidArgument,
+                    "A played transcript requires actual utterances and valid completion state.");
+            }
+
+            ActionResult firstDefinitionResult = residentRegistry.TryGetDefinition(
+                session.FirstResidentId,
+                out ResidentDefinition firstDefinition);
+            ActionResult secondDefinitionResult = residentRegistry.TryGetDefinition(
+                session.SecondResidentId,
+                out ResidentDefinition secondDefinition);
+            ActionResult firstRuntimeResult = residentRegistry.TryGetRuntimeState(
+                session.FirstResidentId,
+                out ResidentRuntimeState firstRuntime);
+            ActionResult secondRuntimeResult = residentRegistry.TryGetRuntimeState(
+                session.SecondResidentId,
+                out ResidentRuntimeState secondRuntime);
+            ActionResult validationFailure = FirstFailure(
+                firstDefinitionResult,
+                secondDefinitionResult,
+                firstRuntimeResult,
+                secondRuntimeResult);
+            if (validationFailure.Failed)
+            {
+                return validationFailure;
+            }
+
             string firstMemory = CreateMemoryText(
+                session,
                 firstDefinition,
                 secondDefinition,
-                outcome);
+                includeOutcome);
             string secondMemory = CreateMemoryText(
+                session,
                 secondDefinition,
                 firstDefinition,
-                outcome);
+                includeOutcome);
             ActionResult firstStored = firstRuntime.Memories.AddObservation(
                 session.FirstResidentId,
                 gameSeconds,
@@ -107,7 +158,13 @@ namespace AIFarm.Social
                 6,
                 WorldEventKind.ConversationCompleted,
                 out MemoryEntry _);
-            return firstStored.Failed ? firstStored : secondStored;
+            ActionResult stored = firstStored.Failed ? firstStored : secondStored;
+            if (stored.Succeeded)
+            {
+                recordedTranscripts.Add(session.ConversationId);
+            }
+
+            return stored;
         }
 
         public static void GetDeltas(
@@ -143,11 +200,41 @@ namespace AIFarm.Social
         }
 
         private static string CreateMemoryText(
+            ConversationSession session,
             ResidentDefinition owner,
             ResidentDefinition other,
-            ConversationOutcome outcome)
+            bool includeOutcome)
         {
-            return $"{owner.DisplayName}与{other.DisplayName}完成了一次双人交谈；结果是{outcome}。";
+            var text = new StringBuilder();
+            text.Append(owner.DisplayName)
+                .Append("与")
+                .Append(other.DisplayName)
+                .Append(includeOutcome ? "的对话：" : "未完成的对话：");
+            foreach (ConversationUtterance utterance in session.Utterances)
+            {
+                ResidentDefinition speaker = utterance.SpeakerResidentId == owner.ResidentId
+                    ? owner
+                    : other;
+                if (text.Length > 0 && text[text.Length - 1] != '：')
+                {
+                    text.Append('；');
+                }
+
+                text.Append(speaker.DisplayName)
+                    .Append('「')
+                    .Append(utterance.Text)
+                    .Append('」');
+            }
+
+            if (includeOutcome && session.Outcome.HasValue)
+            {
+                text.Append("；结果是").Append(session.Outcome.Value).Append('。');
+            }
+
+            string bounded = text.ToString();
+            return bounded.Length <= MemoryStore.MaximumTextLength
+                ? bounded
+                : bounded.Substring(0, MemoryStore.MaximumTextLength);
         }
 
         private static ActionResult FirstFailure(params ActionResult[] results)

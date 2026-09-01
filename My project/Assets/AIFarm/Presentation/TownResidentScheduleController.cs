@@ -1,5 +1,6 @@
 using AIFarm.Core;
 using AIFarm.Npc;
+using AIFarm.Social;
 using AIFarm.Town;
 using UnityEngine;
 
@@ -217,6 +218,41 @@ namespace AIFarm.Presentation
             scheduleSuspendedForConversation = false;
             residentView.SetConversationState(false);
             return Runtime.Resume();
+        }
+
+        public ActionResult FaceConversationPartner(Transform partner)
+        {
+            if (!scheduleSuspendedForConversation || partner == null)
+            {
+                return ActionResult.Failure(
+                    ActionFailureReason.InvalidState,
+                    "Only a conversation participant can face its partner.");
+            }
+
+            Vector3 direction = partner.position - transform.position;
+            direction.y = 0f;
+            if (direction.sqrMagnitude > 0.0001f)
+            {
+                transform.rotation = Quaternion.LookRotation(direction.normalized, Vector3.up);
+            }
+
+            return ActionResult.Success("Resident faced the other conversation participant.");
+        }
+
+        public void ShowConversationLine(ConversationUtterance utterance)
+        {
+            if (utterance != null && utterance.SpeakerResidentId == ResidentId)
+            {
+                residentView.ShowConversationLine(
+                    utterance.Text,
+                    utterance.Emoji,
+                    utterance.Mood);
+            }
+        }
+
+        public void ClearConversationLine()
+        {
+            residentView?.ClearConversationLine();
         }
 
         private void OnDisable()

@@ -143,7 +143,9 @@ namespace AIFarm.Presentation
                     "AI gateway mode must be configured before initialization.");
             }
 
-            aiGatewayClient = gatewayClient;
+            aiGatewayClient = gatewayClient is AiRequestCoordinator
+                ? gatewayClient
+                : new AiRequestCoordinator(gatewayClient);
             return ActionResult.Success("AI gateway client configured.");
         }
 
@@ -167,7 +169,7 @@ namespace AIFarm.Presentation
             try
             {
                 IAiGatewayClient configuredClient = aiGatewayClient ??
-                    CreateGatewayClient(bootstrap.SceneConfig);
+                    bootstrap.AiRequests ?? CreateGatewayClient(bootstrap.SceneConfig);
                 return Initialize(
                     context,
                     executor,

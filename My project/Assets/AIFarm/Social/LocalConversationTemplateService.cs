@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using AIFarm.Ai;
 using AIFarm.Core;
 using AIFarm.Npc;
 
@@ -33,6 +35,59 @@ namespace AIFarm.Social
             }
 
             int templateIndex = session.DeliveredSentenceCount;
+            line = CreateLineText(templateIndex, speaker, listener);
+
+            return ActionResult.Success("A deterministic persona-aware local line was created.");
+        }
+
+        public ActionResult CreateScript(
+            ConversationSession session,
+            ResidentDefinition firstResident,
+            ResidentDefinition secondResident,
+            out ConversationScriptSpec script)
+        {
+            script = null;
+            if (session == null || session.State != ConversationState.Active ||
+                session.HasPreparedScript || session.DeliveredSentenceCount != 0 ||
+                firstResident == null || secondResident == null ||
+                firstResident.ResidentId != session.FirstResidentId ||
+                secondResident.ResidentId != session.SecondResidentId)
+            {
+                return ActionResult.Failure(
+                    ActionFailureReason.InvalidArgument,
+                    "A local script requires the active session and its two definitions before playback.");
+            }
+
+            var lines = new List<ConversationLineSpec>(session.RequestedSentenceLimit);
+            for (int index = 0; index < session.RequestedSentenceLimit; index++)
+            {
+                ResidentDefinition speaker = index % 2 == 0
+                    ? firstResident
+                    : secondResident;
+                ResidentDefinition listener = index % 2 == 0
+                    ? secondResident
+                    : firstResident;
+                lines.Add(new ConversationLineSpec(
+                    speaker.ResidentId,
+                    SelectMood(index),
+                    SelectEmoji(index),
+                    CreateLineText(index, speaker, listener)));
+            }
+
+            script = new ConversationScriptSpec(
+                session.FirstResidentId,
+                lines,
+                SelectOutcome(session),
+                "local");
+            return ActionResult.Success("A deterministic local ConversationScriptSpec was created.");
+        }
+
+        private static string CreateLineText(
+            int templateIndex,
+            ResidentDefinition speaker,
+            ResidentDefinition listener)
+        {
+            string line;
             switch (templateIndex)
             {
                 case 0:
@@ -60,7 +115,37 @@ namespace AIFarm.Social
                 line = line.Substring(0, 300);
             }
 
-            return ActionResult.Success("A deterministic persona-aware local line was created.");
+            return line;
+        }
+
+        private static NpcMood SelectMood(int lineIndex)
+        {
+            switch (lineIndex % 4)
+            {
+                case 0:
+                    return NpcMood.Happy;
+                case 1:
+                    return NpcMood.Focused;
+                case 2:
+                    return NpcMood.Proud;
+                default:
+                    return NpcMood.Happy;
+            }
+        }
+
+        private static string SelectEmoji(int lineIndex)
+        {
+            switch (lineIndex % 4)
+            {
+                case 0:
+                    return "💬";
+                case 1:
+                    return "🙂";
+                case 2:
+                    return "🌱";
+                default:
+                    return "✓";
+            }
         }
 
         public ConversationOutcome SelectOutcome(ConversationSession session)

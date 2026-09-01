@@ -22,6 +22,9 @@ namespace AIFarm.Presentation
         private TextMesh statusIcon;
 
         [SerializeField]
+        private TextMesh conversationText;
+
+        [SerializeField]
         private Transform animatedVisualRoot;
 
         private Vector3 baseLocalPosition;
@@ -40,9 +43,17 @@ namespace AIFarm.Presentation
 
         public TextMesh StatusIcon => statusIcon;
 
+        public TextMesh ConversationText => conversationText;
+
         public bool IsPlayingWorkAnimation => isWorking;
 
         public bool IsShowingConversation => isConversing;
+
+        public string LastConversationLine { get; private set; } = string.Empty;
+
+        public string LastConversationEmoji { get; private set; } = string.Empty;
+
+        public NpcMood? LastConversationMood { get; private set; }
 
         public ActionResult Configure(
             ResidentDefinitionAsset residentDefinition,
@@ -50,7 +61,8 @@ namespace AIFarm.Presentation
             TextMesh residentNameLabel,
             TextMesh residentStatusIcon,
             Transform visualRoot,
-            Material residentMaterial = null)
+            Material residentMaterial = null,
+            TextMesh residentConversationText = null)
         {
             if (residentDefinition == null || !residentDefinition.ResidentId.IsValid ||
                 renderers == null || renderers.Length == 0 || residentNameLabel == null ||
@@ -75,6 +87,7 @@ namespace AIFarm.Presentation
             bodyRenderers = (Renderer[])renderers.Clone();
             nameLabel = residentNameLabel;
             statusIcon = residentStatusIcon;
+            conversationText = residentConversationText;
             animatedVisualRoot = visualRoot;
             if (residentMaterial != null)
             {
@@ -87,6 +100,7 @@ namespace AIFarm.Presentation
             CaptureBaseline();
             ApplyDefinition();
             SetScheduleState(ResidentScheduleState.WaitingForSchedule, null);
+            ClearConversationLine();
             return ActionResult.Success($"Resident view configured for {ResidentId}.");
         }
 
@@ -142,6 +156,50 @@ namespace AIFarm.Presentation
                     ? $"{definitionAsset.StatusIcon}#"
                     : $"{definitionAsset.StatusIcon}.";
             }
+
+            if (!active)
+            {
+                ClearConversationLine();
+            }
+        }
+
+        public void ShowConversationLine(string text, string emoji, NpcMood mood)
+        {
+            string boundedText = (text ?? string.Empty).Trim();
+            string boundedEmoji = (emoji ?? string.Empty).Trim();
+            if (boundedText.Length == 0 || boundedText.Length > 300 ||
+                boundedEmoji.Length == 0 || boundedEmoji.Length > 8 ||
+                !Enum.IsDefined(typeof(NpcMood), mood))
+            {
+                return;
+            }
+
+            EnsureConversationText();
+            LastConversationLine = boundedText;
+            LastConversationEmoji = boundedEmoji;
+            LastConversationMood = mood;
+            if (conversationText != null)
+            {
+                conversationText.text = $"{boundedEmoji} {boundedText}\n[{mood}]";
+                conversationText.gameObject.SetActive(true);
+            }
+
+            if (statusIcon != null && definitionAsset != null)
+            {
+                statusIcon.text = $"{definitionAsset.StatusIcon}{boundedEmoji}";
+            }
+        }
+
+        public void ClearConversationLine()
+        {
+            LastConversationLine = string.Empty;
+            LastConversationEmoji = string.Empty;
+            LastConversationMood = null;
+            if (conversationText != null)
+            {
+                conversationText.text = string.Empty;
+                conversationText.gameObject.SetActive(false);
+            }
         }
 
         private void Awake()
@@ -177,6 +235,7 @@ namespace AIFarm.Presentation
         {
             isWorking = false;
             isConversing = false;
+            ClearConversationLine();
             RestoreBaseline();
         }
 
@@ -217,6 +276,25 @@ namespace AIFarm.Presentation
             {
                 statusIcon.text = definitionAsset.StatusIcon;
             }
+        }
+
+        private void EnsureConversationText()
+        {
+            if (conversationText != null)
+            {
+                return;
+            }
+
+            var labelObject = new GameObject("Resident_Conversation_Label");
+            labelObject.transform.SetParent(transform, false);
+            labelObject.transform.localPosition = new Vector3(0f, 4.05f, 0f);
+            conversationText = labelObject.AddComponent<TextMesh>();
+            conversationText.anchor = TextAnchor.LowerCenter;
+            conversationText.alignment = TextAlignment.Center;
+            conversationText.fontSize = 42;
+            conversationText.characterSize = 0.045f;
+            conversationText.color = Color.white;
+            labelObject.AddComponent<WorldSpaceBillboard>();
         }
     }
 }

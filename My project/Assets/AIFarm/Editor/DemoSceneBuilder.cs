@@ -303,7 +303,7 @@ namespace AIFarm.Editor
                 waitSeconds: 0.2f,
                 expressionCooldown: 12f,
                 expressionDisplay: 2.5f,
-                gatewayMode: AiGatewayMode.Local,
+                gatewayMode: AiGatewayMode.Remote,
                 gatewayBaseUrl: config.AiGatewayBaseUrl,
                 requestTimeoutSeconds: config.AiRequestTimeoutSeconds);
             EditorUtility.SetDirty(config);
@@ -482,6 +482,16 @@ namespace AIFarm.Editor
                     54,
                     0.065f);
                 statusIcon.color = new Color(1f, 0.95f, 0.58f);
+                TextMesh conversationText = CreateResidentWorldLabel(
+                    "Resident_Conversation_Label",
+                    root.transform,
+                    string.Empty,
+                    new Vector3(0f, 4.05f, 0f),
+                    42,
+                    0.045f);
+                conversationText.anchor = TextAnchor.LowerCenter;
+                conversationText.color = Color.white;
+                conversationText.gameObject.SetActive(false);
 
                 root.AddComponent<ResidentBlockoutView>();
                 root.AddComponent<TownResidentNavigator>();
@@ -929,6 +939,9 @@ namespace AIFarm.Editor
                 TextMesh statusIcon = resident.transform
                     .Find("Resident_Status_Icon")
                     .GetComponent<TextMesh>();
+                TextMesh conversationText = resident.transform
+                    .Find("Resident_Conversation_Label")
+                    .GetComponent<TextMesh>();
                 ResidentBlockoutView view = resident.GetComponent<ResidentBlockoutView>();
                 EnsureSucceeded(view.Configure(
                     residentAssets[index],
@@ -936,7 +949,8 @@ namespace AIFarm.Editor
                     nameLabel,
                     statusIcon,
                     visual,
-                    residentMaterials[index]));
+                    residentMaterials[index],
+                    conversationText));
 
                 TownResidentNavigator townNavigator =
                     resident.GetComponent<TownResidentNavigator>();
@@ -1272,6 +1286,13 @@ namespace AIFarm.Editor
             SetControlRect(speed5Button.GetComponent<RectTransform>(), 218f, 76f);
             Button speed20Button = CreateControlButton("Speed20Button", "20x", timeControls.transform, font, out _);
             SetControlRect(speed20Button.GetComponent<RectTransform>(), 304f, 86f);
+            Button apiSettingsButton = CreateControlButton(
+                "ApiSettingsButton",
+                "API SETUP",
+                timeControls.transform,
+                font,
+                out _);
+            SetControlRect(apiSettingsButton.GetComponent<RectTransform>(), 400f, 128f);
 
             GameObject backpackPanel = CreatePanel(
                 "BackpackPanel",
@@ -1535,7 +1556,8 @@ namespace AIFarm.Editor
                 speed20Button,
                 aiModeText,
                 recentMemoriesText,
-                recentReflectionsText);
+                recentReflectionsText,
+                apiSettingsButton);
 
             SaveGameController saveController = canvasObject.AddComponent<SaveGameController>();
             EnsureSucceeded(saveController.Configure(

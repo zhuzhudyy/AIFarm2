@@ -119,6 +119,10 @@ namespace AIFarm.Tests.EditMode
                 Assert.That(residentView, Is.Not.Null);
                 Assert.That(residentView.NameLabel.text, Is.Not.Empty);
                 Assert.That(residentView.StatusIcon.text, Is.Not.Empty);
+                Assert.That(residentView.ConversationText, Is.Not.Null);
+                Assert.That(
+                    resident.transform.Find("Resident_Conversation_Label"),
+                    Is.Not.Null);
                 Renderer bodyRenderer = resident.transform
                     .Find("NPC_Visual_Capsule")
                     .GetComponent<Renderer>();
@@ -212,6 +216,9 @@ namespace AIFarm.Tests.EditMode
             Assert.That(
                 GameObject.Find("UI_Canvas/StatusPanel/TimeControls/Speed20Button").GetComponent<Button>(),
                 Is.Not.Null);
+            Assert.That(
+                GameObject.Find("UI_Canvas/StatusPanel/TimeControls/ApiSettingsButton").GetComponent<Button>(),
+                Is.Not.Null);
             Assert.That(GameObject.Find("UI_Canvas/BackpackPanel/InventoryText"), Is.Not.Null);
             Assert.That(GameObject.Find("UI_Canvas/GoalPanel/GoalText"), Is.Not.Null);
             Assert.That(GameObject.Find("UI_Canvas/GoalPanel/ActionText"), Is.Not.Null);
@@ -253,7 +260,7 @@ namespace AIFarm.Tests.EditMode
             Assert.That(sceneConfig.ExpressionDisplaySeconds, Is.GreaterThan(0f));
             Assert.That(sceneConfig.AiGatewayBaseUrl, Is.Not.Empty);
             Assert.That(sceneConfig.AiRequestTimeoutSeconds, Is.InRange(1, 3));
-            Assert.That(sceneConfig.AiGatewayMode, Is.EqualTo(AiGatewayMode.Local));
+            Assert.That(sceneConfig.AiGatewayMode, Is.EqualTo(AiGatewayMode.Remote));
             Assert.That(sceneConfig.CreateDemoMode().IsAiServiceRequired, Is.False);
 
             Assert.That(

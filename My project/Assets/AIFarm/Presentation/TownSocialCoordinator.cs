@@ -1,5 +1,7 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
+using AIFarm.Ai;
 using AIFarm.Core;
 using AIFarm.Npc;
 using AIFarm.Social;
@@ -20,10 +22,24 @@ namespace AIFarm.Presentation
                 TownResidentScheduleController secondResident,
                 double nextLineAtSeconds)
             {
-                Session = session;
-                FirstResident = firstResident;
-                SecondResident = secondResident;
+                Session = session ?? throw new ArgumentNullException(nameof(session));
+                if (firstResident == null || secondResident == null ||
+                    firstResident.ResidentId == secondResident.ResidentId ||
+                    !session.IsParticipant(firstResident.ResidentId) ||
+                    !session.IsParticipant(secondResident.ResidentId))
+                {
+                    throw new ArgumentException(
+                        "Scene conversation controllers must match its two participants.");
+                }
+
+                FirstResident = firstResident.ResidentId == session.FirstResidentId
+                    ? firstResident
+                    : secondResident;
+                SecondResident = secondResident.ResidentId == session.SecondResidentId
+                    ? secondResident
+                    : firstResident;
                 NextLineAtSeconds = nextLineAtSeconds;
+                RequestedConversationVersion = session.ConversationVersion;
             }
 
             public ConversationSession Session { get; }
@@ -32,11 +48,20 @@ namespace AIFarm.Presentation
 
             public TownResidentScheduleController SecondResident { get; }
 
+            public AiRequestCancellation RequestCancellation { get; } =
+                new AiRequestCancellation();
+
+            public long RequestedConversationVersion { get; }
+
             public bool FirstArrived { get; set; }
 
             public bool SecondArrived { get; set; }
 
             public double NextLineAtSeconds { get; set; }
+
+            public bool IsFinalLineVisible { get; set; }
+
+            public double FinalLineVisibleUntilSeconds { get; set; }
         }
 
         [SerializeField]
@@ -100,7 +125,7 @@ namespace AIFarm.Presentation
             {
                 return ActionResult.Failure(
                     ActionFailureReason.InvalidArgument,
-                    "Offline town social coordination requires bootstrap, scheduling, residents, and anchors.");
+                    "Town social coordination requires bootstrap, scheduling, residents, and anchors.");
             }
 
             bootstrap = gameBootstrap;
@@ -114,7 +139,7 @@ namespace AIFarm.Presentation
                     left == null ? string.Empty : left.AnchorId,
                     right == null ? string.Empty : right.AnchorId,
                     StringComparison.Ordinal));
-            return ActionResult.Success("Offline town social scene references configured.");
+            return ActionResult.Success("Town social scene references configured.");
         }
 
         public ActionResult Initialize()
@@ -127,13 +152,14 @@ namespace AIFarm.Presentation
             }
 
             if (bootstrap == null || !bootstrap.IsInitialized ||
+                bootstrap.AiRequests == null ||
                 scheduleCoordinator == null || !scheduleCoordinator.IsInitialized ||
                 residents == null || residents.Length < 2 ||
                 conversationAnchors == null || conversationAnchors.Length == 0)
             {
                 return ActionResult.Failure(
                     ActionFailureReason.InvalidState,
-                    "Town social coordination requires initialized scheduling and scene references.");
+                    "Town social coordination requires initialized scheduling, AI requests, and scene references.");
             }
 
             residentsById.Clear();
@@ -182,7 +208,8 @@ namespace AIFarm.Presentation
                 timeoutSeconds);
             nextOpportunityCheckAtSeconds = UnityEngine.Time.realtimeSinceStartupAsDouble;
             IsInitialized = true;
-            return ActionResult.Success("Completely offline two-resident social system initialized.");
+            return ActionResult.Success(
+                "Two-resident social system initialized with remote-script and local-template paths.");
         }
 
         public ActionResult TickSocial(
@@ -230,6 +257,13 @@ namespace AIFarm.Presentation
             {
                 if (record.Session.IsTerminal)
                 {
+                    if (record.Session.State == ConversationState.Completed &&
+                        record.IsFinalLineVisible &&
+                        monotonicSeconds < record.FinalLineVisibleUntilSeconds)
+                    {
+                        continue;
+                    }
+
                     CleanupSceneConversation(record);
                     continue;
                 }
@@ -237,14 +271,12 @@ namespace AIFarm.Presentation
                 ActionResult movement = TickMovement(record, deltaTime);
                 if (movement.Failed)
                 {
-                    ConversationCoordinator.CancelConversation(
-                        record.Session.ConversationId,
-                        ConversationEndReason.NavigationFailed);
-                    CleanupSceneConversation(record);
+                    CancelAndCleanup(record, ConversationEndReason.NavigationFailed);
                     continue;
                 }
 
                 if (!record.FirstArrived || !record.SecondArrived ||
+                    !record.Session.HasPreparedScript ||
                     monotonicSeconds < record.NextLineAtSeconds)
                 {
                     continue;
@@ -254,16 +286,27 @@ namespace AIFarm.Presentation
                     record.Session.ConversationId,
                     monotonicSeconds,
                     gameSeconds,
-                    out _);
+                    out ConversationUtterance utterance);
+
+                if (advanced.Succeeded && utterance != null)
+                {
+                    PresentUtterance(record, utterance);
+                }
 
                 record.NextLineAtSeconds = monotonicSeconds + lineIntervalSeconds;
-                if (record.Session.IsTerminal)
+                if (record.Session.State == ConversationState.Completed)
+                {
+                    record.IsFinalLineVisible = true;
+                    record.FinalLineVisibleUntilSeconds = record.NextLineAtSeconds;
+                }
+                else if (record.Session.IsTerminal)
                 {
                     CleanupSceneConversation(record);
                 }
 
                 if (advanced.Failed && !record.Session.IsTerminal)
                 {
+                    CancelAndCleanup(record, ConversationEndReason.Cancelled);
                     return advanced;
                 }
             }
@@ -339,7 +382,7 @@ namespace AIFarm.Presentation
                 out SocialOpportunity opportunity);
             if (detected.Failed)
             {
-                return ActionResult.Success("No eligible offline social opportunity this tick.");
+                return ActionResult.Success("No eligible social opportunity this tick.");
             }
 
             ConversationAnchor anchor = FindFreeAnchor(
@@ -401,14 +444,208 @@ namespace AIFarm.Presentation
             }
 
             OpportunityDetector.RecordConversationStarted(opportunity, gameSeconds);
-            sceneConversations.Add(
-                session.ConversationId,
-                new SceneConversation(
-                    session,
-                    firstResident,
-                    secondResident,
-                    monotonicSeconds));
-            return ActionResult.Success("Residents are moving to an offline conversation anchor.");
+            var record = new SceneConversation(
+                session,
+                firstResident,
+                secondResident,
+                monotonicSeconds);
+            sceneConversations.Add(session.ConversationId, record);
+            StartCoroutine(RequestConversationScript(record));
+            return ActionResult.Success(
+                "Residents locked a local session and are preparing a conversation script.");
+        }
+
+        private IEnumerator RequestConversationScript(SceneConversation record)
+        {
+            // Defer beyond the Update() call that detected the social opportunity.
+            yield return null;
+            if (!IsCurrent(record))
+            {
+                yield break;
+            }
+
+            ActionResult built = TryBuildConversationRequest(
+                record,
+                out ConversationScriptRequest request);
+            AiGatewayResult<ConversationScriptSpec> result = null;
+            if (built.Succeeded)
+            {
+                yield return bootstrap.AiRequests.GenerateConversationScript(
+                    request,
+                    AiRequestPriority.Normal,
+                    record.RequestCancellation,
+                    value => result = value);
+            }
+
+            if (!IsCurrent(record) || record.RequestCancellation.IsCancellationRequested ||
+                record.Session.ConversationVersion != record.RequestedConversationVersion)
+            {
+                yield break;
+            }
+
+            ActionResult prepared = result != null && result.Succeeded &&
+                    result.ResidentId == record.Session.FirstResidentId
+                ? ConversationCoordinator.SetConversationScript(
+                    record.Session.ConversationId,
+                    result.Value)
+                : ActionResult.Failure(
+                    ActionFailureReason.ServiceUnavailable,
+                    built.Failed
+                        ? built.Message
+                        : result?.Outcome.Message ?? "Conversation AI returned no result.");
+            if (prepared.Failed)
+            {
+                prepared = ConversationCoordinator.PrepareLocalFallbackScript(
+                    record.Session.ConversationId);
+            }
+
+            if (prepared.Failed)
+            {
+                Debug.LogWarning(
+                    $"Conversation {record.Session.ConversationId} could not prepare a script: " +
+                    prepared.Message,
+                    this);
+                CancelAndCleanup(record, ConversationEndReason.Cancelled);
+                yield break;
+            }
+
+            Debug.Log(
+                $"Conversation script ready residentId={record.Session.FirstResidentId} " +
+                $"participants={record.Session.FirstResidentId},{record.Session.SecondResidentId} " +
+                $"provider={record.Session.ScriptProvider} lines={record.Session.TargetSentenceCount}",
+                this);
+        }
+
+        private ActionResult TryBuildConversationRequest(
+            SceneConversation record,
+            out ConversationScriptRequest request)
+        {
+            request = null;
+            ActionResult firstContext = TryBuildResidentContext(
+                record.FirstResident,
+                record.SecondResident.ResidentId,
+                out ResidentContext first);
+            ActionResult secondContext = TryBuildResidentContext(
+                record.SecondResident,
+                record.FirstResident.ResidentId,
+                out ResidentContext second);
+            if (firstContext.Failed || secondContext.Failed)
+            {
+                return firstContext.Failed ? firstContext : secondContext;
+            }
+
+            try
+            {
+                request = new ConversationScriptRequest(
+                    record.Session.FirstResidentId,
+                    new[]
+                    {
+                        record.Session.FirstResidentId,
+                        record.Session.SecondResidentId
+                    },
+                    new[] { first, second },
+                    $"在{record.FirstResident.CurrentLocationId.Value}的日常交流",
+                    record.Session.RequestedSentenceLimit);
+                return ActionResult.Success("Isolated participant contexts collected.");
+            }
+            catch (ArgumentException exception)
+            {
+                return ActionResult.Failure(
+                    ActionFailureReason.InvalidResponse,
+                    $"Conversation context validation failed: {exception.Message}");
+            }
+        }
+
+        private ActionResult TryBuildResidentContext(
+            TownResidentScheduleController resident,
+            ResidentId otherResidentId,
+            out ResidentContext context)
+        {
+            context = null;
+            ActionResult definitionResult = bootstrap.ResidentRegistry.TryGetDefinition(
+                resident.ResidentId,
+                out ResidentDefinition definition);
+            ActionResult runtimeResult = bootstrap.ResidentRegistry.TryGetRuntimeState(
+                resident.ResidentId,
+                out ResidentRuntimeState runtime);
+            ActionResult relationshipResult = SocialGraph.TryGetRelationship(
+                resident.ResidentId,
+                otherResidentId,
+                out RelationshipState relationship);
+            if (definitionResult.Failed || runtimeResult.Failed || relationshipResult.Failed)
+            {
+                if (definitionResult.Failed)
+                {
+                    return definitionResult;
+                }
+
+                return runtimeResult.Failed ? runtimeResult : relationshipResult;
+            }
+
+            ActionResult memoryResult = runtime.Memories.GetRecent(
+                resident.ResidentId,
+                6,
+                out IReadOnlyList<MemoryEntry> recentMemories);
+            if (memoryResult.Failed)
+            {
+                return memoryResult;
+            }
+
+            var memories = new List<ResidentMemorySnapshot>(recentMemories.Count);
+            foreach (MemoryEntry memory in recentMemories)
+            {
+                // Each context reads only its own strictly partitioned MemoryStore.
+                memories.Add(new ResidentMemorySnapshot(
+                    resident.ResidentId,
+                    memory.Text,
+                    memory.Importance));
+            }
+
+            string currentState =
+                $"schedule={resident.Runtime.State};activity={resident.CurrentActivity};" +
+                $"location={resident.CurrentLocationId.Value};farmBusy={resident.IsFarmingBusy};" +
+                $"hasGoal={runtime.CurrentGoal != null}";
+            try
+            {
+                context = new ResidentContext(
+                    resident.ResidentId,
+                    ResidentPersonaSnapshot.FromDefinition(definition),
+                    currentState,
+                    new[]
+                    {
+                        new RelationshipSnapshot(
+                            resident.ResidentId,
+                            otherResidentId,
+                            relationship.Familiarity,
+                            relationship.Trust)
+                    },
+                    memories);
+                return ActionResult.Success("Resident AI context collected without private-memory crossover.");
+            }
+            catch (ArgumentException exception)
+            {
+                return ActionResult.Failure(
+                    ActionFailureReason.InvalidResponse,
+                    $"Resident context validation failed: {exception.Message}");
+            }
+        }
+
+        private void PresentUtterance(
+            SceneConversation record,
+            ConversationUtterance utterance)
+        {
+            record.FirstResident.ClearConversationLine();
+            record.SecondResident.ClearConversationLine();
+            record.FirstResident.FaceConversationPartner(record.SecondResident.transform);
+            record.SecondResident.FaceConversationPartner(record.FirstResident.transform);
+            if (utterance.SpeakerResidentId == record.FirstResident.ResidentId)
+            {
+                record.FirstResident.ShowConversationLine(utterance);
+            }
+            else if (utterance.SpeakerResidentId == record.SecondResident.ResidentId)
+            {
+                record.SecondResident.ShowConversationLine(utterance);
+            }
         }
 
         private bool HasAnchorAt(TownLocationId locationId)
@@ -454,9 +691,41 @@ namespace AIFarm.Presentation
             return null;
         }
 
+        private bool IsCurrent(SceneConversation record)
+        {
+            return record != null && !record.Session.IsTerminal &&
+                sceneConversations.TryGetValue(
+                    record.Session.ConversationId,
+                    out SceneConversation current) &&
+                ReferenceEquals(current, record);
+        }
+
+        private void CancelAndCleanup(
+            SceneConversation record,
+            ConversationEndReason reason)
+        {
+            if (record == null)
+            {
+                return;
+            }
+
+            ConversationCoordinator.CancelConversation(
+                record.Session.ConversationId,
+                reason);
+            CleanupSceneConversation(record);
+        }
+
         private void CleanupSceneConversation(SceneConversation record)
         {
-            sceneConversations.Remove(record.Session.ConversationId);
+            if (record == null ||
+                !sceneConversations.Remove(record.Session.ConversationId))
+            {
+                return;
+            }
+
+            record.RequestCancellation.Cancel();
+            record.SecondResident.ClearConversationLine();
+            record.FirstResident.ClearConversationLine();
             record.SecondResident.ResumeAfterConversation();
             record.FirstResident.ResumeAfterConversation();
         }
@@ -466,7 +735,7 @@ namespace AIFarm.Presentation
             ActionResult result = Initialize();
             if (result.Failed)
             {
-                Debug.LogError($"Offline town social system did not start: {result.Message}", this);
+                Debug.LogError($"Town social system did not start: {result.Message}", this);
             }
         }
 
@@ -483,7 +752,7 @@ namespace AIFarm.Presentation
                 bootstrap.Clock.ElapsedGameSeconds);
             if (result.Failed)
             {
-                Debug.LogWarning($"Offline social flow recovered from: {result.Message}", this);
+                Debug.LogWarning($"Town social flow recovered from: {result.Message}", this);
             }
         }
 
@@ -497,11 +766,10 @@ namespace AIFarm.Presentation
             var records = new List<SceneConversation>(sceneConversations.Values);
             foreach (SceneConversation record in records)
             {
-                ConversationCoordinator.CancelConversation(
-                    record.Session.ConversationId,
-                    ConversationEndReason.Cancelled);
-                CleanupSceneConversation(record);
+                CancelAndCleanup(record, ConversationEndReason.Cancelled);
             }
+
+            StopAllCoroutines();
         }
 
         private static bool IsFiniteNonNegative(double value)

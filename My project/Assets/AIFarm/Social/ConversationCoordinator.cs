@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using AIFarm.Ai;
 using AIFarm.Core;
 using AIFarm.Npc;
 using AIFarm.Town;
@@ -197,6 +198,69 @@ namespace AIFarm.Social
             return ActionResult.Success("Offline two-resident conversation started.");
         }
 
+        public ActionResult SetConversationScript(
+            ConversationId conversationId,
+            ConversationScriptSpec script)
+        {
+            if (!conversationId.IsValid || script == null)
+            {
+                return ActionResult.Failure(
+                    ActionFailureReason.InvalidArgument,
+                    "Preparing a conversation requires its ID and a validated script.");
+            }
+
+            if (!activeSessions.TryGetValue(
+                    conversationId,
+                    out ActiveConversationRecord record))
+            {
+                return ActionResult.Failure(
+                    ActionFailureReason.InvalidState,
+                    "A script cannot be attached to an inactive conversation.");
+            }
+
+            if (script.ResidentId != record.Session.FirstResidentId)
+            {
+                return ActionResult.Failure(
+                    ActionFailureReason.InvalidResponse,
+                    "Conversation script owner does not match the session request owner.");
+            }
+
+            return record.Session.SetPreparedScript(script);
+        }
+
+        public ActionResult PrepareLocalFallbackScript(ConversationId conversationId)
+        {
+            if (!conversationId.IsValid ||
+                !activeSessions.TryGetValue(
+                    conversationId,
+                    out ActiveConversationRecord record))
+            {
+                return ActionResult.Failure(
+                    ActionFailureReason.InvalidState,
+                    "A local fallback requires an active conversation.");
+            }
+
+            ActionResult firstResolved = residentRegistry.TryGetDefinition(
+                record.Session.FirstResidentId,
+                out ResidentDefinition firstResident);
+            ActionResult secondResolved = residentRegistry.TryGetDefinition(
+                record.Session.SecondResidentId,
+                out ResidentDefinition secondResident);
+            if (firstResolved.Failed || secondResolved.Failed)
+            {
+                return firstResolved.Failed ? firstResolved : secondResolved;
+            }
+
+            ActionResult created = templateService.CreateScript(
+                record.Session,
+                firstResident,
+                secondResident,
+                out ConversationScriptSpec script);
+            return created.Failed
+                ? created
+                : SetConversationScript(conversationId, script);
+        }
+
         public ActionResult AdvanceConversation(
             ConversationId conversationId,
             double monotonicSeconds,
@@ -241,42 +305,69 @@ namespace AIFarm.Social
                     "A conversation position reservation was lost.");
             }
 
-            ResidentId speakerId = record.Session.TurnOwnerResidentId;
-            ResidentId listenerId = speakerId == record.Session.FirstResidentId
-                ? record.Session.SecondResidentId
-                : record.Session.FirstResidentId;
-            ActionResult speakerResolved = residentRegistry.TryGetDefinition(
-                speakerId,
-                out ResidentDefinition speaker);
-            ActionResult listenerResolved = residentRegistry.TryGetDefinition(
-                listenerId,
-                out ResidentDefinition listener);
-            if (speakerResolved.Failed || listenerResolved.Failed)
+            ResidentId speakerId;
+            NpcMood mood;
+            string emoji;
+            string line;
+            if (record.Session.TryGetNextPreparedLine(
+                    out ConversationLineSpec preparedLine))
             {
-                EndAndRelease(
-                    record,
-                    ConversationState.Cancelled,
-                    ConversationEndReason.Cancelled);
-                return speakerResolved.Failed ? speakerResolved : listenerResolved;
+                speakerId = preparedLine.SpeakerId;
+                mood = preparedLine.Mood;
+                emoji = preparedLine.Emoji;
+                line = preparedLine.Text;
             }
-
-            ActionResult generated = templateService.CreateLine(
-                record.Session,
-                speaker,
-                listener,
-                out string line);
-            if (generated.Failed)
+            else if (record.Session.HasPreparedScript)
             {
-                EndAndRelease(
-                    record,
-                    ConversationState.Cancelled,
-                    ConversationEndReason.Cancelled);
-                return generated;
+                return ActionResult.Failure(
+                    ActionFailureReason.InvalidState,
+                    "The prepared conversation script has no playable next line.");
+            }
+            else
+            {
+                speakerId = record.Session.TurnOwnerResidentId;
+                ResidentId listenerId = speakerId == record.Session.FirstResidentId
+                    ? record.Session.SecondResidentId
+                    : record.Session.FirstResidentId;
+                ActionResult speakerResolved = residentRegistry.TryGetDefinition(
+                    speakerId,
+                    out ResidentDefinition speaker);
+                ActionResult listenerResolved = residentRegistry.TryGetDefinition(
+                    listenerId,
+                    out ResidentDefinition listener);
+                if (speakerResolved.Failed || listenerResolved.Failed)
+                {
+                    EndAndRelease(
+                        record,
+                        ConversationState.Cancelled,
+                        ConversationEndReason.Cancelled);
+                    return speakerResolved.Failed ? speakerResolved : listenerResolved;
+                }
+
+                ActionResult generated = templateService.CreateLine(
+                    record.Session,
+                    speaker,
+                    listener,
+                    out line);
+                if (generated.Failed)
+                {
+                    EndAndRelease(
+                        record,
+                        ConversationState.Cancelled,
+                        ConversationEndReason.Cancelled);
+                    return generated;
+                }
+
+                mood = NpcMood.Focused;
+                emoji = "💬";
             }
 
             ActionResult delivered = record.Session.AddUtterance(
                 speakerId,
+                mood,
+                emoji,
                 line,
+                gameSeconds,
                 out utterance);
             if (delivered.Failed)
             {
@@ -295,7 +386,8 @@ namespace AIFarm.Social
             ActionResult applied;
             try
             {
-                ConversationOutcome outcome = templateService.SelectOutcome(record.Session);
+                ConversationOutcome outcome = record.Session.PreparedOutcome ??
+                    templateService.SelectOutcome(record.Session);
                 ActionResult completed = record.Session.Complete(outcome);
                 if (completed.Failed)
                 {
@@ -417,6 +509,16 @@ namespace AIFarm.Social
             ConversationEndReason reason)
         {
             record.Session.End(terminalState, reason);
+            if (record.Session.Utterances.Count > 0)
+            {
+                double playedAt = record.Session.Utterances[
+                    record.Session.Utterances.Count - 1].PlayedAtGameSeconds;
+                outcomeApplier.RecordPlayedTranscript(
+                    record.Session,
+                    playedAt,
+                    includeOutcome: false);
+            }
+
             ReleaseResources(record);
         }
 

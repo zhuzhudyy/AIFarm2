@@ -1,7 +1,9 @@
 using System;
 using System.Collections.Generic;
+using AIFarm.Ai;
 using AIFarm.Core;
 using AIFarm.Npc;
+using AIFarm.Social;
 using UnityEngine;
 
 namespace AIFarm.Presentation
@@ -79,6 +81,17 @@ namespace AIFarm.Presentation
                 FarmGoalDto.FromGoal(goal),
                 outcome.ToString(),
                 eventSummary));
+        }
+
+        public static string SerializeConversationScriptRequest(
+            ConversationScriptRequest request)
+        {
+            if (request == null)
+            {
+                throw new ArgumentNullException(nameof(request));
+            }
+
+            return JsonUtility.ToJson(ConversationScriptRequestDto.FromRequest(request));
         }
 
         public static ActionResult TryParseFarmGoal(
@@ -190,6 +203,70 @@ namespace AIFarm.Presentation
                 dto.Emoji.Trim(),
                 dto.Text.Trim());
             return ActionResult.Success("Remote ReflectionSpec validated.");
+        }
+
+        public static ActionResult TryParseConversationScript(
+            string json,
+            ConversationScriptRequest request,
+            out ConversationScriptSpec script)
+        {
+            script = null;
+            if (request == null ||
+                !HasExactTopLevelProperties(
+                    json,
+                    "resident_id",
+                    "lines",
+                    "outcome",
+                    "provider") ||
+                !TryDeserialize(json, out ConversationScriptResponseDto dto) ||
+                dto.ResidentId != request.ResidentId.Value ||
+                !IsProvider(dto.Provider) ||
+                !TryParseEnum(dto.Outcome, out ConversationOutcome outcome) ||
+                dto.Lines == null ||
+                dto.Lines.Length < ConversationSession.MinimumSentenceCount ||
+                dto.Lines.Length > request.MaxLines ||
+                dto.Lines.Length > ConversationSession.MaximumSentenceCount)
+            {
+                return InvalidResponse(
+                    "Conversation script response failed its owner, shape, or line-limit validation.");
+            }
+
+            var lines = new List<ConversationLineSpec>(dto.Lines.Length);
+            try
+            {
+                foreach (ConversationLineDto line in dto.Lines)
+                {
+                    if (line == null ||
+                        !ResidentId.TryCreate(line.SpeakerId, out ResidentId speakerId) ||
+                        !request.IsParticipant(speakerId) ||
+                        !TryParseEnum(line.Mood, out NpcMood mood) ||
+                        !IsBoundedText(line.Emoji, 1, 8) ||
+                        !IsBoundedText(line.Text, 1, 300))
+                    {
+                        return InvalidResponse(
+                            "Every conversation line must belong to a participant and include valid presentation data.");
+                    }
+
+                    lines.Add(new ConversationLineSpec(
+                        speakerId,
+                        mood,
+                        line.Emoji.Trim(),
+                        line.Text.Trim()));
+                }
+
+                script = new ConversationScriptSpec(
+                    request.ResidentId,
+                    lines,
+                    outcome,
+                    dto.Provider);
+            }
+            catch (ArgumentException)
+            {
+                script = null;
+                return InvalidResponse("Conversation script failed semantic validation.");
+            }
+
+            return ActionResult.Success("Remote ConversationScriptSpec validated.");
         }
 
         public static string BoundText(string value, int maximumLength)
@@ -596,6 +673,185 @@ namespace AIFarm.Presentation
         }
 
         [Serializable]
+        private sealed class ConversationScriptRequestDto
+        {
+            [SerializeField]
+            private string resident_id;
+
+            [SerializeField]
+            private string[] participant_ids;
+
+            [SerializeField]
+            private ResidentContextDto[] participants;
+
+            [SerializeField]
+            private string topic;
+
+            [SerializeField]
+            private int max_lines;
+
+            public static ConversationScriptRequestDto FromRequest(
+                ConversationScriptRequest request)
+            {
+                var ids = new string[request.ParticipantIds.Count];
+                for (int index = 0; index < ids.Length; index++)
+                {
+                    ids[index] = request.ParticipantIds[index].Value;
+                }
+
+                var contexts = new ResidentContextDto[request.Participants.Count];
+                for (int index = 0; index < contexts.Length; index++)
+                {
+                    contexts[index] = ResidentContextDto.FromContext(
+                        request.Participants[index]);
+                }
+
+                return new ConversationScriptRequestDto
+                {
+                    resident_id = request.ResidentId.Value,
+                    participant_ids = ids,
+                    participants = contexts,
+                    topic = request.Topic,
+                    max_lines = request.MaxLines
+                };
+            }
+        }
+
+        [Serializable]
+        private sealed class ResidentContextDto
+        {
+            [SerializeField]
+            private string resident_id;
+
+            [SerializeField]
+            private ResidentPersonaDto persona;
+
+            [SerializeField]
+            private string current_state;
+
+            [SerializeField]
+            private RelationshipSnapshotDto[] relationship_snapshots;
+
+            [SerializeField]
+            private ResidentMemorySnapshotDto[] relevant_memories;
+
+            public static ResidentContextDto FromContext(ResidentContext context)
+            {
+                var relationships = new RelationshipSnapshotDto[
+                    context.RelationshipSnapshots.Count];
+                for (int index = 0; index < relationships.Length; index++)
+                {
+                    RelationshipSnapshot relationship =
+                        context.RelationshipSnapshots[index];
+                    relationships[index] = new RelationshipSnapshotDto
+                    {
+                        owner_resident_id = relationship.OwnerResidentId.Value,
+                        target_resident_id = relationship.TargetResidentId.Value,
+                        familiarity = relationship.Familiarity,
+                        trust = relationship.Trust
+                    };
+                }
+
+                var memories = new ResidentMemorySnapshotDto[
+                    context.RelevantMemories.Count];
+                for (int index = 0; index < memories.Length; index++)
+                {
+                    ResidentMemorySnapshot memory = context.RelevantMemories[index];
+                    memories[index] = new ResidentMemorySnapshotDto
+                    {
+                        owner_resident_id = memory.OwnerResidentId.Value,
+                        text = memory.Text,
+                        importance = memory.Importance
+                    };
+                }
+
+                return new ResidentContextDto
+                {
+                    resident_id = context.ResidentId.Value,
+                    persona = ResidentPersonaDto.FromSnapshot(context.Persona),
+                    current_state = context.CurrentState,
+                    relationship_snapshots = relationships,
+                    relevant_memories = memories
+                };
+            }
+        }
+
+        [Serializable]
+        private sealed class ResidentPersonaDto
+        {
+            [SerializeField]
+            private string display_name;
+
+            [SerializeField]
+            private string role;
+
+            [SerializeField]
+            private string[] personality_traits;
+
+            [SerializeField]
+            private string speaking_style;
+
+            [SerializeField]
+            private string work_habit;
+
+            [SerializeField]
+            private string preference;
+
+            [SerializeField]
+            private string dislike;
+
+            public static ResidentPersonaDto FromSnapshot(
+                ResidentPersonaSnapshot persona)
+            {
+                var traits = new string[persona.PersonalityTraits.Count];
+                for (int index = 0; index < traits.Length; index++)
+                {
+                    traits[index] = persona.PersonalityTraits[index];
+                }
+
+                return new ResidentPersonaDto
+                {
+                    display_name = persona.DisplayName,
+                    role = persona.Role,
+                    personality_traits = traits,
+                    speaking_style = persona.SpeakingStyle,
+                    work_habit = persona.WorkHabit,
+                    preference = persona.Preference,
+                    dislike = persona.Dislike
+                };
+            }
+        }
+
+        [Serializable]
+        private sealed class RelationshipSnapshotDto
+        {
+            [SerializeField]
+            internal string owner_resident_id;
+
+            [SerializeField]
+            internal string target_resident_id;
+
+            [SerializeField]
+            internal int familiarity;
+
+            [SerializeField]
+            internal int trust;
+        }
+
+        [Serializable]
+        private sealed class ResidentMemorySnapshotDto
+        {
+            [SerializeField]
+            internal string owner_resident_id;
+
+            [SerializeField]
+            internal string text;
+
+            [SerializeField]
+            internal int importance;
+        }
+
+        [Serializable]
         private sealed class FarmGoalDto
         {
             [SerializeField]
@@ -721,6 +977,54 @@ namespace AIFarm.Presentation
             public string Text => text;
 
             public string Provider => provider;
+        }
+
+        [Serializable]
+        private sealed class ConversationScriptResponseDto
+        {
+            [SerializeField]
+            private string resident_id;
+
+            [SerializeField]
+            private ConversationLineDto[] lines;
+
+            [SerializeField]
+            private string outcome;
+
+            [SerializeField]
+            private string provider;
+
+            public string ResidentId => resident_id;
+
+            public ConversationLineDto[] Lines => lines;
+
+            public string Outcome => outcome;
+
+            public string Provider => provider;
+        }
+
+        [Serializable]
+        private sealed class ConversationLineDto
+        {
+            [SerializeField]
+            private string speaker_id;
+
+            [SerializeField]
+            private string mood;
+
+            [SerializeField]
+            private string emoji;
+
+            [SerializeField]
+            private string text;
+
+            public string SpeakerId => speaker_id;
+
+            public string Mood => mood;
+
+            public string Emoji => emoji;
+
+            public string Text => text;
         }
     }
 }

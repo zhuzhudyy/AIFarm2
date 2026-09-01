@@ -2,6 +2,7 @@ using AIFarm.Ai;
 using AIFarm.Core;
 using AIFarm.Inventory;
 using AIFarm.Npc;
+using System;
 using System.Collections.Generic;
 using System.Text;
 using UnityEngine;
@@ -73,6 +74,9 @@ namespace AIFarm.Presentation
         private Text aiModeText;
 
         [SerializeField]
+        private Button apiSettingsButton;
+
+        [SerializeField]
         private Text recentMemoriesText;
 
         [SerializeField]
@@ -119,7 +123,8 @@ namespace AIFarm.Presentation
             Button speed20Control = null,
             Text aiModeLabel = null,
             Text memoriesLabel = null,
-            Text reflectionsLabel = null)
+            Text reflectionsLabel = null,
+            Button apiSettingsControl = null)
         {
             bootstrap = gameBootstrap;
             timeText = timeLabel;
@@ -143,6 +148,7 @@ namespace AIFarm.Presentation
             aiModeText = aiModeLabel;
             recentMemoriesText = memoriesLabel;
             recentReflectionsText = reflectionsLabel;
+            apiSettingsButton = apiSettingsControl;
             EnsureResidentBindings();
         }
 
@@ -211,6 +217,13 @@ namespace AIFarm.Presentation
             speed1Button?.onClick.AddListener(HandleSpeed1);
             speed5Button?.onClick.AddListener(HandleSpeed5);
             speed20Button?.onClick.AddListener(HandleSpeed20);
+            apiSettingsButton?.onClick.AddListener(HandleApiSettings);
+            if (apiSettingsButton != null)
+            {
+                apiSettingsButton.interactable = TryBuildLocalApiSettingsUrl(
+                    bootstrap?.SceneConfig?.AiGatewayBaseUrl,
+                    out _);
+            }
 
             RefreshFromDomain();
             RefreshFromExecutor();
@@ -237,6 +250,7 @@ namespace AIFarm.Presentation
             speed1Button?.onClick.RemoveListener(HandleSpeed1);
             speed5Button?.onClick.RemoveListener(HandleSpeed5);
             speed20Button?.onClick.RemoveListener(HandleSpeed20);
+            apiSettingsButton?.onClick.RemoveListener(HandleApiSettings);
         }
 
         private void RefreshFromDomain()
@@ -409,6 +423,57 @@ namespace AIFarm.Presentation
         private void HandleSpeed20()
         {
             SetTimeScale(20d);
+        }
+
+        public ActionResult OpenApiSettings()
+        {
+            if (!TryBuildLocalApiSettingsUrl(
+                bootstrap?.SceneConfig?.AiGatewayBaseUrl,
+                out string settingsUrl))
+            {
+                return ActionResult.Failure(
+                    ActionFailureReason.InvalidState,
+                    "API settings are available only through a loopback AI gateway.");
+            }
+
+            Application.OpenURL(settingsUrl);
+            return ActionResult.Success("Opened the local AI gateway settings page.");
+        }
+
+        public static bool TryBuildLocalApiSettingsUrl(
+            string gatewayBaseUrl,
+            out string settingsUrl)
+        {
+            settingsUrl = string.Empty;
+            string candidate = (gatewayBaseUrl ?? string.Empty).Trim();
+            if (!Uri.TryCreate(candidate, UriKind.Absolute, out Uri gatewayUri) ||
+                (gatewayUri.Scheme != Uri.UriSchemeHttp &&
+                    gatewayUri.Scheme != Uri.UriSchemeHttps) ||
+                !gatewayUri.IsLoopback ||
+                !string.IsNullOrEmpty(gatewayUri.UserInfo) ||
+                !string.IsNullOrEmpty(gatewayUri.Query) ||
+                !string.IsNullOrEmpty(gatewayUri.Fragment))
+            {
+                return false;
+            }
+
+            var builder = new UriBuilder(gatewayUri)
+            {
+                Path = $"{gatewayUri.AbsolutePath.TrimEnd('/')}/setup",
+                Query = string.Empty,
+                Fragment = string.Empty
+            };
+            settingsUrl = builder.Uri.AbsoluteUri.TrimEnd('/');
+            return true;
+        }
+
+        private void HandleApiSettings()
+        {
+            ActionResult result = OpenApiSettings();
+            if (result.Failed)
+            {
+                Debug.LogWarning(result.Message, this);
+            }
         }
 
         private void RefreshFromExecutor()
