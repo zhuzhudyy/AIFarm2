@@ -32,6 +32,7 @@ namespace AIFarm.Presentation
         private bool baselineCaptured;
         private bool isWorking;
         private bool isConversing;
+        private bool isAttendingTownEvent;
 
         public ResidentDefinitionAsset DefinitionAsset => definitionAsset;
 
@@ -48,6 +49,8 @@ namespace AIFarm.Presentation
         public bool IsPlayingWorkAnimation => isWorking;
 
         public bool IsShowingConversation => isConversing;
+
+        public bool IsAttendingTownEvent => isAttendingTownEvent;
 
         public string LastConversationLine { get; private set; } = string.Empty;
 
@@ -108,7 +111,7 @@ namespace AIFarm.Presentation
             ResidentScheduleState state,
             ResidentActivityKind? activity)
         {
-            if (isConversing)
+            if (isConversing || isAttendingTownEvent)
             {
                 return;
             }
@@ -147,6 +150,11 @@ namespace AIFarm.Presentation
 
         public void SetConversationState(bool active)
         {
+            if (active && isAttendingTownEvent)
+            {
+                return;
+            }
+
             isConversing = active;
             isWorking = false;
             RestoreBaseline();
@@ -202,6 +210,38 @@ namespace AIFarm.Presentation
             }
         }
 
+        public void SetTownEventState(TownEventState state)
+        {
+            bool active = state == TownEventState.Gathering ||
+                state == TownEventState.Active;
+            isAttendingTownEvent = active;
+            isWorking = state == TownEventState.Active;
+            if (!isWorking)
+            {
+                RestoreBaseline();
+            }
+
+            if (statusIcon != null && definitionAsset != null)
+            {
+                statusIcon.text = active
+                    ? $"{definitionAsset.StatusIcon}🍲"
+                    : $"{definitionAsset.StatusIcon}.";
+            }
+
+            if (!active)
+            {
+                ClearConversationLine();
+            }
+        }
+
+        public void ShowTownEventLine(string text, string emoji, NpcMood mood)
+        {
+            if (isAttendingTownEvent)
+            {
+                ShowConversationLine(text, emoji, mood);
+            }
+        }
+
         private void Awake()
         {
             if (animatedVisualRoot != null)
@@ -235,6 +275,7 @@ namespace AIFarm.Presentation
         {
             isWorking = false;
             isConversing = false;
+            isAttendingTownEvent = false;
             ClearConversationLine();
             RestoreBaseline();
         }

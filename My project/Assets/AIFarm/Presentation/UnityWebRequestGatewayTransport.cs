@@ -61,7 +61,8 @@ namespace AIFarm.Presentation
             }
 
             byte[] payload = Encoding.UTF8.GetBytes(json ?? string.Empty);
-            using (var request = new UnityWebRequest(url, UnityWebRequest.kHttpVerbPOST))
+            var request = new UnityWebRequest(url, UnityWebRequest.kHttpVerbPOST);
+            try
             {
                 request.uploadHandler = new UploadHandlerRaw(payload);
                 request.downloadHandler = new DownloadHandlerBuffer();
@@ -69,7 +70,13 @@ namespace AIFarm.Presentation
                 request.SetRequestHeader("Content-Type", "application/json; charset=utf-8");
                 request.SetRequestHeader("Accept", "application/json");
 
-                yield return request.SendWebRequest();
+                UnityWebRequestAsyncOperation operation = request.SendWebRequest();
+                while (!operation.isDone)
+                {
+                    // Yield per frame so AiRequestCoordinator can observe cancellation or
+                    // gateway shutdown instead of being suspended behind one opaque wait.
+                    yield return null;
+                }
 
                 if (request.result != UnityWebRequest.Result.Success)
                 {
@@ -94,6 +101,15 @@ namespace AIFarm.Presentation
                 completed(AiGatewayHttpResult.Success(
                     request.responseCode,
                     request.downloadHandler?.text));
+            }
+            finally
+            {
+                if (!request.isDone)
+                {
+                    request.Abort();
+                }
+
+                request.Dispose();
             }
         }
     }

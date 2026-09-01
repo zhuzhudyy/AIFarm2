@@ -177,6 +177,18 @@ namespace AIFarm.Npc
                 case WorldEventKind.DayEnded:
                     observation = $"一天结束了：{worldEvent.Message}";
                     break;
+                case WorldEventKind.TownEventProposed:
+                    observation = $"我收到了全镇活动邀请：{worldEvent.Message}";
+                    break;
+                case WorldEventKind.TownEventStarted:
+                    observation = $"我知道广场的收获晚餐开始了：{worldEvent.Message}";
+                    break;
+                case WorldEventKind.TownEventCompleted:
+                    observation = "我实际参加了广场的收获晚餐，和到场居民一起分享了胡萝卜汤。";
+                    break;
+                case WorldEventKind.TownEventCancelled:
+                    observation = $"我知道收获晚餐已经取消：{worldEvent.Message}";
+                    break;
                 default:
                     return ActionResult.Failure(
                         ActionFailureReason.InvalidArgument,
@@ -194,6 +206,8 @@ namespace AIFarm.Npc
                 case WorldEventKind.ActionFailed:
                 case WorldEventKind.GoalCompleted:
                     return 10;
+                case WorldEventKind.TownEventCompleted:
+                    return 8;
                 case WorldEventKind.WeedsAppeared:
                     return 9;
                 case WorldEventKind.MoistureChanged:
@@ -201,8 +215,10 @@ namespace AIFarm.Npc
                 case WorldEventKind.CropMatured:
                     return 7;
                 case WorldEventKind.DayEnded:
+                case WorldEventKind.TownEventStarted:
                     return 7;
                 case WorldEventKind.CommandAccepted:
+                case WorldEventKind.TownEventProposed:
                     return 6;
                 case WorldEventKind.ConversationCompleted:
                 case WorldEventKind.ConversationInterrupted:
@@ -214,6 +230,8 @@ namespace AIFarm.Npc
                 case WorldEventKind.ActionStarted:
                 case WorldEventKind.System:
                     return 2;
+                case WorldEventKind.TownEventCancelled:
+                    return 5;
                 default:
                     return 1;
             }

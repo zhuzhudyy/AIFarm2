@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import re
 import secrets
 from dataclasses import dataclass
 from pathlib import Path
@@ -24,6 +25,7 @@ from app.schemas import (
 DEFAULT_MODEL = "deepseek-v4-flash"
 CONFIG_VERSION = 1
 MAX_CONFIG_BYTES = 16 * 1024
+_GATEWAY_INSTANCE_ID_PATTERN = re.compile(r"^[0-9a-f]{32}$")
 
 _logger = logging.getLogger("aifarm.ai_gateway")
 
@@ -153,6 +155,7 @@ class GatewayProviderRuntime:
         self._api_key: str
         self._source: str
         self._persisted: bool
+        self._instance_id = self._instance_id_from_environment()
 
         if provider is not None:
             self._provider = provider
@@ -199,6 +202,7 @@ class GatewayProviderRuntime:
                 api_key_configured=self._provider.api_key_configured,
                 persisted=self._persisted,
                 source=self._source,
+                instance_id=self._instance_id,
             )
 
     def configure(self, request: GatewayConfigureRequest) -> GatewayConfigSpec:
@@ -290,3 +294,15 @@ class GatewayProviderRuntime:
             model=os.getenv("OPENAI_MODEL", DEFAULT_MODEL).strip(),
             api_key=os.getenv("OPENAI_API_KEY", "").strip(),
         )
+
+    @staticmethod
+    def _instance_id_from_environment() -> str | None:
+        instance_id = os.getenv("AIFARM_GATEWAY_INSTANCE_ID")
+        if instance_id is None:
+            return None
+        if _GATEWAY_INSTANCE_ID_PATTERN.fullmatch(instance_id) is None:
+            raise RuntimeError(
+                "AIFARM_GATEWAY_INSTANCE_ID must be exactly 32 lowercase "
+                "hexadecimal characters."
+            )
+        return instance_id

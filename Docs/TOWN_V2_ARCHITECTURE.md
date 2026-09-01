@@ -1,8 +1,7 @@
 # Town V2 多居民小镇架构
 
-> 状态：目标架构，尚未实现。  
-> 本文只定义边界、数据所有权和迁移方向，不表示当前 Unity 场景或 Python 网关已经具备这些能力。  
-> 当前差距与逐文件证据见 `SINGLE_NPC_ASSUMPTIONS_AUDIT.md`。
+> 状态：当前实现架构与验收边界。
+> 本文描述 Unity、Python 网关、领域状态和测试应保持一致的权威边界；具体通过状态以自动化测试证据为准。
 
 ## 1. 固定范围
 
@@ -23,7 +22,7 @@ Town V2 在不破坏现有单 NPC 胡萝卜种田闭环的前提下，引入四�
 - 四人分别拥有独立 Persona、`ResidentRuntimeState`、Memory、Schedule 和 Relationships。
 - 第一版 Conversation 恰好只有两名不同居民，不实现三人或四人群聊。
 - 支持信息 A→B→C 传播，但 B、C 不得读取前一位居民的私有 Memory。
-- 只实现一个四人共同参加的全镇活动；该活动是公开领域活动，不是群聊。
+- 只实现一个邀请全镇四人的 HarvestDinner；实际参加者是至少两人的合法子集，该活动是公开领域活动，不是群聊。
 - 保留现有 3×3 胡萝卜播种、浇水、施肥、除草、成熟和收获流程及确定性本地 fallback。
 - Python 网关完全关闭时，四人仍可执行本地日程、农事动作和双人本地对话。
 - 不增加经济、恋爱、战斗、多作物或复杂职业系统。
@@ -52,6 +51,7 @@ Python 网关是可移除、无 Unity 写权限的生成服务。它接收经过
          v          v           v
  ResidentRegistry  TownScheduler  ConversationCoordinator
          |          |           |
+         |     TownEventCoordinator
          |          +-----+-----+
          |                |
          v                v
@@ -66,7 +66,7 @@ Python 网关是可移除、无 Unity 写权限的生成服务。它接收经过
                                       v
                             单一 Python 网关/模型配置
 
-所有候选 intent -> 本地 schema/语义校验 -> TownScheduler/ConversationCoordinator
+所有候选 intent -> 本地 schema/语义校验 -> TownScheduler/ConversationCoordinator/TownEventCoordinator
                 -> ReservationService -> Unity 权威领域命令 -> 状态与可见事件
 ~~~
 
@@ -88,6 +88,8 @@ Python 网关是可移除、无 Unity 写权限的生成服务。它接收经过
 | 不从 Update() 启动网络 | Update 只推进本地模拟或发布本地事件；长驻异步 dispatcher 在启动时建立并消费队列。 |
 | 模型只选允许的高层 intent | 请求携带本次 AllowedIntentSet；响应必须同时属于全局版本化白名单和该请求子集。 |
 | 模型不直接改变世界 | 有效响应仍只是 proposal；只有 Unity 确定性处理器能提交领域命令。 |
+| 全镇同时最多一个共同活动 | TownEventCoordinator 原子维护唯一活动槽；重复、并发或陈旧 proposal 不得创建第二个活动。 |
+| 公开活动事实不等于私人参加事实 | 邀请/开始用 PublicTownEvent 投影；只有实际完成参加者获得 owner 绑定的私人 attendance 记忆。 |
 | 所有模型输出严格校验 | Python 先校验，Unity 再校验关联字段、额外字段、枚举、长度、版本和语义前置条件。 |
 | 每条远程路径有确定性 fallback | operation 注册时必须同时注册本地处理器；缺 fallback 的 operation 不得入队。 |
 | 双人会话有硬上限 | V2 基线最多 6 个已交付话轮且最多 30 秒单调墙钟时间，先到者立即结束。 |
@@ -157,7 +159,7 @@ Definition 的修改走内容版本；存档记录 definition ID/version，不�
 - 当前本地状态（Idle、Moving、Acting、Conversing、AttendingTownActivity 等）；
 - 当前 GoalId/GoalVersion；
 - 可选 `ActiveActionId` 和对应 activity lease；
-- 可选 `ActiveConversationId`；
+- 可选、仅运行期存在的 `ActiveConversationId`；它用于互斥和可观察性，不进入 V1 存档；
 - 当前位置的权威场景引用映射或稳定位置快照；
 - 当前 mood/expression 及独立反思历史；
 - 存档恢复所需的动作意图，不保存网络 coroutine 或请求 callback。
@@ -195,20 +197,20 @@ Memory、Schedule 和 Relationships 虽属于该居民，但由专门容器管�
 - 根据 GameClock 的离散时间边界触发日程项，保证同一边界只触发一次；
 - 将公开完整农田目标拆为 Unity 本地 FarmTask，并按固定规则分配给四名居民；
 - 在居民空闲、活动租约可得、前置条件成立且交互点可预约时才下发动作；
-- 调度唯一全镇活动，并为四名居民创建各自的 attendance 任务；
+- 调度唯一全镇活动，向四名居民发出邀请，并只为明确接受的居民创建 attendance 任务；
 - 使用稳定排序处理同一 tick 的竞争，不依赖字典遍历或网络完成顺序；
 - 在网络不可用、AI 预算不足或响应无效时继续使用本地规则。
 
 V2 基线优先级：
 
 1. 让已开始的原子动作或合法话轮完成；
-2. 处理已经到期且四人共同参加的全镇活动；
+2. 处理已经到期且至少两名居民接受参加的全镇活动；
 3. 继续已接受的完整胡萝卜农务子任务；
 4. 处理该居民仍有效的个人日程；
 5. 合法的双人对话提案；
 6. Idle。
 
-AI 可以在本次明确允许的高层 intent 中提出 `AttendTownActivity`、`RequestConversation` 或 `Idle`，但不能创建/修改日程、分配地块、改变优先级或跳过本地前置条件。
+AI 可以在本次明确允许的高层 intent 中提出 `propose_town_event`、`RequestConversation` 或 `Idle`。共同活动的模型输出只有 `propose_town_event` 高层意图与受限理由，不包含活动类型、时间、坐标或参与者；Unity 再用本地可传播事实和实际会话证据构造 `TownEventProposal`，并固定映射到下一次有效 18:00 的广场 HarvestDinner。模型不能创建/修改日程、分配地块、改变优先级、瞬移居民或跳过本地前置条件。
 
 ### 5.5 SocialGraph
 
@@ -246,7 +248,7 @@ SocialGraph 的查询必须显式给出 owner ID。AI 上下文只能包含该 o
 开始规则：
 
 - 按规范化 ResidentId 顺序原子获取双方活动租约，避免死锁；
-- 任一方已有动作、会话或全镇活动任务时，本次提案失败且不留下半占用；
+- 任一方已有动作、会话或全镇活动任务时，普通社交提案失败且不留下半占用；唯一例外是 `TownEventCoordinator` 在共同活动中为两名已经到场且未被其他会话占用的参加者创建带活动关联 ID 的受约束双人短会话，此时双方的活动子状态原子切换为 `EventConversation`，不得同时执行其他动作或会话；
 - 会话只占用这两名居民，不影响另外两名居民；
 - 同一居民不得同时加入第二场会话。
 
@@ -303,6 +305,14 @@ CreatedAtMonotonic + DeadlineAtMonotonic
 
 Python 网关收到并校验关联字段后必须原样回显，但不保存权威居民状态。服务端内部 request ID 或 provider request ID 只用于遥测，不能替代 Unity 生成的端到端 RequestId。
 
+#### 5.7.1 Unity UI 启动本地网关
+
+`API SETUP` 是显式用户操作入口，不从 `Update()` 启动网络或进程。Editor/桌面 Player 中，玩家在原生 Unity 面板输入 API Key 和共享模型后选择“启动并连接”；模型默认值为 `deepseek-v4-flash`。启动器只接受根路径的 `http://127.0.0.1:<port>`，并将 Uvicorn 子进程绑定到同一 IPv4 地址，不接受 `localhost` 或其他回环别名，也不向局域网或公网监听。
+
+该 Unity 自动启动路径只通过所启动子进程的环境变量传递 API Key；密钥不得进入命令行参数、Unity 资源/偏好、存档、磁盘配置、日志、状态文本或 API 响应，提交后 UI 输入框和待启动配置中的密钥都必须清除。Unity 用每次启动生成的 instance ID 完成就绪握手。若端口上已有 provider、模型和“已配置密钥”状态都匹配的外部网关，只复用连接，不应用本次新输入的密钥，也不取得进程所有权；若不匹配则失败关闭，不覆盖或终止外部服务。停止、退出、就绪超时或启动失败时，只允许清理本 Unity 会话实际启动且握手匹配的进程。
+
+启动、配置、鉴权或就绪检查失败只关闭远程增强，`AiRequestCoordinator` 仍交付确定性本地 fallback。发布到桌面 Player 时必须随包提供可运行的 Python 网关 sidecar 及依赖，放在 Player 可解析的 `Server` 或 `StreamingAssets/AIFarmGateway` 布局中，或通过受信任的部署环境路径显式指定；sidecar 缺失时必须显示失败原因并继续本地运行。非桌面平台不承诺由 Unity 启动本机进程。
+
 ### 5.8 ReservationService
 
 `ReservationService` 管理所有具有排他占用要求的世界交互点，例如农田操作点、对话站位和全镇活动席位。
@@ -325,7 +335,7 @@ Python 网关收到并校验关联字段后必须原样回显，但不保存权�
 - 旧 token 在 lease 到期或新 generation 创建后永久无效；
 - 同时争用按固定业务优先级、入队序号、ResidentId 排序，失败者本地等待或重规划，不请求模型裁决。
 
-全镇活动为四名居民配置四个不同 attendance point，不能让四人共同预约同一个点。双人会话同理使用两个配对站位或不需要排他站位的明确配置。
+全镇活动为四名受邀居民预配置四个不同 attendance point，但只为实际接受且前往现场的居民获取租约；不同参加者不能预约同一个点。拒绝、超时、导航失败、活动取消或结束时必须幂等释放对应租约。双人会话同理使用两个配对站位或不需要排他站位的明确配置。
 
 ## 6. 事件可见性与记忆
 
@@ -409,18 +419,54 @@ C 从未读取 A 或 B 的 MemoryStore；C 只知道 B 实际说出的内容。�
 
 ## 9. 唯一全镇活动
 
-第一版只配置一个 `TownActivityDefinition`，参考活动为“全镇收获聚会”：
+第一版只配置一个 `TownActivityDefinition`，其固定活动为 `HarvestDinner`：
 
-- `ActivityId` 固定且稳定；
-- required participants 恰好为四个固定 ResidentId；
-- 四名居民各自在自己的 ResidentSchedule 中保存同一 ActivityId 的 attendance 条目；
-- 活动开始事件是 `PublicTownEvent`，四人都可合法学习；
-- TownScheduler 等待四人都可取得活动租约后原子开始；不会中断已开始的原子动作或会话；
-- ReservationService 为四人分配四个不同 attendance point；
-- 活动结束由本地时钟和规则决定，不需要远程 AI；
-- 网络不可用时照常集合、参加和结束。
+| 字段 | 固定值或规则 |
+| --- | --- |
+| `ActivityId` | `town-event-harvest-dinner`，稳定且不可由模型替换 |
+| `ActivityKind` | `HarvestDinner` |
+| `StartGameTime` | 提案游戏时间之后的下一次有效 `18:00`；提案恰好发生在 18:00 时使用当前时刻，否则超过后顺延到次日 |
+| `LocationId` | 广场的稳定 `TownLocationId` |
+| `InvitedResidentIds` | 芽芽、阿木、小穗、墨墨四个固定 ResidentId |
+| `MinimumAttendees` | `2` |
+| `AttendancePointIds` | 广场内四个互不相同的固定点位 |
+| `MaxPairConversationSegments` | 固定有界配置，参考值为 `2` |
 
-这不是四人 Conversation。活动期间可以显示确定性公共表达，但不创建三人/四人话轮、群聊 Memory 或群聊 AI 请求。
+### 9.1 提案不是权威活动
+
+模型在活动路径中唯一允许提出的执行意图是 `propose_town_event`。模型输出只含该意图、owner 关联和受限理由，不输出 `ActivityKind`、活动 ID、坐标、开始时间、日程修改、参加者名单、移动命令或关系数值。上游请求校验通过后，Unity 才将 `ProposerResidentId`、`SourceKnowledgeId`、`SourceConversationId`、`ProposedAtGameSeconds` 和理由封装为非权威 `TownEventProposal`；其 `EventType` 由本地代码固定为 `HarvestDinner`。
+
+`TownEventCoordinator` 是活动的唯一状态机和权威入口。它收到 proposal 后必须依次验证：
+
+1. proposer 已注册，且上游允许 intent/owner/version 校验已经通过；
+2. `SourceKnowledgeId` 属于 proposer，并且是从 `SourceConversationId` 对应的实际双人会话中获得的可传播胡萝卜收获事实；
+3. 来源知识的 immediate source、时间、`harvest`/`carrot` 标签和根事实均合法；
+4. 当前没有 `Scheduled`、`Gathering` 或 `Active` 的另一场共同活动；
+5. 同一个可传播根事实尚未被用于安排旧活动。
+
+校验成功只会由 Unity 创建一个本地活动实例，并固定映射到下一次有效 18:00 的广场。幂等与重复防护依据当前非终态活动、可传播事实根和实际会话证据，不依赖独立提案标识。失败 proposal 不修改日程、位置、预约、记忆或活动状态；全镇任意时刻满足 `ActiveTownEventCount <= 1`。
+
+### 9.2 邀请、决定与到达
+
+活动实例向全镇四名居民发布公开邀请，但邀请集合不等于实际参加者集合。第一版本地规则让提案者与向其传递本次事实的直接会话来源接受，其他未参与该次信息交流的居民拒绝；到 18:00 再按当前不可中断任务将原接受者标记为 `Unavailable`。领域层仍支持 `Pending`、`Accepted`、`Declined` 和 `Unavailable`，集合开始时仍为 Pending 的邀请按拒绝处理。模型不能直接写入该决定，也不能借提案修改居民的常规 `ResidentSchedule`。
+
+只有 `Accepted` 居民获得活动 attendance task。居民通过正常导航前往广场并预约自己的 attendance point，禁止瞬移。抵达后 Unity 播放该居民配置的面向、姓名/状态图标和简单到达表现；不会让模型选择路径或位置。
+
+开始集合时至少要有两名 Accepted 居民，且只在本次全部 Accepted 参加者都持有有效预约并到达后进入 `Active`。任一实际参加者导航失败、预约丢失或到达超时都可以安全取消整场活动，并释放全部活动租约和状态；当前实现不要求剩余两人继续。活动不得中断已开始的原子动作或普通会话；无法及时释放活动槽的受邀者应在集合前成为 Declined/Unavailable，而不是阻塞全镇。
+
+### 9.3 表现和会话边界
+
+活动开始后必须播放一次确定性公共欢迎语。双人短会话是可选增强；若启用，`TownEventCoordinator` 可在 `MaxPairConversationSegments` 上限内，从实际到场且空闲的参加者中按稳定 ResidentId 顺序选择不重叠的二人组合，并通过现有 `ConversationCoordinator` 创建带活动关联 ID 的短会话。每段仍遵守双人参与者锁、2–6 句、墙钟超时、实际播放才写记忆和本地 fallback；同一居民同一时刻最多参加一段。
+
+这不是四人 Conversation，也不是自由多人群聊。禁止三人/四人话轮、任意旁听正文、群聊 Memory、群聊 AI 请求，或让模型动态邀请不存在的居民。
+
+### 9.4 事件和记忆隔离
+
+公开邀请与活动实际开始分别发布 `PublicTownEvent`，因此四名居民都可以知道“有人邀请全镇参加”以及“活动已经开始”这两个公共事实。它们不证明某个居民实际参加。
+
+每名实际到场并完成参加流程的居民分别获得 owner 为自己的私人 `TownEventCompleted` 记忆，记录活动 ID、地点、完成事件来源和自己的有限视角；活动内可选双人短会话正文仍只写入该段的两名参与者。拒绝、Pending 后按拒绝处理、Unavailable、导航失败或未到场的居民不得获得“我参加了 HarvestDinner”的私人参加记忆，但仍可保留合法收到的公共邀请/开始事实。活动取消时不得写入 `TownEventCompleted` 参加记忆。
+
+活动结束由本地时钟和规则决定，所有租约、参加者子状态和活动关联会话必须幂等释放。网络不可用时，提案可由确定性本地规则产生或跳过；集合、必需公共欢迎语、结束和清理不得依赖远程 AI，可选双人短会话若启用则使用本地模板。
 
 ## 10. AI 契约
 
@@ -429,7 +475,7 @@ C 从未读取 A 或 B 的 MemoryStore；C 只知道 B 实际说出的内容。�
 V2 全局可执行 intent 保持最小：
 
 - `CompleteCarrotLifecycle`；
-- `AttendTownActivity`；
+- `propose_town_event`；
 - `RequestConversation`；
 - `ContinueConversation`；
 - `ShareKnownFact`；
@@ -483,30 +529,39 @@ TownSaveData
     farm
     inventory
     simulation
-    townActivityState
   residents[4]
     residentId
     definitionId + definitionVersion
     runtimeState
     privateMemories
+      committed memories / summaries / provenance
+      optional projected ConversationInterrupted fragment
     goals
-    schedule
+    optionalSceneTransform
     recoverableActionIntent
   relationships[12 directed edges]
-  deliveredConversationSummaries / provenance
 ~~~
 
 规则：
 
 - `residents[]` 必须恰好包含四个固定且唯一 ID；数组顺序不承担身份语义；
 - 私有 Memory 记录的 owner 必须等于其居民条目，来源和跨引用必须合法；
-- Schedule 条目和关系边必须引用已注册 ID；
+- 关系边必须组成四居民之间完整且唯一的 12 条有向边；日程定义由 Unity 资源提供，运行中的路径不持久化；
 - 共享世界只保存一份；
+- Save 允许在 Conversation、TownEvent、移动或网络请求进行中捕获稳定状态；它不推进或取消现场 transient，也不把 session、未播放台词、活动任务、路径和请求写入快照；
+- 活动双人会话已有实际播放内容时，`SaveGameService` 克隆每位参与者自己的 `MemoryStore`，由 `ConversationCoordinator` 只把已播放 transcript 投影成该 owner 的 private、不可共享 `ConversationInterrupted` 记忆；双方各有自己的即时来源，运行中的 MemoryStore 和 session 不被修改；
+- 已提交摘要和投影记忆可用对应 `ConversationId` 作为 provenance `sourceEventId`，但快照没有可恢复的 active conversation record、话轮游标、deadline、锁、未播放内容或未应用 outcome；校验应检查结构和字段归属，而不是断言 JSON 中完全不存在该 ID 字符串；
+- 对话/活动的其他状态只通过保存时已经提交的世界事实、摘要、provenance、owner 正确的记忆与确定性关系结果体现；取消后未应用的 outcome、未播放内容和伪造完成事实不得进入存档；
+- JSON 先写同目录临时文件；替换已有主档时保留最近有效 `.bak`。主档读取或完整校验失败时可验证备份，只有合法备份才进入应用阶段；
 - 不持久化 API key、AI client、coroutine、取消令牌、在途请求或有效 reservation lease；
-- 读档关闭未完成会话，保留已经交付的话轮/provenance，清空旧预约；
-- 读档递增四名居民 RequestEpoch，使读档前回包全部 stale；
-- 未完成动作只保存可恢复意图，加载后经 TownScheduler 和 ReservationService 重新验证；
-- 先在临时模型完整验证，再原子替换；任何重复 ID、跨居民私有引用或非法状态都使整次加载失败，不做部分应用。
+- Load 永远不从文件恢复或续播活跃 Conversation/TownEvent。主档和候选 `.bak` 分别先在临时模型中完成全量校验，只有选中的合法快照才跨越权威重置边界；两者都失败时当前现场与文件不变；
+- 权威重置递增 `AuthoritativeStateRevision`，`AiRequestCoordinator.CancelAllForAuthoritativeReset()` 同时失效 pending/active ticket、dispose 传输枚举器并立即释放并发槽和 ResidentId owner；晚回包没有 completion/application 路径，协调器随后仍可接受新请求；
+- `ReplanController` 在同一边界递增自己的 async generation、停止父 coroutine 并清除 gateway/reflection pending 标志；目标解释、表达和反思路径在 yield 后同时核对捕获的 generation 与 `AuthoritativeStateRevision`，因此旧子枚举器即使迟到返回也不能清除新标志或应用旧结果；
+- `TownScheduleCoordinator` 在同一边界取消四名居民移动、清 Busy/InConversation/TownEvent suspension，并调用预约服务全量失效；旧 fencing token 的 revision 不回退，不能释放或续订新租约；
+- ConversationCoordinator 取消所有领域 session 并失效孤儿参与者锁；TownEventCoordinator 取消/Reset 当前活动。参与者 Scene 对象已经销毁、只剩 ConversationAnchor 孤儿预约，或活动地点/席位已经失效时，也必须落到同一幂等取消路径且不能遗留 Busy/InConversation/suspension；
+- 芽芽未完成农务保存原子 action intent，加载后从权威农田状态重新执行或重规划；其余居民的日程路径从当前游戏时间重新解析，不恢复路径或旧预约；
+- 关系恢复先验证完整有向边集，再一次性写回对应 `(owner, other)`；MemoryStore 同样按 owner 重建，禁止反向边转置或私有记忆串线；
+- 旧 V1 单居民文件把原 NPC 数据迁到芽芽 `resident-001`，再补齐另外三名规范居民和默认 12 条有向关系；V2/V3 文件也经显式迁移扩为同一固定图。当前 V4 缺居民、重复 ID 或伪造 definition 必须拒绝。
 
 ## 12. UI、场景与可观察性
 
@@ -557,7 +612,7 @@ Python 网关未启动、网络断开、请求超时、预算耗尽或 schema �
 - 任意居民不能读取或进入另一居民的私有 Memory 上下文；
 - A→B→C 只能在两场实际双人会话的已交付话轮后成立，且 provenance 可追溯；
 - 会话始终只有两人，同一居民无第二场会话，6-turn/30 秒限制和释放规则成立；
-- 四人能参加唯一全镇活动，活动公开但不产生群聊；
+- 四人均被邀请参加唯一 HarvestDinner，实际参加者可为至少两人的合法子集；任一参加者到达失败可安全取消全场，邀请/开始公开、`TownEventCompleted` 参加记忆私有，且不产生群聊；
 - 每居民至多一个 active action；动作与会话互斥；
 - 一个交互点始终最多一个有效 owner，旧 fencing token 不能提交；
 - 全部远程调用只经单一 AiRequestCoordinator 和同一 gateway/model config；

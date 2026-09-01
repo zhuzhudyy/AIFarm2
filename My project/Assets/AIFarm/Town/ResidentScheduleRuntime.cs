@@ -185,6 +185,27 @@ namespace AIFarm.Town
             return ActionResult.Success("Resident schedule resumed.");
         }
 
+        public ActionResult ResetForAuthoritativeStateChange()
+        {
+            ActionResult cancelled = navigator.CancelMove();
+            ReleaseReservation();
+            reservationService.ReleaseByResident(ResidentId);
+
+            activeEntry = null;
+            CurrentLocationId = default;
+            failedPointIds.Clear();
+            movementElapsedSeconds = 0f;
+            retryElapsedSeconds = 0f;
+            FailedAttemptCount = 0;
+            LastFailureReason = string.Empty;
+            State = ResidentScheduleState.WaitingForSchedule;
+
+            return cancelled.Failed
+                ? cancelled
+                : ActionResult.Success(
+                    "Resident schedule reset and ready for deterministic replanning.");
+        }
+
         private void SwitchTo(DailyScheduleEntry entry, double elapsedSeconds)
         {
             StopCurrentActivity();

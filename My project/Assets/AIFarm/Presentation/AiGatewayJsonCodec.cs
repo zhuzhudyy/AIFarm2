@@ -94,6 +94,17 @@ namespace AIFarm.Presentation
             return JsonUtility.ToJson(ConversationScriptRequestDto.FromRequest(request));
         }
 
+        public static string SerializeResidentDecisionRequest(
+            ResidentDecisionRequest request)
+        {
+            if (request == null)
+            {
+                throw new ArgumentNullException(nameof(request));
+            }
+
+            return JsonUtility.ToJson(ResidentDecisionRequestDto.FromRequest(request));
+        }
+
         public static ActionResult TryParseFarmGoal(
             string json,
             out FarmGoalSpec goal)
@@ -274,6 +285,65 @@ namespace AIFarm.Presentation
             return ActionResult.Success("Remote ConversationScriptSpec validated.");
         }
 
+        public static ActionResult TryParseResidentDecision(
+            string json,
+            ResidentDecisionRequest request,
+            out ResidentDecisionSpec decision)
+        {
+            decision = null;
+            if (request == null ||
+                !HasExactTopLevelProperties(
+                    json,
+                    "resident_id",
+                    "intent",
+                    "target_resident_id",
+                    "reason",
+                    "provider") ||
+                !TryDeserialize(json, out ResidentDecisionResponseDto dto) ||
+                dto.ResidentId != request.ResidentId.Value ||
+                !request.IsAllowedIntent(dto.Intent) ||
+                !IsBoundedText(dto.Reason, 1, 300) ||
+                !IsProvider(dto.Provider))
+            {
+                return InvalidResponse(
+                    "Resident decision response failed its owner, intent, reason, or provider validation.");
+            }
+
+            ResidentId? targetResidentId = null;
+            bool targetIsNull = HasTopLevelNullValue(json, "target_resident_id");
+            if (!targetIsNull)
+            {
+                if (string.IsNullOrWhiteSpace(dto.TargetResidentId) ||
+                    !ResidentId.TryCreate(
+                        dto.TargetResidentId,
+                        out ResidentId parsedTargetResidentId) ||
+                    !request.IsAllowedTarget(parsedTargetResidentId))
+                {
+                    return InvalidResponse(
+                        "Resident decision target is not in the request allowlist.");
+                }
+
+                targetResidentId = parsedTargetResidentId;
+            }
+
+            try
+            {
+                decision = new ResidentDecisionSpec(
+                    request.ResidentId,
+                    dto.Intent,
+                    targetResidentId,
+                    dto.Reason,
+                    dto.Provider);
+            }
+            catch (ArgumentException)
+            {
+                decision = null;
+                return InvalidResponse("Resident decision failed semantic validation.");
+            }
+
+            return ActionResult.Success("Remote ResidentDecisionSpec validated.");
+        }
+
         private static bool IsAllowedSharedKnowledge(
             ConversationScriptRequest request,
             ResidentId speakerId,
@@ -320,6 +390,17 @@ namespace AIFarm.Presentation
             for (int index = 0; index < result.Length; index++)
             {
                 result[index] = values[index];
+            }
+
+            return result;
+        }
+
+        private static string[] CopyResidentIds(IReadOnlyList<ResidentId> values)
+        {
+            var result = new string[values?.Count ?? 0];
+            for (int index = 0; index < result.Length; index++)
+            {
+                result[index] = values[index].Value;
             }
 
             return result;
@@ -401,6 +482,72 @@ namespace AIFarm.Presentation
                 {
                     SkipWhitespace(json, ref index);
                     return index == json.Length && remaining.Count == 0;
+                }
+
+                if (!Consume(json, ref index, ','))
+                {
+                    return false;
+                }
+
+                SkipWhitespace(json, ref index);
+            }
+
+            return false;
+        }
+
+        private static bool HasTopLevelNullValue(string json, string expectedProperty)
+        {
+            int index = 0;
+            SkipWhitespace(json, ref index);
+            if (!Consume(json, ref index, '{'))
+            {
+                return false;
+            }
+
+            SkipWhitespace(json, ref index);
+            while (index < json.Length && json[index] != '}')
+            {
+                if (!TryReadPropertyName(json, ref index, out string propertyName))
+                {
+                    return false;
+                }
+
+                SkipWhitespace(json, ref index);
+                if (!Consume(json, ref index, ':'))
+                {
+                    return false;
+                }
+
+                SkipWhitespace(json, ref index);
+                if (propertyName == expectedProperty)
+                {
+                    const string nullLiteral = "null";
+                    if (index + nullLiteral.Length > json.Length ||
+                        string.CompareOrdinal(
+                            json,
+                            index,
+                            nullLiteral,
+                            0,
+                            nullLiteral.Length) != 0)
+                    {
+                        return false;
+                    }
+
+                    index += nullLiteral.Length;
+                    SkipWhitespace(json, ref index);
+                    return index < json.Length &&
+                        (json[index] == ',' || json[index] == '}');
+                }
+
+                if (!SkipJsonValue(json, ref index))
+                {
+                    return false;
+                }
+
+                SkipWhitespace(json, ref index);
+                if (Consume(json, ref index, '}'))
+                {
+                    return false;
                 }
 
                 if (!Consume(json, ref index, ','))
@@ -766,6 +913,39 @@ namespace AIFarm.Presentation
         }
 
         [Serializable]
+        private sealed class ResidentDecisionRequestDto
+        {
+            [SerializeField]
+            private string resident_id;
+
+            [SerializeField]
+            private ResidentContextDto context;
+
+            [SerializeField]
+            private string situation;
+
+            [SerializeField]
+            private string[] allowed_intents;
+
+            [SerializeField]
+            private string[] allowed_target_resident_ids;
+
+            public static ResidentDecisionRequestDto FromRequest(
+                ResidentDecisionRequest request)
+            {
+                return new ResidentDecisionRequestDto
+                {
+                    resident_id = request.ResidentId.Value,
+                    context = ResidentContextDto.FromContext(request.Context),
+                    situation = request.Situation,
+                    allowed_intents = CopyStrings(request.AllowedIntents),
+                    allowed_target_resident_ids =
+                        CopyResidentIds(request.AllowedTargetResidentIds)
+                };
+            }
+        }
+
+        [Serializable]
         private sealed class ResidentContextDto
         {
             [SerializeField]
@@ -1074,6 +1254,35 @@ namespace AIFarm.Presentation
             public ConversationLineDto[] Lines => lines;
 
             public string Outcome => outcome;
+
+            public string Provider => provider;
+        }
+
+        [Serializable]
+        private sealed class ResidentDecisionResponseDto
+        {
+            [SerializeField]
+            private string resident_id;
+
+            [SerializeField]
+            private string intent;
+
+            [SerializeField]
+            private string target_resident_id;
+
+            [SerializeField]
+            private string reason;
+
+            [SerializeField]
+            private string provider;
+
+            public string ResidentId => resident_id;
+
+            public string Intent => intent;
+
+            public string TargetResidentId => target_resident_id;
+
+            public string Reason => reason;
 
             public string Provider => provider;
         }

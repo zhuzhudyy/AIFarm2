@@ -101,6 +101,8 @@ namespace AIFarm.Presentation
             new Dictionary<ConversationId, SceneConversation>();
         private double nextOpportunityCheckAtSeconds;
 
+        public event Action<ConversationSession> ConversationCompleted;
+
         public SocialGraph SocialGraph { get; private set; }
 
         public SocialOpportunityDetector OpportunityDetector { get; private set; }
@@ -112,6 +114,27 @@ namespace AIFarm.Presentation
         public bool IsInitialized { get; private set; }
 
         public int ActiveSceneConversationCount => sceneConversations.Count;
+
+        public ActionResult TryBuildResidentContext(
+            ResidentId ownerResidentId,
+            ResidentId otherResidentId,
+            out ResidentContext context)
+        {
+            context = null;
+            if (!IsInitialized || !ownerResidentId.IsValid ||
+                !otherResidentId.IsValid || ownerResidentId == otherResidentId ||
+                !residentsById.TryGetValue(
+                    ownerResidentId,
+                    out TownResidentScheduleController resident) ||
+                resident == null)
+            {
+                return ActionResult.Failure(
+                    ActionFailureReason.InvalidArgument,
+                    "Resident context requires two different registered residents.");
+            }
+
+            return TryBuildResidentContext(resident, otherResidentId, out context);
+        }
 
         public ActionResult Configure(
             GameBootstrap gameBootstrap,
@@ -207,6 +230,7 @@ namespace AIFarm.Presentation
                 outcomeApplier,
                 timeoutSeconds);
             nextOpportunityCheckAtSeconds = UnityEngine.Time.realtimeSinceStartupAsDouble;
+            bootstrap.AuthoritativeStateResetting += HandleAuthoritativeStateResetting;
             IsInitialized = true;
             return ActionResult.Success(
                 "Two-resident social system initialized with remote-script and local-template paths.");
@@ -255,6 +279,12 @@ namespace AIFarm.Presentation
             var records = new List<SceneConversation>(sceneConversations.Values);
             foreach (SceneConversation record in records)
             {
+                if (record.FirstResident == null || record.SecondResident == null)
+                {
+                    CancelAndCleanup(record, ConversationEndReason.Cancelled);
+                    continue;
+                }
+
                 if (record.Session.IsTerminal)
                 {
                     if (record.Session.State == ConversationState.Completed &&
@@ -352,6 +382,11 @@ namespace AIFarm.Presentation
             var statuses = new List<SocialResidentStatus>(residents.Length);
             foreach (TownResidentScheduleController resident in residents)
             {
+                if (resident == null)
+                {
+                    continue;
+                }
+
                 ResidentActivityKind? activity = resident.CurrentActivity;
                 bool hasPlayerInstruction = true;
                 if (bootstrap.ResidentRegistry.TryGetRuntimeState(
@@ -364,12 +399,14 @@ namespace AIFarm.Presentation
                 bool idleAtSocialLocation = resident.Runtime.State ==
                         ResidentScheduleState.Working &&
                     activity == ResidentActivityKind.Gather &&
+                    !resident.IsTownEventSuspended &&
                     HasAnchorAt(resident.CurrentLocationId);
                 statuses.Add(new SocialResidentStatus(
                     resident.ResidentId,
                     resident.CurrentLocationId,
                     idleAtSocialLocation,
-                    hasActiveAction: resident.IsFarmingBusy,
+                    hasActiveAction: resident.IsFarmingBusy ||
+                        resident.IsTownEventSuspended,
                     isPerformingEmergencyFarmWork: resident.IsFarmingBusy,
                     hasPlayerInstruction: hasPlayerInstruction,
                     isGoingHomeToSleep: activity == ResidentActivityKind.Home));
@@ -394,7 +431,8 @@ namespace AIFarm.Presentation
                     out TownResidentScheduleController firstResident) ||
                 !residentsById.TryGetValue(
                     opportunity.SecondResidentId,
-                    out TownResidentScheduleController secondResident))
+                    out TownResidentScheduleController secondResident) ||
+                firstResident == null || secondResident == null)
             {
                 return ActionResult.Success("No free paired conversation anchor is available.");
             }
@@ -521,6 +559,14 @@ namespace AIFarm.Presentation
             out ConversationScriptRequest request)
         {
             request = null;
+            if (record == null || record.FirstResident == null ||
+                record.SecondResident == null)
+            {
+                return ActionResult.Failure(
+                    ActionFailureReason.InvalidState,
+                    "Conversation participants no longer exist in the scene.");
+            }
+
             ActionResult firstContext = TryBuildResidentContext(
                 record.FirstResident,
                 record.SecondResident.ResidentId,
@@ -562,6 +608,13 @@ namespace AIFarm.Presentation
             out ResidentContext context)
         {
             context = null;
+            if (resident == null)
+            {
+                return ActionResult.Failure(
+                    ActionFailureReason.InvalidArgument,
+                    "Resident context requires a live scene resident.");
+            }
+
             ActionResult definitionResult = bootstrap.ResidentRegistry.TryGetDefinition(
                 resident.ResidentId,
                 out ResidentDefinition definition);
@@ -665,7 +718,9 @@ namespace AIFarm.Presentation
 
             foreach (ConversationAnchor anchor in conversationAnchors)
             {
-                if (anchor != null && anchor.LocationId == locationId)
+                if (anchor != null && anchor.FirstStandPoint != null &&
+                    anchor.SecondStandPoint != null &&
+                    anchor.LocationId == locationId)
                 {
                     return true;
                 }
@@ -680,7 +735,9 @@ namespace AIFarm.Presentation
         {
             foreach (ConversationAnchor anchor in conversationAnchors)
             {
-                if (anchor == null || anchor.LocationId != locationId)
+                if (anchor == null || anchor.FirstStandPoint == null ||
+                    anchor.SecondStandPoint == null ||
+                    anchor.LocationId != locationId)
                 {
                     continue;
                 }
@@ -732,10 +789,21 @@ namespace AIFarm.Presentation
             }
 
             record.RequestCancellation.Cancel();
-            record.SecondResident.ClearConversationLine();
-            record.FirstResident.ClearConversationLine();
-            record.SecondResident.ResumeAfterConversation();
-            record.FirstResident.ResumeAfterConversation();
+            if (record.SecondResident != null)
+            {
+                record.SecondResident.ClearConversationLine();
+                record.SecondResident.ResumeAfterConversation();
+            }
+
+            if (record.FirstResident != null)
+            {
+                record.FirstResident.ClearConversationLine();
+                record.FirstResident.ResumeAfterConversation();
+            }
+            if (record.Session.State == ConversationState.Completed)
+            {
+                ConversationCompleted?.Invoke(record.Session);
+            }
         }
 
         private void Awake()
@@ -766,6 +834,11 @@ namespace AIFarm.Presentation
 
         private void OnDisable()
         {
+            if (bootstrap != null)
+            {
+                bootstrap.AuthoritativeStateResetting -= HandleAuthoritativeStateResetting;
+            }
+
             if (ConversationCoordinator == null)
             {
                 return;
@@ -777,7 +850,45 @@ namespace AIFarm.Presentation
                 CancelAndCleanup(record, ConversationEndReason.Cancelled);
             }
 
-            StopAllCoroutines();
+            ConversationCoordinator.CancelAllActiveConversations();
+            ParticipantLock?.InvalidateAll();
+
+            // Cancelled request/playback coroutines must unwind naturally so the
+            // shared AI coordinator can release their resident ownership tickets.
+        }
+
+        private void OnEnable()
+        {
+            if (!IsInitialized || bootstrap == null)
+            {
+                return;
+            }
+
+            bootstrap.AuthoritativeStateResetting -= HandleAuthoritativeStateResetting;
+            bootstrap.AuthoritativeStateResetting += HandleAuthoritativeStateResetting;
+        }
+
+        private void HandleAuthoritativeStateResetting()
+        {
+            if (ConversationCoordinator == null)
+            {
+                return;
+            }
+
+            var records = new List<SceneConversation>(sceneConversations.Values);
+            foreach (SceneConversation record in records)
+            {
+                CancelAndCleanup(record, ConversationEndReason.Cancelled);
+            }
+
+            ConversationCoordinator.CancelAllActiveConversations();
+            ParticipantLock?.InvalidateAll();
+
+            SocialGraph?.Reset();
+            OpportunityDetector?.ResetCooldowns();
+
+            // Do not stop request coroutines before their coordinator finally blocks
+            // release global concurrency and per-resident ownership.
         }
 
         private static bool IsFiniteNonNegative(double value)

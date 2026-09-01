@@ -5,7 +5,9 @@ using AIFarm.Core;
 using AIFarm.Farming;
 using AIFarm.Inventory;
 using AIFarm.Npc;
+using AIFarm.Social;
 using AIFarm.Time;
+using AIFarm.Town;
 using UnityEngine;
 
 namespace AIFarm.Presentation
@@ -22,22 +24,24 @@ namespace AIFarm.Presentation
         private readonly ReplanController replanner;
         private readonly Transform npcTransform;
         private readonly ISaveGameStorage storage;
+        private readonly SocialGraph relationshipGraph;
         private readonly Vector3 initialNpcPosition;
         private readonly Quaternion initialNpcRotation;
-        private ResidentSaveData[] loadedResidents = Array.Empty<ResidentSaveData>();
 
         public SaveGameService(
             GameBootstrap gameBootstrap,
             NpcPlanExecutor planExecutor,
             ReplanController replanController,
             Transform npc,
-            ISaveGameStorage saveStorage)
+            ISaveGameStorage saveStorage,
+            SocialGraph socialGraph = null)
         {
             bootstrap = gameBootstrap ?? throw new ArgumentNullException(nameof(gameBootstrap));
             executor = planExecutor ?? throw new ArgumentNullException(nameof(planExecutor));
             replanner = replanController ?? throw new ArgumentNullException(nameof(replanController));
             npcTransform = npc ?? throw new ArgumentNullException(nameof(npc));
             storage = saveStorage ?? throw new ArgumentNullException(nameof(saveStorage));
+            relationshipGraph = socialGraph;
             initialNpcPosition = npcTransform.position;
             initialNpcRotation = npcTransform.rotation;
         }
@@ -47,6 +51,8 @@ namespace AIFarm.Presentation
         public bool LastLoadUsedSafeReplan { get; private set; }
 
         public bool LastLoadMigratedLegacySave { get; private set; }
+
+        public bool LastLoadRecoveredBackup { get; private set; }
 
         public ActionResult Save()
         {
@@ -75,22 +81,67 @@ namespace AIFarm.Presentation
         {
             LastLoadUsedSafeReplan = false;
             LastLoadMigratedLegacySave = false;
+            LastLoadRecoveredBackup = false;
             ActionResult read = storage.Read(out string json);
-            if (read.Failed)
+            SaveData data = null;
+            bool migratedLegacySave = false;
+            ActionResult deserialized = read.Failed
+                ? read
+                : SaveDataMigration.TryDeserializeAndMigrate(
+                    json,
+                    out data,
+                    out migratedLegacySave);
+            if (deserialized.Failed && storage is IRecoverableSaveGameStorage recoverable)
             {
-                return read;
+                ActionResult backupRead = recoverable.ReadBackup(out string backupJson);
+                if (backupRead.Succeeded)
+                {
+                    ActionResult backupDeserialized =
+                        SaveDataMigration.TryDeserializeAndMigrate(
+                            backupJson,
+                            out SaveData backupData,
+                            out bool backupMigrated);
+                    if (backupDeserialized.Succeeded)
+                    {
+                        deserialized = backupDeserialized;
+                        data = backupData;
+                        migratedLegacySave = backupMigrated;
+                        LastLoadRecoveredBackup = true;
+                    }
+                }
             }
 
-            ActionResult deserialized = SaveDataMigration.TryDeserializeAndMigrate(
-                json,
-                out SaveData data,
-                out bool migratedLegacySave);
             if (deserialized.Failed)
             {
                 return deserialized;
             }
 
             ActionResult planned = BuildRestorePlan(data, out RestorePlan restorePlan);
+            if (planned.Failed && !LastLoadRecoveredBackup &&
+                storage is IRecoverableSaveGameStorage validationRecoverable)
+            {
+                ActionResult backupRead = validationRecoverable.ReadBackup(
+                    out string backupJson);
+                if (backupRead.Succeeded &&
+                    SaveDataMigration.TryDeserializeAndMigrate(
+                        backupJson,
+                        out SaveData backupData,
+                        out bool backupMigrated).Succeeded)
+                {
+                    ActionResult backupPlanned = BuildRestorePlan(
+                        backupData,
+                        out RestorePlan backupRestorePlan);
+                    if (backupPlanned.Succeeded)
+                    {
+                        planned = backupPlanned;
+                        data = backupData;
+                        restorePlan = backupRestorePlan;
+                        migratedLegacySave = backupMigrated;
+                        LastLoadRecoveredBackup = true;
+                    }
+                }
+            }
+
             if (planned.Failed)
             {
                 return planned;
@@ -101,7 +152,6 @@ namespace AIFarm.Presentation
             {
                 LastLoadUsedSafeReplan = restorePlan.ReplanStatus == ReplanStatus.Running;
                 LastLoadMigratedLegacySave = migratedLegacySave;
-                loadedResidents = data.residents;
             }
 
             return applied;
@@ -115,6 +165,9 @@ namespace AIFarm.Presentation
                     ActionFailureReason.InvalidState,
                     "Save services require initialized game, executor, and replanner components.");
             }
+
+            bootstrap.NotifyAuthoritativeStateResetting();
+            ResolveRelationshipGraph()?.Reset();
 
             ActionResult executorResult = executor.RestorePendingActions(Array.Empty<INpcAction>());
             if (executorResult.Failed)
@@ -161,7 +214,7 @@ namespace AIFarm.Presentation
             npcTransform.SetPositionAndRotation(initialNpcPosition, initialNpcRotation);
             LastLoadUsedSafeReplan = false;
             LastLoadMigratedLegacySave = false;
-            loadedResidents = Array.Empty<ResidentSaveData>();
+            LastLoadRecoveredBackup = false;
             if (deleteSave)
             {
                 ActionResult deleted = storage.Delete();
@@ -192,6 +245,14 @@ namespace AIFarm.Presentation
                     "NPC runtime state is not available for saving.");
             }
 
+            ActionResult activeMemoriesResult = TryCaptureResidentMemories(
+                runtimeState,
+                out MemorySaveData[] activeMemories);
+            if (activeMemoriesResult.Failed)
+            {
+                return activeMemoriesResult;
+            }
+
             var snapshot = new SaveData
             {
                 version = SaveData.CurrentVersion,
@@ -219,7 +280,7 @@ namespace AIFarm.Presentation
                 hasFarmGoal = replanner.ActiveGoal != null,
                 farmGoal = CaptureGoal(replanner.ActiveGoal),
                 executor = new ExecutorSaveData(),
-                recentMemories = CaptureMemories(runtimeState.Memories.Entries),
+                recentMemories = activeMemories,
                 recentReflections = CaptureReflections(runtimeState.RecentReflections),
                 runtime = new NpcRuntimeSaveData
                 {
@@ -292,7 +353,16 @@ namespace AIFarm.Presentation
                 residentSnapshot.executor.remainingActions[index] = actionData;
             }
 
-            snapshot.residents = MergeResidentSnapshots(residentSnapshot);
+            ActionResult residentsResult = MergeResidentSnapshots(
+                residentSnapshot,
+                out ResidentSaveData[] residentSnapshots);
+            if (residentsResult.Failed)
+            {
+                return residentsResult;
+            }
+
+            snapshot.residents = residentSnapshots;
+            snapshot.relationships = CaptureRelationships();
 
             data = snapshot;
             return ActionResult.Success("Versioned game state captured.");
@@ -313,6 +383,7 @@ namespace AIFarm.Presentation
                 rotationY = rotation.y,
                 rotationZ = rotation.z,
                 rotationW = rotation.w,
+                hasSceneTransform = true,
                 executorStatus = (int)executor.Status,
                 replanStatus = (int)replanner.Status,
                 currentMood = (int)replanner.CurrentMood,
@@ -401,9 +472,11 @@ namespace AIFarm.Presentation
             return result;
         }
 
-        private ResidentSaveData[] MergeResidentSnapshots(
-            ResidentSaveData activeResident)
+        private ActionResult MergeResidentSnapshots(
+            ResidentSaveData activeResident,
+            out ResidentSaveData[] snapshots)
         {
+            snapshots = null;
             var merged = new List<ResidentSaveData>();
             foreach (ResidentId residentId in bootstrap.ResidentRegistry.ResidentIds)
             {
@@ -418,71 +491,134 @@ namespace AIFarm.Presentation
                     out ResidentRuntimeState runtimeState);
                 if (runtimeResult.Failed || runtimeState == null)
                 {
-                    continue;
+                    return runtimeResult.Failed
+                        ? runtimeResult
+                        : ActionResult.Failure(
+                            ActionFailureReason.InvalidState,
+                            $"Resident '{residentId}' has no runtime state to save.");
                 }
 
-                merged.Add(CaptureBackgroundResident(runtimeState));
+                ActionResult captured = CaptureBackgroundResident(
+                    runtimeState,
+                    out ResidentSaveData backgroundResident);
+                if (captured.Failed)
+                {
+                    return captured;
+                }
+
+                merged.Add(backgroundResident);
             }
 
             merged.Sort((left, right) => string.Compare(
                 left.residentId,
                 right.residentId,
                 StringComparison.Ordinal));
-            return merged.ToArray();
+            snapshots = merged.ToArray();
+            return ActionResult.Success("All registered resident snapshots captured.");
         }
 
-        private ResidentSaveData CaptureBackgroundResident(
-            ResidentRuntimeState runtimeState)
+        private ActionResult CaptureBackgroundResident(
+            ResidentRuntimeState runtimeState,
+            out ResidentSaveData resident)
         {
-            ResidentSaveData previous = null;
-            foreach (ResidentSaveData candidate in loadedResidents)
+            resident = null;
+            ActionResult memoriesResult = TryCaptureResidentMemories(
+                runtimeState,
+                out MemorySaveData[] memories);
+            if (memoriesResult.Failed)
             {
-                if (candidate != null &&
-                    candidate.residentId == runtimeState.ResidentId.Value)
-                {
-                    previous = candidate;
-                    break;
-                }
-            }
-
-            NpcSaveData npc = previous?.npc ?? new NpcSaveData();
-            ExecutorSaveData savedExecutor = previous?.executor ?? new ExecutorSaveData();
-            if (savedExecutor.currentAction == null)
-            {
-                savedExecutor.currentAction = new NpcActionSaveData();
-            }
-
-            if (savedExecutor.remainingActions == null)
-            {
-                savedExecutor.remainingActions = Array.Empty<NpcActionSaveData>();
+                return memoriesResult;
             }
 
             bool hasFarmGoal = runtimeState.CurrentGoal != null;
-            npc.replanStatus = hasFarmGoal
-                ? (int)ReplanStatus.Running
-                : (int)ReplanStatus.Idle;
-            npc.activeCycleNumber = hasFarmGoal
-                ? Math.Max(1, runtimeState.CurrentCycleNumber)
-                : 0;
-            npc.harvestedPlotNumbers = npc.harvestedPlotNumbers ?? Array.Empty<int>();
-            npc.currentEmoji = npc.currentEmoji ?? string.Empty;
-            npc.currentExpression = npc.currentExpression ?? string.Empty;
-            npc.currentGoalText = npc.currentGoalText ?? string.Empty;
-            npc.currentDecisionReason = npc.currentDecisionReason ?? string.Empty;
-            npc.lastFailureReason = npc.lastFailureReason ?? string.Empty;
+            var npc = new NpcSaveData
+            {
+                executorStatus = (int)NpcExecutionStatus.Completed,
+                replanStatus = hasFarmGoal
+                    ? (int)ReplanStatus.Running
+                    : (int)ReplanStatus.Idle,
+                currentMood = (int)NpcMood.Focused,
+                activeCycleNumber = hasFarmGoal
+                    ? runtimeState.CurrentCycleNumber
+                    : 0,
+                harvestedPlotNumbers = Array.Empty<int>()
+            };
+            TownResidentScheduleController controller = FindTownResidentController(
+                runtimeState.ResidentId);
+            if (controller != null)
+            {
+                Vector3 position = controller.transform.position;
+                Quaternion rotation = controller.transform.rotation;
+                npc.hasSceneTransform = true;
+                npc.positionX = position.x;
+                npc.positionY = position.y;
+                npc.positionZ = position.z;
+                npc.rotationX = rotation.x;
+                npc.rotationY = rotation.y;
+                npc.rotationZ = rotation.z;
+                npc.rotationW = rotation.w;
+            }
 
-            return new ResidentSaveData
+            resident = new ResidentSaveData
             {
                 residentId = runtimeState.ResidentId.Value,
                 displayName = runtimeState.Definition.DisplayName,
                 npc = npc,
                 hasFarmGoal = hasFarmGoal,
                 farmGoal = CaptureGoal(runtimeState.CurrentGoal),
-                executor = savedExecutor,
-                recentMemories = CaptureMemories(runtimeState.Memories.Entries),
+                // Background schedule paths, conversations and network operations are
+                // transient. Never carry an executor queue forward from an older load.
+                executor = new ExecutorSaveData(),
+                recentMemories = memories,
                 recentReflections = CaptureReflections(runtimeState.RecentReflections),
                 runtime = CaptureRuntime(runtimeState)
             };
+            return ActionResult.Success(
+                $"Resident '{runtimeState.ResidentId}' snapshot captured.");
+        }
+
+        private ActionResult TryCaptureResidentMemories(
+            ResidentRuntimeState runtimeState,
+            out MemorySaveData[] memories)
+        {
+            memories = null;
+            if (runtimeState == null || runtimeState.Memories == null ||
+                runtimeState.Memories.OwnerResidentId != runtimeState.ResidentId)
+            {
+                return ActionResult.Failure(
+                    ActionFailureReason.InvalidState,
+                    "Resident memory ownership is invalid while capturing a save.");
+            }
+
+            var snapshotStore = new MemoryStore(
+                runtimeState.ResidentId,
+                runtimeState.Memories.Capacity);
+            ActionResult restored = snapshotStore.Restore(
+                runtimeState.Memories.Entries);
+            if (restored.Failed)
+            {
+                return restored;
+            }
+
+            TownSocialCoordinator social =
+                bootstrap.GetComponent<TownSocialCoordinator>();
+            if (social?.ConversationCoordinator != null)
+            {
+                ActionResult projected =
+                    social.ConversationCoordinator.ProjectPlayedTranscriptForSave(
+                        runtimeState.ResidentId,
+                        bootstrap.Clock.ElapsedGameSeconds,
+                        snapshotStore,
+                        out _);
+                if (projected.Failed)
+                {
+                    return projected;
+                }
+            }
+
+            memories = CaptureMemories(snapshotStore.Entries);
+            return ActionResult.Success(
+                $"Resident '{runtimeState.ResidentId}' memories captured without transient session state.");
         }
 
         private static NpcRuntimeSaveData CaptureRuntime(
@@ -497,17 +633,52 @@ namespace AIFarm.Presentation
             };
         }
 
+        private RelationshipSaveData[] CaptureRelationships()
+        {
+            SocialGraph graph = ResolveRelationshipGraph() ??
+                new SocialGraph(bootstrap.ResidentRegistry.ResidentIds);
+            IReadOnlyList<RelationshipStateSnapshot> snapshots = graph.CaptureSnapshots();
+            var result = new RelationshipSaveData[snapshots.Count];
+            for (int index = 0; index < snapshots.Count; index++)
+            {
+                RelationshipStateSnapshot snapshot = snapshots[index];
+                result[index] = new RelationshipSaveData
+                {
+                    ownerResidentId = snapshot.OwnerResidentId.Value,
+                    otherResidentId = snapshot.OtherResidentId.Value,
+                    familiarity = snapshot.Familiarity,
+                    trust = snapshot.Trust,
+                    relationVersion = snapshot.RelationVersion,
+                    lastChangeEventId = snapshot.LastChangeEventId
+                };
+            }
+
+            return result;
+        }
+
+        private SocialGraph ResolveRelationshipGraph()
+        {
+            if (relationshipGraph != null)
+            {
+                return relationshipGraph;
+            }
+
+            TownSocialCoordinator social = bootstrap.GetComponent<TownSocialCoordinator>();
+            return social?.SocialGraph;
+        }
+
         private ActionResult TrySelectResident(
             ResidentSaveData[] residents,
             ResidentId selectedResidentId,
             out ResidentSaveData selectedResident)
         {
             selectedResident = null;
-            if (residents == null || residents.Length == 0 ||
+            int expectedResidentCount = bootstrap.ResidentRegistry.Count;
+            if (residents == null || residents.Length != expectedResidentCount ||
                 residents.Length > MaximumResidentCount)
             {
                 return InvalidSave(
-                    $"Save must contain 1-{MaximumResidentCount} resident records.");
+                    $"Save must contain exactly {expectedResidentCount} registered residents.");
             }
 
             var residentIds = new HashSet<ResidentId>();
@@ -516,8 +687,14 @@ namespace AIFarm.Presentation
                 if (resident == null ||
                     !ResidentId.TryCreate(resident.residentId, out ResidentId residentId) ||
                     !residentIds.Add(residentId) ||
-                    bootstrap.ResidentRegistry.TryGetDefinition(residentId, out _).Failed ||
+                    bootstrap.ResidentRegistry.TryGetDefinition(
+                        residentId,
+                        out ResidentDefinition canonicalDefinition).Failed ||
                     !IsBoundedRequired(resident.displayName, 100) ||
+                    !string.Equals(
+                        resident.displayName,
+                        canonicalDefinition.DisplayName,
+                        StringComparison.Ordinal) ||
                     resident.npc == null || resident.farmGoal == null ||
                     resident.executor == null || resident.executor.currentAction == null ||
                     resident.executor.remainingActions == null ||
@@ -548,6 +725,16 @@ namespace AIFarm.Presentation
                 if (residentId == selectedResidentId)
                 {
                     selectedResident = resident;
+                }
+            }
+
+            foreach (ResidentId registeredResidentId in
+                bootstrap.ResidentRegistry.ResidentIds)
+            {
+                if (!residentIds.Contains(registeredResidentId))
+                {
+                    return InvalidSave(
+                        $"Save is missing registered ResidentId '{registeredResidentId}'.");
                 }
             }
 
@@ -594,10 +781,11 @@ namespace AIFarm.Presentation
 
             var replanStatus = (ReplanStatus)resident.npc.replanStatus;
             if ((replanStatus == ReplanStatus.Idle && resident.hasFarmGoal) ||
-                (replanStatus != ReplanStatus.Idle && !resident.hasFarmGoal) ||
+                (replanStatus == ReplanStatus.Running && !resident.hasFarmGoal) ||
                 resident.npc.activeCycleNumber < 0 ||
                 resident.npc.activeCycleNumber > runtimeState.StartedCycleCount ||
-                (goal != null && resident.npc.activeCycleNumber == 0))
+                (residentId == replanner.ResidentId && goal != null &&
+                    resident.npc.activeCycleNumber == 0))
             {
                 return InvalidSave(
                     $"Saved resident '{residentId}' has inconsistent goal and cycle state.");
@@ -628,7 +816,7 @@ namespace AIFarm.Presentation
             }
 
             if (data.clock == null || data.inventory == null || data.simulation == null ||
-                data.plots == null || data.residents == null)
+                data.plots == null || data.residents == null || data.relationships == null)
             {
                 return InvalidSave("Save data is missing a required section.");
             }
@@ -640,6 +828,14 @@ namespace AIFarm.Presentation
             if (selectedResult.Failed)
             {
                 return selectedResult;
+            }
+
+            ActionResult relationshipResult = RestoreRelationships(
+                data.relationships,
+                out List<RelationshipStateSnapshot> relationships);
+            if (relationshipResult.Failed)
+            {
+                return relationshipResult;
             }
 
             var validationClock = new GameClock();
@@ -740,7 +936,7 @@ namespace AIFarm.Presentation
 
             var replanStatus = (ReplanStatus)residentData.npc.replanStatus;
             if ((replanStatus == ReplanStatus.Idle && residentData.hasFarmGoal) ||
-                (replanStatus != ReplanStatus.Idle && !residentData.hasFarmGoal) ||
+                (replanStatus == ReplanStatus.Running && !residentData.hasFarmGoal) ||
                 residentData.npc.activeCycleNumber < 0 ||
                 residentData.npc.activeCycleNumber > runtimeState.StartedCycleCount ||
                 (residentData.hasFarmGoal && residentData.npc.activeCycleNumber == 0))
@@ -748,16 +944,22 @@ namespace AIFarm.Presentation
                 return InvalidSave("Saved goal, replanning status, and NPC cycle are inconsistent.");
             }
 
+            // Terminal V2 goals are no longer mutable "current" state. Accept old
+            // terminal saves that carried the goal, but normalize them while loading.
+            FarmGoalSpec activeGoal = replanStatus == ReplanStatus.Running
+                ? goal
+                : null;
             restorePlan = new RestorePlan(
                 data,
                 residentData,
                 position,
                 rotation,
-                goal,
+                activeGoal,
                 currentAction,
                 remainingActions,
                 runtimeState,
-                replanStatus);
+                replanStatus,
+                relationships);
             return ActionResult.Success("Save data validated without changing live state.");
         }
 
@@ -1053,10 +1255,19 @@ namespace AIFarm.Presentation
                     reflectionData.text));
             }
 
-            ResidentDefinition definition = new ResidentDefinition(
+            ActionResult definitionResult = bootstrap.ResidentRegistry.TryGetDefinition(
                 residentId,
-                data.displayName,
-                NpcPersonaDefinition.ForResident(residentId));
+                out ResidentDefinition definition);
+            if (definitionResult.Failed ||
+                !string.Equals(
+                    data.displayName,
+                    definition.DisplayName,
+                    StringComparison.Ordinal))
+            {
+                return InvalidSave(
+                    $"Saved definition for ResidentId '{residentId}' is not canonical.");
+            }
+
             var restoredRuntime = new ResidentRuntimeState(
                 definition,
                 memoryStore);
@@ -1073,6 +1284,49 @@ namespace AIFarm.Presentation
 
             runtimeState = restoredRuntime;
             return ActionResult.Success("Saved NPC runtime restored.");
+        }
+
+        private ActionResult RestoreRelationships(
+            RelationshipSaveData[] savedRelationships,
+            out List<RelationshipStateSnapshot> snapshots)
+        {
+            snapshots = new List<RelationshipStateSnapshot>();
+            if (savedRelationships == null)
+            {
+                return InvalidSave("Saved relationships are missing.");
+            }
+
+            foreach (RelationshipSaveData relationship in savedRelationships)
+            {
+                if (relationship == null ||
+                    !ResidentId.TryCreate(
+                        relationship.ownerResidentId,
+                        out ResidentId ownerResidentId) ||
+                    !ResidentId.TryCreate(
+                        relationship.otherResidentId,
+                        out ResidentId otherResidentId) ||
+                    !IsBounded(
+                        relationship.lastChangeEventId,
+                        MemoryEntry.MaximumIdentifierLength))
+                {
+                    return InvalidSave("A saved directed relationship is invalid.");
+                }
+
+                snapshots.Add(new RelationshipStateSnapshot(
+                    ownerResidentId,
+                    otherResidentId,
+                    relationship.familiarity,
+                    relationship.trust,
+                    relationship.relationVersion,
+                    relationship.lastChangeEventId));
+            }
+
+            var validationGraph = new SocialGraph(
+                bootstrap.ResidentRegistry.ResidentIds);
+            ActionResult restored = validationGraph.Restore(snapshots);
+            return restored.Failed
+                ? InvalidSave(restored.Message)
+                : ActionResult.Success("Saved directed relationships validated.");
         }
 
         private static bool HasValidSavedMemoryProvenance(
@@ -1127,6 +1381,7 @@ namespace AIFarm.Presentation
 
         private ActionResult ApplyRestorePlan(RestorePlan plan)
         {
+            bootstrap.NotifyAuthoritativeStateResetting();
             ActionResult executorReset = executor.RestorePendingActions(Array.Empty<INpcAction>());
             if (executorReset.Failed)
             {
@@ -1209,6 +1464,16 @@ namespace AIFarm.Presentation
             if (residentsResult.Failed)
             {
                 return residentsResult;
+            }
+
+            SocialGraph graph = ResolveRelationshipGraph();
+            if (graph != null)
+            {
+                ActionResult relationshipsResult = graph.Restore(plan.Relationships);
+                if (relationshipsResult.Failed)
+                {
+                    return relationshipsResult;
+                }
             }
 
             if (plan.ReplanStatus == ReplanStatus.Running)
@@ -1308,9 +1573,55 @@ namespace AIFarm.Presentation
                 {
                     return replaced;
                 }
+
+                if (savedResident != null && savedResident.npc.hasSceneTransform)
+                {
+                    TownResidentScheduleController controller =
+                        FindTownResidentController(residentId);
+                    if (controller != null)
+                    {
+                        ActionResult transformResult = ValidateNpc(
+                            savedResident.npc,
+                            out Vector3 position,
+                            out Quaternion rotation);
+                        if (transformResult.Failed)
+                        {
+                            return transformResult;
+                        }
+
+                        controller.transform.SetPositionAndRotation(position, rotation);
+                    }
+                }
             }
 
             return ActionResult.Success("All registered resident runtime states restored.");
+        }
+
+        private TownResidentScheduleController FindTownResidentController(
+            ResidentId residentId)
+        {
+            TownScheduleCoordinator schedules =
+                bootstrap.GetComponent<TownScheduleCoordinator>();
+            if (schedules != null &&
+                schedules.TryGetResidentController(
+                    residentId,
+                    out TownResidentScheduleController scheduledResident).Succeeded)
+            {
+                return scheduledResident;
+            }
+
+            Transform sceneRoot = bootstrap.transform.root;
+            TownResidentScheduleController[] controllers =
+                sceneRoot.GetComponentsInChildren<TownResidentScheduleController>(true);
+            foreach (TownResidentScheduleController controller in controllers)
+            {
+                if (controller != null && controller.ResidentId == residentId)
+                {
+                    return controller;
+                }
+            }
+
+            return null;
         }
 
         private static ActionResult CaptureAction(
@@ -1460,7 +1771,8 @@ namespace AIFarm.Presentation
                 INpcAction currentAction,
                 List<INpcAction> remainingActions,
                 ResidentRuntimeState runtimeState,
-                ReplanStatus replanStatus)
+                ReplanStatus replanStatus,
+                List<RelationshipStateSnapshot> relationships)
             {
                 Data = data;
                 ResidentData = residentData;
@@ -1471,6 +1783,7 @@ namespace AIFarm.Presentation
                 RemainingActions = remainingActions;
                 RuntimeState = runtimeState;
                 ReplanStatus = replanStatus;
+                Relationships = relationships;
             }
 
             public SaveData Data { get; }
@@ -1490,6 +1803,8 @@ namespace AIFarm.Presentation
             public ResidentRuntimeState RuntimeState { get; }
 
             public ReplanStatus ReplanStatus { get; }
+
+            public IReadOnlyList<RelationshipStateSnapshot> Relationships { get; }
         }
     }
 }

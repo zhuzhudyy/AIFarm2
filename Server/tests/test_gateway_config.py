@@ -14,6 +14,7 @@ from app.providers import MockProvider, OpenAIProvider
 
 TEST_MODEL = "deepseek-v4-flash"
 TEST_KEY = "unit-test-secret-key"
+TEST_INSTANCE_ID = "0123456789abcdef0123456789abcdef"
 ORIGIN = "http://testserver"
 
 
@@ -130,6 +131,82 @@ def test_openai_configuration_hot_swaps_shared_provider_and_persists_secret(
     assert restarted_status.json()["source"] == "local_config"
     assert restarted_status.json()["api_key_configured"] is True
     assert TEST_KEY not in restarted_status.text
+
+
+def test_gateway_instance_id_is_visible_without_exposing_the_api_key(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("AIFARM_GATEWAY_INSTANCE_ID", TEST_INSTANCE_ID)
+    application = create_app(
+        MockProvider(),
+        LocalGatewayConfigStore(tmp_path / "gateway.json"),
+    )
+
+    with TestClient(application) as client:
+        headers = _csrf_headers(client)
+        configured = client.post(
+            "/v1/gateway-config",
+            headers=headers,
+            json={
+                "provider": "openai",
+                "model": TEST_MODEL,
+                "api_key": TEST_KEY,
+                "persist": False,
+            },
+        )
+        status = client.get("/v1/gateway-config")
+
+    assert configured.status_code == 200
+    assert status.status_code == 200
+    assert configured.json()["instance_id"] == TEST_INSTANCE_ID
+    assert status.json()["instance_id"] == TEST_INSTANCE_ID
+    assert TEST_KEY not in configured.text
+    assert TEST_KEY not in status.text
+
+
+def test_unconfigured_gateway_instance_id_is_omitted_from_status(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("AIFARM_GATEWAY_INSTANCE_ID", raising=False)
+    application = create_app(
+        MockProvider(),
+        LocalGatewayConfigStore(tmp_path / "gateway.json"),
+    )
+
+    with TestClient(application) as client:
+        status = client.get("/v1/gateway-config")
+
+    assert status.status_code == 200
+    assert "instance_id" not in status.json()
+
+
+@pytest.mark.parametrize(
+    "invalid_instance_id",
+    [
+        "",
+        "0123456789abcdef0123456789abcde",
+        "0123456789abcdef0123456789abcdef0",
+        "0123456789ABCDEF0123456789ABCDEF",
+        "0123456789abcdef-123456789abcdef",
+    ],
+)
+def test_invalid_gateway_instance_id_fails_at_startup(
+    invalid_instance_id: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("AIFARM_GATEWAY_INSTANCE_ID", invalid_instance_id)
+
+    with pytest.raises(
+        RuntimeError,
+        match="AIFARM_GATEWAY_INSTANCE_ID must be exactly 32 lowercase hexadecimal",
+    ):
+        create_app(
+            MockProvider(),
+            LocalGatewayConfigStore(tmp_path / "gateway.json"),
+        )
 
 
 def test_blank_key_reuses_current_secret_and_clear_removes_it(tmp_path: Path) -> None:

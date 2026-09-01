@@ -1,5 +1,7 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
+using System.Reflection;
 using System.Text.RegularExpressions;
 using AIFarm.Ai;
 using AIFarm.Core;
@@ -7,6 +9,7 @@ using AIFarm.Farming;
 using AIFarm.Inventory;
 using AIFarm.Npc;
 using AIFarm.Presentation;
+using AIFarm.Social;
 using NUnit.Framework;
 using UnityEngine;
 using UnityEngine.TestTools;
@@ -70,7 +73,8 @@ namespace AIFarm.Tests.EditMode
                     context,
                     executor,
                     bootstrap.Mode,
-                    new LocalAiGatewayClient()).Succeeded,
+                    new LocalAiGatewayClient(),
+                    bootstrap.ResidentRegistry).Succeeded,
                 Is.True);
 
             storage = new InMemorySaveStorage();
@@ -162,7 +166,9 @@ namespace AIFarm.Tests.EditMode
 
             ActionResult saved = service.Save();
             Assert.That(saved.Succeeded, Is.True, saved.Message);
-            Assert.That(storage.Json, Does.Contain("\"version\": 3"));
+            Assert.That(
+                storage.Json,
+                Does.Contain($"\"version\": {SaveData.CurrentVersion}"));
             Assert.That(storage.Json, Does.Contain("\"residentId\": \"resident-001\""));
             Assert.That(storage.Json, Does.Not.Contain("OPENAI_API_KEY"));
             Assert.That(storage.Json, Does.Not.Contain("sk-"));
@@ -312,6 +318,65 @@ namespace AIFarm.Tests.EditMode
         }
 
         [Test]
+        public void SaveLoad_PreservesTownEventProposalConsumptionMarker()
+        {
+            Assert.That(
+                bootstrap.ResidentRegistry.TryGetRuntimeState(
+                    ResidentIds.Xiaosui,
+                    out ResidentRuntimeState xiaosui).Succeeded,
+                Is.True);
+            Assert.That(
+                xiaosui.Memories.AddObservation(
+                    ResidentIds.Xiaosui,
+                    bootstrap.Clock.ElapsedGameSeconds,
+                    "I already used this carrot-harvest fact for a HarvestDinner proposal.",
+                    MemoryEntry.MaximumImportance,
+                    WorldEventKind.TownEventProposed,
+                    MemorySourceKind.Perception,
+                    "town-event:harvest-dinner:day-000002:proposal-consumed",
+                    "fact-carrot-harvest-consumed",
+                    string.Empty,
+                    default,
+                    new[]
+                    {
+                        "town-event",
+                        "harvest-dinner",
+                        "town-event-proposal-consumed"
+                    },
+                    false,
+                    out MemoryEntry marker).Succeeded,
+                Is.True);
+
+            Assert.That(service.Save().Succeeded, Is.True);
+            xiaosui.Memories.Clear();
+
+            ActionResult loaded = service.Load();
+
+            Assert.That(loaded.Succeeded, Is.True, loaded.Message);
+            Assert.That(
+                bootstrap.ResidentRegistry.TryGetRuntimeState(
+                    ResidentIds.Xiaosui,
+                    out ResidentRuntimeState restored).Succeeded,
+                Is.True);
+            MemoryEntry restoredMarker = null;
+            foreach (MemoryEntry memory in restored.Memories.Entries)
+            {
+                if (memory.KnowledgeId == marker.KnowledgeId)
+                {
+                    restoredMarker = memory;
+                    break;
+                }
+            }
+
+            Assert.That(restoredMarker, Is.Not.Null);
+            Assert.That(restoredMarker.RootFactId, Is.EqualTo("fact-carrot-harvest-consumed"));
+            Assert.That(restoredMarker.ParentKnowledgeId, Is.Empty);
+            Assert.That(restoredMarker.SourceKind, Is.EqualTo(MemorySourceKind.Perception));
+            Assert.That(restoredMarker.IsShareable, Is.False);
+            Assert.That(restoredMarker.Tags, Does.Contain("town-event-proposal-consumed"));
+        }
+
+        [Test]
         public void Load_LegacySingleResidentSave_MigratesToYaya()
         {
             Assert.That(service.Save().Succeeded, Is.True);
@@ -351,6 +416,12 @@ namespace AIFarm.Tests.EditMode
             Assert.That(migrated.version, Is.EqualTo(SaveData.CurrentVersion));
             Assert.That(migrated.residents, Has.Length.EqualTo(4));
             Assert.That(migrated.residents[0].residentId, Is.EqualTo(ResidentIds.YayaValue));
+            Assert.That(migrated.relationships, Has.Length.EqualTo(12));
+            for (int index = 1; index < migrated.residents.Length; index++)
+            {
+                Assert.That(migrated.residents[index].recentMemories, Is.Empty);
+                Assert.That(migrated.residents[index].hasFarmGoal, Is.False);
+            }
         }
 
         [Test]
@@ -458,7 +529,291 @@ namespace AIFarm.Tests.EditMode
         }
 
         [Test]
-        public void CorruptSave_ControllerPromptsAndReturnsToNewDemoWithoutThrowing()
+        public void SaveLoad_PreservesDirectedRelationshipsWithoutTransposition()
+        {
+            var graph = new SocialGraph(bootstrap.ResidentRegistry.ResidentIds);
+            var snapshots = new List<RelationshipStateSnapshot>();
+            foreach (RelationshipStateSnapshot snapshot in graph.CaptureSnapshots())
+            {
+                if (snapshot.OwnerResidentId == ResidentIds.Yaya &&
+                    snapshot.OtherResidentId == ResidentIds.Amu)
+                {
+                    snapshots.Add(new RelationshipStateSnapshot(
+                        snapshot.OwnerResidentId,
+                        snapshot.OtherResidentId,
+                        17,
+                        9,
+                        1L,
+                        "relationship:yaya-to-amu"));
+                }
+                else if (snapshot.OwnerResidentId == ResidentIds.Amu &&
+                    snapshot.OtherResidentId == ResidentIds.Yaya)
+                {
+                    snapshots.Add(new RelationshipStateSnapshot(
+                        snapshot.OwnerResidentId,
+                        snapshot.OtherResidentId,
+                        3,
+                        -4,
+                        1L,
+                        "relationship:amu-to-yaya"));
+                }
+                else
+                {
+                    snapshots.Add(snapshot);
+                }
+            }
+
+            Assert.That(graph.Restore(snapshots).Succeeded, Is.True);
+            var relationshipService = new SaveGameService(
+                bootstrap,
+                executor,
+                replanner,
+                npcObject.transform,
+                storage,
+                graph);
+            Assert.That(relationshipService.Save().Succeeded, Is.True);
+            SaveData data = JsonUtility.FromJson<SaveData>(storage.Json);
+            Assert.That(data.relationships, Has.Length.EqualTo(12));
+            Assert.That(graph.Reset().Succeeded, Is.True);
+
+            ActionResult loaded = relationshipService.Load();
+
+            Assert.That(loaded.Succeeded, Is.True, loaded.Message);
+            Assert.That(
+                graph.TryGetRelationship(
+                    ResidentIds.Yaya,
+                    ResidentIds.Amu,
+                    out RelationshipState yayaToAmu).Succeeded,
+                Is.True);
+            Assert.That(
+                graph.TryGetRelationship(
+                    ResidentIds.Amu,
+                    ResidentIds.Yaya,
+                    out RelationshipState amuToYaya).Succeeded,
+                Is.True);
+            Assert.That(yayaToAmu.Familiarity, Is.EqualTo(17));
+            Assert.That(yayaToAmu.Trust, Is.EqualTo(9));
+            Assert.That(amuToYaya.Familiarity, Is.EqualTo(3));
+            Assert.That(amuToYaya.Trust, Is.EqualTo(-4));
+            Assert.That(yayaToAmu, Is.Not.SameAs(amuToYaya));
+        }
+
+        [Test]
+        public void Load_MissingResidentOrDuplicateRelationship_IsRejectedBeforeLiveMutation()
+        {
+            Assert.That(service.Save().Succeeded, Is.True);
+            SaveData data = JsonUtility.FromJson<SaveData>(storage.Json);
+            data.residents = new[]
+            {
+                data.residents[0],
+                data.residents[1],
+                data.residents[2]
+            };
+            storage.Json = JsonUtility.ToJson(data, true);
+            Assert.That(bootstrap.Field.GetPlot(1).Sow(bootstrap.Inventory).Succeeded, Is.True);
+            long revisionBeforeLoad = bootstrap.AuthoritativeStateRevision;
+
+            ActionResult missingResident = service.Load();
+
+            Assert.That(missingResident.Failed, Is.True);
+            Assert.That(missingResident.FailureReason, Is.EqualTo(ActionFailureReason.InvalidResponse));
+            Assert.That(bootstrap.AuthoritativeStateRevision, Is.EqualTo(revisionBeforeLoad));
+            Assert.That(bootstrap.Field.GetPlot(1).State, Is.EqualTo(PlotState.Growing));
+
+            Assert.That(service.Save().Succeeded, Is.True);
+            data = JsonUtility.FromJson<SaveData>(storage.Json);
+            data.relationships[0].ownerResidentId =
+                data.relationships[1].ownerResidentId;
+            data.relationships[0].otherResidentId =
+                data.relationships[1].otherResidentId;
+            storage.Json = JsonUtility.ToJson(data, true);
+            revisionBeforeLoad = bootstrap.AuthoritativeStateRevision;
+
+            ActionResult duplicateRelationship = service.Load();
+
+            Assert.That(duplicateRelationship.Failed, Is.True);
+            Assert.That(
+                duplicateRelationship.FailureReason,
+                Is.EqualTo(ActionFailureReason.InvalidResponse));
+            Assert.That(bootstrap.AuthoritativeStateRevision, Is.EqualTo(revisionBeforeLoad));
+            Assert.That(bootstrap.Field.GetPlot(1).State, Is.EqualTo(PlotState.Growing));
+        }
+
+        [Test]
+        public void SaveSchema_OmitsTransientRequestsConversationsAndReservations()
+        {
+            Assert.That(service.Save().Succeeded, Is.True);
+
+            Assert.That(storage.Json, Does.Not.Contain("activeRequest"));
+            Assert.That(storage.Json, Does.Not.Contain("ConversationSession"));
+            Assert.That(storage.Json, Does.Not.Contain("participantLock"));
+            Assert.That(storage.Json, Does.Not.Contain("reservation"));
+            Assert.That(storage.Json, Does.Not.Contain("TownEventSession"));
+        }
+
+        [Test]
+        public void Load_WithActiveAndPendingAiRequests_CancelsStaleWorkAndCoordinatorRemainsReusable()
+        {
+            Assert.That(service.Save().Succeeded, Is.True);
+            var gateway = new LoadResetGatewayClient();
+            var coordinator = new AiRequestCoordinator(
+                gateway,
+                maximumConcurrentRequests: 1,
+                deterministicLocalFallback: new LocalAiGatewayClient());
+            ReplaceAiRequestCoordinator(coordinator);
+            int activeCompletionCount = 0;
+            int pendingCompletionCount = 0;
+            IEnumerator active = coordinator.GenerateUtterance(
+                ResidentIds.Yaya,
+                NpcExpressionTrigger.CommandAccepted,
+                "stale-active",
+                _ => activeCompletionCount++);
+            IEnumerator pending = coordinator.GenerateUtterance(
+                ResidentIds.Yaya,
+                NpcExpressionTrigger.WaterNeeded,
+                "stale-pending",
+                _ => pendingCompletionCount++);
+
+            Assert.That(active.MoveNext(), Is.True);
+            Assert.That(pending.MoveNext(), Is.True);
+            Assert.That(active.MoveNext(), Is.True);
+            Assert.That(pending.MoveNext(), Is.True);
+            Assert.That(coordinator.ActiveRequestCount, Is.EqualTo(1));
+            Assert.That(coordinator.PendingRequestCount, Is.EqualTo(1));
+            Assert.That(gateway.ActiveOperationCount, Is.EqualTo(1));
+            long revisionBeforeLoad = bootstrap.AuthoritativeStateRevision;
+
+            ActionResult loaded = service.Load();
+
+            Assert.That(loaded.Succeeded, Is.True, loaded.Message);
+            Assert.That(
+                bootstrap.AuthoritativeStateRevision,
+                Is.EqualTo(revisionBeforeLoad + 1));
+            Assert.That(coordinator.ActiveRequestCount, Is.Zero);
+            Assert.That(coordinator.PendingRequestCount, Is.Zero);
+            Assert.That(gateway.ActiveOperationCount, Is.Zero);
+            Assert.That(gateway.DisposedOperationCount, Is.EqualTo(1));
+
+            gateway.PublishDisposedRequestResult();
+            Assert.That(active.MoveNext(), Is.False);
+            Assert.That(pending.MoveNext(), Is.False);
+            Assert.That(activeCompletionCount, Is.Zero);
+            Assert.That(pendingCompletionCount, Is.Zero);
+
+            AiGatewayResult<NpcExpression> replacementResult = null;
+            IEnumerator replacement = coordinator.GenerateUtterance(
+                ResidentIds.Yaya,
+                NpcExpressionTrigger.CommandAccepted,
+                "replacement",
+                value => replacementResult = value);
+            while (replacement.MoveNext())
+            {
+            }
+
+            Assert.That(replacementResult, Is.Not.Null);
+            Assert.That(replacementResult.Succeeded, Is.True, replacementResult.Outcome.Message);
+            Assert.That(replacementResult.ResidentId, Is.EqualTo(ResidentIds.Yaya));
+            Assert.That(coordinator.ActiveRequestCount, Is.Zero);
+            Assert.That(coordinator.PendingRequestCount, Is.Zero);
+            Assert.That(coordinator.IsShutdown, Is.False);
+        }
+
+        [Test]
+        public void SaveLoad_FourPrivateMemoryPartitionsAndAllDirectedRelationshipsDoNotCross()
+        {
+            var graph = new SocialGraph(bootstrap.ResidentRegistry.ResidentIds);
+            IReadOnlyList<RelationshipStateSnapshot> expectedRelationships =
+                CreateDistinctRelationshipSnapshots(graph, 0);
+            Assert.That(graph.Restore(expectedRelationships).Succeeded, Is.True);
+            ReplaceAllResidentMemoriesWithPrivateSentinels("saved");
+            var isolatedService = new SaveGameService(
+                bootstrap,
+                executor,
+                replanner,
+                npcObject.transform,
+                storage,
+                graph);
+
+            Assert.That(isolatedService.Save().Succeeded, Is.True);
+            SaveData captured = JsonUtility.FromJson<SaveData>(storage.Json);
+            foreach (ResidentSaveData resident in captured.residents)
+            {
+                Assert.That(
+                    resident.recentMemories,
+                    Has.Length.EqualTo(1),
+                    $"Captured Resident '{resident.residentId}' must own one private sentinel.");
+            }
+
+            Assert.That(graph.Reset().Succeeded, Is.True);
+            ClearAllResidentMemories();
+
+            ActionResult loaded = isolatedService.Load();
+
+            Assert.That(loaded.Succeeded, Is.True, loaded.Message);
+            AssertPrivateResidentMemories("saved");
+            AssertDirectedRelationships(graph, expectedRelationships);
+        }
+
+        [Test]
+        public void Load_TamperedMemoryOwner_IsRejectedBeforeResetWithoutMutatingLivePartitionsOrRelationships()
+        {
+            var graph = new SocialGraph(bootstrap.ResidentRegistry.ResidentIds);
+            Assert.That(
+                graph.Restore(CreateDistinctRelationshipSnapshots(graph, 0)).Succeeded,
+                Is.True);
+            ReplaceAllResidentMemoriesWithPrivateSentinels("saved");
+            var isolatedService = new SaveGameService(
+                bootstrap,
+                executor,
+                replanner,
+                npcObject.transform,
+                storage,
+                graph);
+            Assert.That(isolatedService.Save().Succeeded, Is.True);
+
+            SaveData tampered = JsonUtility.FromJson<SaveData>(storage.Json);
+            ResidentSaveData yaya = Array.Find(
+                tampered.residents,
+                resident => resident.residentId == ResidentIds.YayaValue);
+            Assert.That(yaya, Is.Not.Null);
+            Assert.That(yaya.recentMemories, Is.Not.Empty);
+            yaya.recentMemories[0].ownerResidentId = ResidentIds.AmuValue;
+            storage.Json = JsonUtility.ToJson(tampered, true);
+
+            ClearAllResidentMemories();
+            ReplaceAllResidentMemoriesWithPrivateSentinels("live");
+            IReadOnlyList<RelationshipStateSnapshot> liveRelationships =
+                CreateDistinctRelationshipSnapshots(graph, 40);
+            Assert.That(graph.Restore(liveRelationships).Succeeded, Is.True);
+            long revisionBeforeLoad = bootstrap.AuthoritativeStateRevision;
+
+            ActionResult loaded = isolatedService.Load();
+
+            Assert.That(loaded.Failed, Is.True);
+            Assert.That(loaded.FailureReason, Is.EqualTo(ActionFailureReason.InvalidResponse));
+            Assert.That(bootstrap.AuthoritativeStateRevision, Is.EqualTo(revisionBeforeLoad));
+            AssertPrivateResidentMemories("live");
+            AssertDirectedRelationships(graph, liveRelationships);
+        }
+
+        [Test]
+        public void CorruptPrimarySave_LoadsValidatedBackupWithoutKeepingLiveMutation()
+        {
+            Assert.That(service.Save().Succeeded, Is.True);
+            storage.BackupJson = storage.Json;
+            storage.Json = "{ broken primary save";
+            Assert.That(bootstrap.Field.GetPlot(1).Sow(bootstrap.Inventory).Succeeded, Is.True);
+
+            ActionResult loaded = service.Load();
+
+            Assert.That(loaded.Succeeded, Is.True, loaded.Message);
+            Assert.That(service.LastLoadRecoveredBackup, Is.True);
+            Assert.That(bootstrap.Field.GetPlot(1).State, Is.EqualTo(PlotState.Empty));
+            Assert.That(bootstrap.Inventory.GetCount(InventoryItem.CarrotSeed), Is.EqualTo(20));
+        }
+
+        [Test]
+        public void CorruptSave_ControllerPreservesLiveGameAndSaveWithoutThrowing()
         {
             Assert.That(bootstrap.Field.GetPlot(1).Sow(bootstrap.Inventory).Succeeded, Is.True);
             storage.Json = "{ definitely not valid save json";
@@ -484,16 +839,16 @@ namespace AIFarm.Tests.EditMode
             Assert.That(controller.Initialize(storage).Succeeded, Is.True);
             LogAssert.Expect(
                 LogType.Warning,
-                new Regex("存档损坏或不可读.*已回到新 Demo"));
+                new Regex("存档损坏或不可读.*当前游戏未被修改"));
 
             Assert.DoesNotThrow(controller.Load);
 
-            Assert.That(bootstrap.Field.GetPlot(1).State, Is.EqualTo(PlotState.Empty));
-            Assert.That(bootstrap.Inventory.GetCount(InventoryItem.CarrotSeed), Is.EqualTo(20));
+            Assert.That(bootstrap.Field.GetPlot(1).State, Is.EqualTo(PlotState.Growing));
+            Assert.That(bootstrap.Inventory.GetCount(InventoryItem.CarrotSeed), Is.EqualTo(19));
             Assert.That(replanner.Status, Is.EqualTo(ReplanStatus.Idle));
             Assert.That(executor.IsBusy, Is.False);
-            Assert.That(status.text, Does.Contain("已回到新 Demo"));
-            Assert.That(storage.DeleteCount, Is.EqualTo(1));
+            Assert.That(status.text, Does.Contain("当前游戏未被修改"));
+            Assert.That(storage.DeleteCount, Is.Zero);
         }
 
         [Test]
@@ -560,6 +915,121 @@ namespace AIFarm.Tests.EditMode
             return values;
         }
 
+        private void ReplaceAiRequestCoordinator(AiRequestCoordinator coordinator)
+        {
+            PropertyInfo property = typeof(GameBootstrap).GetProperty(
+                nameof(GameBootstrap.AiRequests),
+                BindingFlags.Instance | BindingFlags.Public);
+            MethodInfo setter = property?.GetSetMethod(nonPublic: true);
+            Assert.That(setter, Is.Not.Null, "GameBootstrap must retain its private AI coordinator setter.");
+            bootstrap.AiRequests?.Shutdown();
+            setter.Invoke(bootstrap, new object[] { coordinator });
+        }
+
+        private void ClearAllResidentMemories()
+        {
+            foreach (ResidentId residentId in bootstrap.ResidentRegistry.ResidentIds)
+            {
+                Assert.That(
+                    bootstrap.ResidentRegistry.TryGetRuntimeState(
+                        residentId,
+                        out ResidentRuntimeState runtimeState).Succeeded,
+                    Is.True);
+                runtimeState.Memories.Clear();
+            }
+        }
+
+        private void ReplaceAllResidentMemoriesWithPrivateSentinels(string phase)
+        {
+            ClearAllResidentMemories();
+            foreach (ResidentId residentId in bootstrap.ResidentRegistry.ResidentIds)
+            {
+                Assert.That(
+                    bootstrap.ResidentRegistry.TryGetRuntimeState(
+                        residentId,
+                        out ResidentRuntimeState runtimeState).Succeeded,
+                    Is.True);
+                Assert.That(
+                    runtimeState.Memories.AddObservation(
+                        residentId,
+                        bootstrap.Clock.ElapsedGameSeconds,
+                        $"private-memory:{phase}:{residentId.Value}",
+                        6,
+                        WorldEventKind.System,
+                        MemorySourceKind.Perception,
+                        $"private-event:{phase}:{residentId.Value}",
+                        $"private-fact:{phase}:{residentId.Value}",
+                        string.Empty,
+                        default,
+                        new[] { "private-sentinel", phase },
+                        false,
+                        out _).Succeeded,
+                    Is.True);
+            }
+        }
+
+        private void AssertPrivateResidentMemories(string phase)
+        {
+            foreach (ResidentId residentId in bootstrap.ResidentRegistry.ResidentIds)
+            {
+                Assert.That(
+                    bootstrap.ResidentRegistry.TryGetRuntimeState(
+                        residentId,
+                        out ResidentRuntimeState runtimeState).Succeeded,
+                    Is.True);
+                Assert.That(runtimeState.Memories.OwnerResidentId, Is.EqualTo(residentId));
+                Assert.That(
+                    runtimeState.Memories.Entries,
+                    Has.Count.EqualTo(1),
+                    $"Resident '{residentId}' must retain only its '{phase}' private sentinel.");
+                MemoryEntry memory = runtimeState.Memories.Entries[0];
+                Assert.That(memory.OwnerResidentId, Is.EqualTo(residentId));
+                Assert.That(memory.Text, Is.EqualTo($"private-memory:{phase}:{residentId.Value}"));
+                Assert.That(
+                    memory.RootFactId,
+                    Is.EqualTo($"private-fact:{phase}:{residentId.Value}"));
+                Assert.That(memory.IsShareable, Is.False);
+            }
+        }
+
+        private static IReadOnlyList<RelationshipStateSnapshot>
+            CreateDistinctRelationshipSnapshots(SocialGraph graph, int valueOffset)
+        {
+            var snapshots = new List<RelationshipStateSnapshot>();
+            IReadOnlyList<RelationshipStateSnapshot> empty = graph.CaptureSnapshots();
+            for (int index = 0; index < empty.Count; index++)
+            {
+                RelationshipStateSnapshot edge = empty[index];
+                int value = valueOffset + index + 1;
+                snapshots.Add(new RelationshipStateSnapshot(
+                    edge.OwnerResidentId,
+                    edge.OtherResidentId,
+                    value,
+                    -value,
+                    value,
+                    $"relationship:{value}:{edge.OwnerResidentId.Value}:{edge.OtherResidentId.Value}"));
+            }
+
+            return snapshots;
+        }
+
+        private static void AssertDirectedRelationships(
+            SocialGraph graph,
+            IReadOnlyList<RelationshipStateSnapshot> expected)
+        {
+            Assert.That(graph.RelationshipCount, Is.EqualTo(expected.Count));
+            foreach (RelationshipStateSnapshot snapshot in expected)
+            {
+                Assert.That(
+                    graph.TryGetRelationship(
+                        snapshot.OwnerResidentId,
+                        snapshot.OtherResidentId,
+                        out RelationshipState actual).Succeeded,
+                    Is.True);
+                Assert.That(actual.Snapshot, Is.EqualTo(snapshot));
+            }
+        }
+
         private static Button CreateButton(Transform parent, string name)
         {
             GameObject buttonObject = new GameObject(name, typeof(RectTransform), typeof(Button));
@@ -567,13 +1037,17 @@ namespace AIFarm.Tests.EditMode
             return buttonObject.GetComponent<Button>();
         }
 
-        private sealed class InMemorySaveStorage : ISaveGameStorage
+        private sealed class InMemorySaveStorage : IRecoverableSaveGameStorage
         {
             public string Json { get; set; }
+
+            public string BackupJson { get; set; }
 
             public int DeleteCount { get; private set; }
 
             public string SavePath => "memory://aifarm-save-v1.json";
+
+            public string BackupPath => "memory://aifarm-save-v1.json.bak";
 
             public ActionResult Write(string json)
             {
@@ -589,9 +1063,18 @@ namespace AIFarm.Tests.EditMode
                     : ActionResult.Success("Read from memory.");
             }
 
+            public ActionResult ReadBackup(out string json)
+            {
+                json = BackupJson;
+                return string.IsNullOrEmpty(json)
+                    ? ActionResult.Failure(ActionFailureReason.InvalidState, "No backup exists.")
+                    : ActionResult.Success("Read backup from memory.");
+            }
+
             public ActionResult Delete()
             {
                 Json = null;
+                BackupJson = null;
                 DeleteCount++;
                 return ActionResult.Success("Deleted in-memory save.");
             }
@@ -653,6 +1136,139 @@ namespace AIFarm.Tests.EditMode
             {
                 IsPlaying = false;
                 return ActionResult.Success("Feedback cancelled.");
+            }
+        }
+
+        private sealed class LoadResetGatewayClient : IAiGatewayClient
+        {
+            private readonly LocalAiGatewayClient local = new LocalAiGatewayClient();
+            private Action disposedRequestCompletion;
+            private int utteranceCount;
+
+            public AiGatewayMode ConfiguredMode => AiGatewayMode.Remote;
+
+            public AiGatewayMode ActiveMode => AiGatewayMode.Remote;
+
+            public int ActiveOperationCount { get; private set; }
+
+            public int DisposedOperationCount { get; private set; }
+
+            public IEnumerator InterpretCommand(
+                string command,
+                Action<AiGatewayResult<FarmGoalSpec>> completed)
+            {
+                return local.InterpretCommand(command, completed);
+            }
+
+            public IEnumerator InterpretCommand(
+                ResidentId residentId,
+                string command,
+                Action<AiGatewayResult<FarmGoalSpec>> completed)
+            {
+                return local.InterpretCommand(residentId, command, completed);
+            }
+
+            public IEnumerator GenerateUtterance(
+                NpcExpressionTrigger trigger,
+                string context,
+                Action<AiGatewayResult<NpcExpression>> completed)
+            {
+                return GenerateUtterance(ResidentIds.Yaya, trigger, context, completed);
+            }
+
+            public IEnumerator GenerateUtterance(
+                ResidentId residentId,
+                NpcExpressionTrigger trigger,
+                string context,
+                Action<AiGatewayResult<NpcExpression>> completed)
+            {
+                var expression = new NpcExpression(
+                    trigger,
+                    NpcMood.Focused,
+                    "!",
+                    context);
+                if (utteranceCount++ == 0)
+                {
+                    return BlockUntilDisposed(residentId, expression, completed);
+                }
+
+                return Complete(residentId, expression, completed);
+            }
+
+            public IEnumerator Reflect(
+                FarmGoalSpec goal,
+                NpcReflectionOutcome outcome,
+                string eventSummary,
+                Action<AiGatewayResult<NpcReflection>> completed)
+            {
+                return local.Reflect(goal, outcome, eventSummary, completed);
+            }
+
+            public IEnumerator Reflect(
+                ResidentId residentId,
+                FarmGoalSpec goal,
+                NpcReflectionOutcome outcome,
+                string eventSummary,
+                Action<AiGatewayResult<NpcReflection>> completed)
+            {
+                return local.Reflect(residentId, goal, outcome, eventSummary, completed);
+            }
+
+            public IEnumerator GenerateConversationScript(
+                ConversationScriptRequest request,
+                Action<AiGatewayResult<ConversationScriptSpec>> completed)
+            {
+                return local.GenerateConversationScript(request, completed);
+            }
+
+            public IEnumerator DecideResident(
+                ResidentDecisionRequest request,
+                Action<AiGatewayResult<ResidentDecisionSpec>> completed)
+            {
+                return local.DecideResident(request, completed);
+            }
+
+            public void PublishDisposedRequestResult()
+            {
+                Assert.That(disposedRequestCompletion, Is.Not.Null);
+                disposedRequestCompletion();
+            }
+
+            private IEnumerator BlockUntilDisposed(
+                ResidentId residentId,
+                NpcExpression expression,
+                Action<AiGatewayResult<NpcExpression>> completed)
+            {
+                ActiveOperationCount++;
+                disposedRequestCompletion = () => completed(
+                    AiGatewayResult<NpcExpression>.Success(
+                        residentId,
+                        expression,
+                        AiGatewayMode.Remote));
+                try
+                {
+                    while (true)
+                    {
+                        yield return null;
+                    }
+                }
+                finally
+                {
+                    ActiveOperationCount--;
+                    DisposedOperationCount++;
+                }
+            }
+
+            private static IEnumerator Complete(
+                ResidentId residentId,
+                NpcExpression expression,
+                Action<AiGatewayResult<NpcExpression>> completed)
+            {
+                yield return null;
+                completed(AiGatewayResult<NpcExpression>.Success(
+                    residentId,
+                    expression,
+                    AiGatewayMode.Remote));
             }
         }
     }

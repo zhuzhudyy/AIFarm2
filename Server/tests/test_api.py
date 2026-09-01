@@ -58,6 +58,30 @@ def _resident_context_payload(
     }
 
 
+def _harvest_dinner_decision_payload() -> dict:
+    context = _resident_context_payload(
+        "resident-003",
+        "小穗",
+        "芽芽告诉我，农田里的胡萝卜已经收获了。",
+    )
+    context["relevant_memories"][0].update(
+        {
+            "knowledge_id": "knowledge:resident-003:000000000007",
+            "root_fact_id": "fact:carrot-harvest:day-1",
+            "tags": ["harvest", "carrot"],
+            "is_shareable": True,
+            "immediate_source_resident_id": "resident-001",
+        }
+    )
+    return {
+        "resident_id": "resident-003",
+        "context": context,
+        "situation": "当前没有紧急农务，可以提出全镇活动。",
+        "allowed_intents": ["Idle", "propose_town_event"],
+        "allowed_target_resident_ids": [],
+    }
+
+
 @pytest.fixture
 def client() -> TestClient:
     with TestClient(create_app(MockProvider())) as test_client:
@@ -371,6 +395,83 @@ def test_resident_decision_uses_explicit_owner_and_allowed_sets(
         "reason": "本地规则从本次请求的允许集合中选择安全的高层意图。",
         "provider": "mock",
     }
+
+
+def test_mock_resident_decision_proposes_harvest_dinner_from_conversation_fact(
+    client: TestClient,
+) -> None:
+    response = client.post(
+        "/v1/resident-decision",
+        json=_harvest_dinner_decision_payload(),
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body == {
+        "resident_id": "resident-003",
+        "intent": "propose_town_event",
+        "target_resident_id": None,
+        "reason": "我从对话中得知了胡萝卜收获消息，可以提议全镇参加收获晚餐。",
+        "provider": "mock",
+    }
+
+
+@pytest.mark.parametrize(
+    ("allowed_intents", "memory_changes"),
+    [
+        (["Idle"], {}),
+        (["Idle", "propose_town_event"], {"is_shareable": False}),
+        (["Idle", "propose_town_event"], {"tags": ["harvest"]}),
+        (["Idle", "propose_town_event"], {"tags": ["carrot"]}),
+        (
+            ["Idle", "propose_town_event"],
+            {"immediate_source_resident_id": None},
+        ),
+    ],
+)
+def test_mock_resident_decision_keeps_safe_behavior_without_all_harvest_dinner_evidence(
+    client: TestClient,
+    allowed_intents: list[str],
+    memory_changes: dict,
+) -> None:
+    payload = _harvest_dinner_decision_payload()
+    payload["allowed_intents"] = allowed_intents
+    payload["context"]["relevant_memories"][0].update(memory_changes)
+
+    response = client.post("/v1/resident-decision", json=payload)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["intent"] == "Idle"
+    assert body["target_resident_id"] is None
+    assert body["provider"] == "mock"
+
+
+def test_mock_resident_decision_rejects_unsafe_proposal_when_no_fallback_is_allowed(
+    client: TestClient,
+) -> None:
+    payload = _harvest_dinner_decision_payload()
+    payload["allowed_intents"] = ["propose_town_event"]
+    payload["context"]["relevant_memories"][0]["tags"] = ["harvest"]
+
+    response = client.post("/v1/resident-decision", json=payload)
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "no_safe_intent"
+
+
+def test_harvest_dinner_memory_rejects_self_as_conversation_source(
+    client: TestClient,
+) -> None:
+    payload = _harvest_dinner_decision_payload()
+    payload["context"]["relevant_memories"][0][
+        "immediate_source_resident_id"
+    ] = "resident-003"
+
+    response = client.post("/v1/resident-decision", json=payload)
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "validation_error"
 
 
 def test_conversation_script_carries_two_isolated_participant_contexts(

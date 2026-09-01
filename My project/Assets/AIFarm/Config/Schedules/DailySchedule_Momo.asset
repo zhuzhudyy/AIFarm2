@@ -37,7 +37,7 @@ MonoBehaviour:
   - startTime: 17:00
     endTime: 18:00
     targetLocation: {fileID: 11400000, guid: f3b6c02c05bb7eb4e8b4d43e5b3d17e5, type: 2}
-    activity: 4
+    activity: 2
   - startTime: 18:00
     endTime: 19:00
     targetLocation: {fileID: 11400000, guid: 807951c05c050de4c9753ba56283a094, type: 2}

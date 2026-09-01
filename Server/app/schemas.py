@@ -75,7 +75,7 @@ IntentText = Annotated[
         strip_whitespace=True,
         min_length=1,
         max_length=64,
-        pattern=r"^[A-Z][A-Za-z0-9]*$",
+        pattern=r"^(?:[A-Z][A-Za-z0-9]*|propose_town_event)$",
     ),
 ]
 BoundedRelationshipValue = Annotated[StrictInt, Field(ge=-100, le=100)]
@@ -88,6 +88,14 @@ ModelIdText = Annotated[
         min_length=1,
         max_length=128,
         pattern=r"^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+    ),
+]
+GatewayInstanceIdText = Annotated[
+    StrictStr,
+    StringConstraints(
+        min_length=32,
+        max_length=32,
+        pattern=r"^[0-9a-f]{32}$",
     ),
 ]
 ApiKeySecret = Annotated[SecretStr, Field(max_length=512)]
@@ -426,6 +434,7 @@ class GatewayConfigSpec(StrictSchema):
     api_key_configured: StrictBool
     persisted: StrictBool
     source: Literal["environment", "local_config", "runtime", "injected"]
+    instance_id: GatewayInstanceIdText | None = None
 
 
 class GatewayProbeSpec(StrictSchema):

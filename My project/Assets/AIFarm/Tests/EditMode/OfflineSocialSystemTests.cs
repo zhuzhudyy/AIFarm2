@@ -121,6 +121,35 @@ namespace AIFarm.Tests.EditMode
         }
 
         [Test]
+        public void AuthoritativeReset_CancelsEverySessionAndInvalidatesOrphanLocks()
+        {
+            SocialFixture fixture = CreateFixture();
+            ConversationSession first = Start(
+                fixture,
+                ResidentIds.Yaya,
+                ResidentIds.Amu,
+                "reset-seat-a",
+                "reset-seat-b");
+            ConversationSession second = Start(
+                fixture,
+                ResidentIds.Xiaosui,
+                ResidentIds.Momo,
+                "reset-seat-c",
+                "reset-seat-d");
+
+            int cancelled = fixture.Coordinator.CancelAllActiveConversations();
+            fixture.ParticipantLock.InvalidateAll();
+            fixture.Reservations.InvalidateAll();
+
+            Assert.That(cancelled, Is.EqualTo(2));
+            Assert.That(first.State, Is.EqualTo(ConversationState.Cancelled));
+            Assert.That(second.State, Is.EqualTo(ConversationState.Cancelled));
+            Assert.That(fixture.Coordinator.ActiveSessionCount, Is.Zero);
+            Assert.That(fixture.ParticipantLock.LockedResidentCount, Is.Zero);
+            Assert.That(fixture.Reservations.ReservationCount, Is.Zero);
+        }
+
+        [Test]
         public void CompletedOutcome_IsStoredInEachParticipantsIndependentMemoryOnly()
         {
             SocialFixture fixture = CreateFixture(
@@ -202,6 +231,105 @@ namespace AIFarm.Tests.EditMode
                 Is.EqualTo(initialAmuTrust + ConversationOutcomeApplier.HelpfulTrustIncrease));
             Assert.That(yayaBefore.RelationVersion, Is.EqualTo(1));
             Assert.That(amuBefore.RelationVersion, Is.EqualTo(1));
+        }
+
+        [Test]
+        public void SocialGraphSnapshots_RoundTripEveryDirectedEdgeWithoutTransposition()
+        {
+            var source = new SocialGraph(ResidentIds.TownResidents);
+            RelationshipStateSnapshot[] customized = source.Snapshots
+                .Select(snapshot => CustomizeDirectedRelationship(snapshot))
+                .ToArray();
+
+            ActionResult prepared = source.Restore(customized);
+            var restored = new SocialGraph(ResidentIds.TownResidents);
+            ActionResult result = restored.Restore(source.Snapshots);
+
+            Assert.That(prepared.Succeeded, Is.True, prepared.Message);
+            Assert.That(result.Succeeded, Is.True, result.Message);
+            CollectionAssert.AreEqual(source.Snapshots, restored.Snapshots);
+            Assert.That(
+                restored.TryGetRelationship(
+                    ResidentIds.Yaya,
+                    ResidentIds.Amu,
+                    out RelationshipState yayaToAmu).Succeeded,
+                Is.True);
+            Assert.That(
+                restored.TryGetRelationship(
+                    ResidentIds.Amu,
+                    ResidentIds.Yaya,
+                    out RelationshipState amuToYaya).Succeeded,
+                Is.True);
+            Assert.That(yayaToAmu.Familiarity, Is.EqualTo(12));
+            Assert.That(yayaToAmu.Trust, Is.EqualTo(34));
+            Assert.That(amuToYaya.Familiarity, Is.EqualTo(-8));
+            Assert.That(amuToYaya.Trust, Is.EqualTo(5));
+            Assert.That(yayaToAmu.LastChangeEventId, Is.EqualTo("event-yaya-to-amu"));
+            Assert.That(amuToYaya.LastChangeEventId, Is.EqualTo("event-amu-to-yaya"));
+        }
+
+        [Test]
+        public void SocialGraphRestore_InvalidSnapshotIsRejectedWithoutPartialMutation()
+        {
+            var graph = new SocialGraph(ResidentIds.TownResidents);
+            RelationshipStateSnapshot[] baseline = graph.Snapshots
+                .Select(snapshot => CustomizeDirectedRelationship(snapshot))
+                .ToArray();
+            Assert.That(graph.Restore(baseline).Succeeded, Is.True);
+            RelationshipStateSnapshot[] before = graph.Snapshots.ToArray();
+            RelationshipStateSnapshot[] invalid = before.ToArray();
+            RelationshipStateSnapshot edge = invalid[invalid.Length / 2];
+            invalid[invalid.Length / 2] = new RelationshipStateSnapshot(
+                edge.OwnerResidentId,
+                edge.OtherResidentId,
+                RelationshipState.MaximumValue + 1,
+                edge.Trust,
+                edge.RelationVersion,
+                edge.LastChangeEventId);
+
+            ActionResult result = graph.Restore(invalid);
+
+            Assert.That(result.Failed, Is.True);
+            Assert.That(result.FailureReason, Is.EqualTo(ActionFailureReason.InvalidArgument));
+            CollectionAssert.AreEqual(before, graph.Snapshots);
+        }
+
+        [Test]
+        public void SocialGraphRestore_RequiresEveryEdgeExactlyOnceAndRemainsAtomic()
+        {
+            var graph = new SocialGraph(ResidentIds.TownResidents);
+            RelationshipStateSnapshot[] baseline = graph.Snapshots.ToArray();
+            RelationshipStateSnapshot[] duplicate = baseline.ToArray();
+            duplicate[duplicate.Length - 1] = duplicate[0];
+
+            ActionResult duplicateResult = graph.Restore(duplicate);
+            ActionResult missingResult = graph.Restore(
+                baseline.Take(baseline.Length - 1));
+
+            Assert.That(duplicateResult.Failed, Is.True);
+            Assert.That(missingResult.Failed, Is.True);
+            CollectionAssert.AreEqual(baseline, graph.Snapshots);
+        }
+
+        [Test]
+        public void SocialGraphReset_ClearsEveryDirectedEdge()
+        {
+            var graph = new SocialGraph(ResidentIds.TownResidents);
+            RelationshipStateSnapshot[] customized = graph.Snapshots
+                .Select(snapshot => CustomizeDirectedRelationship(snapshot))
+                .ToArray();
+            Assert.That(graph.Restore(customized).Succeeded, Is.True);
+
+            ActionResult reset = graph.Reset();
+
+            Assert.That(reset.Succeeded, Is.True, reset.Message);
+            Assert.That(
+                graph.Snapshots.All(snapshot =>
+                    snapshot.Familiarity == 0 &&
+                    snapshot.Trust == 0 &&
+                    snapshot.RelationVersion == 0L &&
+                    snapshot.LastChangeEventId == string.Empty),
+                Is.True);
         }
 
         [Test]
@@ -445,6 +573,101 @@ namespace AIFarm.Tests.EditMode
             Assert.That(relationship.RelationVersion, Is.Zero);
             Assert.That(fixture.ParticipantLock.LockedResidentCount, Is.Zero);
             Assert.That(fixture.Reservations.ReservationCount, Is.Zero);
+        }
+
+        [Test]
+        public void SaveProjection_CopiesOnlyPlayedFragmentWithoutMutatingLiveMemory()
+        {
+            SocialFixture fixture = CreateFixture();
+            ConversationSession session = Start(
+                fixture,
+                ResidentIds.Yaya,
+                ResidentIds.Amu,
+                "seat-save-a",
+                "seat-save-b",
+                targetSentenceCount: 3);
+            var script = new ConversationScriptSpec(
+                session.FirstResidentId,
+                new[]
+                {
+                    new ConversationLineSpec(
+                        session.FirstResidentId,
+                        NpcMood.Happy,
+                        "1",
+                        "已经实际播放的存档片段。"),
+                    new ConversationLineSpec(
+                        session.SecondResidentId,
+                        NpcMood.Focused,
+                        "2",
+                        "仍未播放的内容。"),
+                    new ConversationLineSpec(
+                        session.FirstResidentId,
+                        NpcMood.Proud,
+                        "3",
+                        "也不应进入存档。")
+                },
+                ConversationOutcome.Conflict,
+                "openai");
+            Assert.That(
+                fixture.Coordinator.SetConversationScript(
+                    session.ConversationId,
+                    script).Succeeded,
+                Is.True);
+            Assert.That(
+                fixture.Coordinator.AdvanceConversation(
+                    session.ConversationId,
+                    0.1d,
+                    12d,
+                    out _).Succeeded,
+                Is.True);
+
+            ResidentRuntimeState liveYaya = Runtime(fixture, ResidentIds.Yaya);
+            ResidentRuntimeState liveAmu = Runtime(fixture, ResidentIds.Amu);
+            var yayaSnapshot = new MemoryStore(ResidentIds.Yaya);
+            var amuSnapshot = new MemoryStore(ResidentIds.Amu);
+            Assert.That(
+                yayaSnapshot.Restore(liveYaya.Memories.Entries).Succeeded,
+                Is.True);
+            Assert.That(
+                amuSnapshot.Restore(liveAmu.Memories.Entries).Succeeded,
+                Is.True);
+
+            Assert.That(
+                fixture.Coordinator.ProjectPlayedTranscriptForSave(
+                    ResidentIds.Yaya,
+                    12d,
+                    yayaSnapshot,
+                    out bool projectedYaya).Succeeded,
+                Is.True);
+            Assert.That(
+                fixture.Coordinator.ProjectPlayedTranscriptForSave(
+                    ResidentIds.Amu,
+                    12d,
+                    amuSnapshot,
+                    out bool projectedAmu).Succeeded,
+                Is.True);
+
+            Assert.That(projectedYaya, Is.True);
+            Assert.That(projectedAmu, Is.True);
+            Assert.That(liveYaya.Memories.Entries, Is.Empty);
+            Assert.That(liveAmu.Memories.Entries, Is.Empty);
+            Assert.That(yayaSnapshot.Entries, Has.Count.EqualTo(1));
+            Assert.That(amuSnapshot.Entries, Has.Count.EqualTo(1));
+            Assert.That(
+                yayaSnapshot.Entries.Single().Text,
+                Does.Contain("已经实际播放的存档片段。"));
+            Assert.That(
+                yayaSnapshot.Entries.Single().Text,
+                Does.Not.Contain("仍未播放的内容。"));
+            Assert.That(
+                yayaSnapshot.Entries.Single().Text,
+                Does.Not.Contain("Conflict"));
+            Assert.That(
+                yayaSnapshot.Entries.Single().OwnerResidentId,
+                Is.EqualTo(ResidentIds.Yaya));
+            Assert.That(
+                amuSnapshot.Entries.Single().OwnerResidentId,
+                Is.EqualTo(ResidentIds.Amu));
         }
 
         [Test]
@@ -874,6 +1097,36 @@ namespace AIFarm.Tests.EditMode
                 reservations,
                 new SocialOpportunityDetector(cooldownGameSeconds),
                 coordinator);
+        }
+
+        private static RelationshipStateSnapshot CustomizeDirectedRelationship(
+            RelationshipStateSnapshot snapshot)
+        {
+            if (snapshot.OwnerResidentId == ResidentIds.Yaya &&
+                snapshot.OtherResidentId == ResidentIds.Amu)
+            {
+                return new RelationshipStateSnapshot(
+                    snapshot.OwnerResidentId,
+                    snapshot.OtherResidentId,
+                    familiarity: 12,
+                    trust: 34,
+                    relationVersion: 2L,
+                    lastChangeEventId: "event-yaya-to-amu");
+            }
+
+            if (snapshot.OwnerResidentId == ResidentIds.Amu &&
+                snapshot.OtherResidentId == ResidentIds.Yaya)
+            {
+                return new RelationshipStateSnapshot(
+                    snapshot.OwnerResidentId,
+                    snapshot.OtherResidentId,
+                    familiarity: -8,
+                    trust: 5,
+                    relationVersion: 3L,
+                    lastChangeEventId: "event-amu-to-yaya");
+            }
+
+            return snapshot;
         }
 
         private static SocialOpportunity Detect(

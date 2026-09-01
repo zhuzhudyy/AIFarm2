@@ -79,6 +79,54 @@ namespace AIFarm.Social
 
         public int ActiveSessionCount => activeSessions.Count;
 
+        public ActionResult ProjectPlayedTranscriptForSave(
+            ResidentId residentId,
+            double gameSeconds,
+            MemoryStore snapshotMemory,
+            out bool projected)
+        {
+            projected = false;
+            if (!residentId.IsValid || snapshotMemory == null ||
+                snapshotMemory.OwnerResidentId != residentId ||
+                !IsFiniteNonNegative(gameSeconds))
+            {
+                return ActionResult.Failure(
+                    ActionFailureReason.InvalidArgument,
+                    "Conversation save projection requires an owner-matched memory snapshot.");
+            }
+
+            ActiveConversationRecord ownedRecord = null;
+            foreach (ActiveConversationRecord record in activeSessions.Values)
+            {
+                if (!record.Session.IsParticipant(residentId))
+                {
+                    continue;
+                }
+
+                if (ownedRecord != null)
+                {
+                    return ActionResult.Failure(
+                        ActionFailureReason.InvalidState,
+                        $"Resident '{residentId}' belongs to more than one active conversation.");
+                }
+
+                ownedRecord = record;
+            }
+
+            if (ownedRecord == null || ownedRecord.Session.Utterances.Count == 0)
+            {
+                return ActionResult.Success("No played conversation fragment required projection.");
+            }
+
+            ActionResult result = outcomeApplier.ProjectPlayedTranscriptForResident(
+                ownedRecord.Session,
+                residentId,
+                gameSeconds,
+                snapshotMemory);
+            projected = result.Succeeded;
+            return result;
+        }
+
         public ActionResult TryStartConversation(
             ResidentId firstResidentId,
             ResidentId secondResidentId,
@@ -507,6 +555,25 @@ namespace AIFarm.Social
 
             EndAndRelease(record, ConversationState.Cancelled, reason);
             return ActionResult.Success("Conversation cancelled and resources released.");
+        }
+
+        public int CancelAllActiveConversations(
+            ConversationEndReason reason = ConversationEndReason.Cancelled)
+        {
+            if (reason == ConversationEndReason.None ||
+                reason == ConversationEndReason.SentenceLimitReached ||
+                reason == ConversationEndReason.TimedOut)
+            {
+                return 0;
+            }
+
+            var records = new List<ActiveConversationRecord>(activeSessions.Values);
+            foreach (ActiveConversationRecord record in records)
+            {
+                EndAndRelease(record, ConversationState.Cancelled, reason);
+            }
+
+            return records.Count;
         }
 
         public ActionResult TryGetSession(

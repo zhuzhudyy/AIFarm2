@@ -150,44 +150,16 @@ namespace AIFarm.Social
                 return validationFailure;
             }
 
-            string firstMemory = CreateMemoryText(
+            ActionResult firstStored = ProjectPlayedTranscriptForResident(
                 session,
-                firstDefinition,
-                secondDefinition,
-                includeOutcome: false);
-            string secondMemory = CreateMemoryText(
-                session,
-                secondDefinition,
-                firstDefinition,
-                includeOutcome: false);
-            ActionResult firstStored = firstRuntime.Memories.AddObservation(
                 session.FirstResidentId,
                 gameSeconds,
-                firstMemory,
-                6,
-                WorldEventKind.ConversationInterrupted,
-                MemorySourceKind.Conversation,
-                sourceEventId: session.ConversationId.Value,
-                rootFactId: null,
-                parentKnowledgeId: null,
-                immediateSourceResidentId: session.SecondResidentId,
-                tags: new[] { "conversation-fragment" },
-                isShareable: false,
-                out MemoryEntry _);
-            ActionResult secondStored = secondRuntime.Memories.AddObservation(
+                firstRuntime.Memories);
+            ActionResult secondStored = ProjectPlayedTranscriptForResident(
+                session,
                 session.SecondResidentId,
                 gameSeconds,
-                secondMemory,
-                6,
-                WorldEventKind.ConversationInterrupted,
-                MemorySourceKind.Conversation,
-                sourceEventId: session.ConversationId.Value,
-                rootFactId: null,
-                parentKnowledgeId: null,
-                immediateSourceResidentId: session.FirstResidentId,
-                tags: new[] { "conversation-fragment" },
-                isShareable: false,
-                out MemoryEntry _);
+                secondRuntime.Memories);
             ActionResult stored = firstStored.Failed ? firstStored : secondStored;
             if (stored.Succeeded)
             {
@@ -195,6 +167,60 @@ namespace AIFarm.Social
             }
 
             return stored;
+        }
+
+        internal ActionResult ProjectPlayedTranscriptForResident(
+            ConversationSession session,
+            ResidentId ownerResidentId,
+            double gameSeconds,
+            MemoryStore destination)
+        {
+            if (session == null || session.Utterances.Count == 0 ||
+                !session.IsParticipant(ownerResidentId) ||
+                destination == null ||
+                destination.OwnerResidentId != ownerResidentId ||
+                !IsFiniteNonNegative(gameSeconds))
+            {
+                return ActionResult.Failure(
+                    ActionFailureReason.InvalidArgument,
+                    "A save projection requires an owner-matched store and actual played lines.");
+            }
+
+            ActionResult firstDefinitionResult = residentRegistry.TryGetDefinition(
+                session.FirstResidentId,
+                out ResidentDefinition firstDefinition);
+            ActionResult secondDefinitionResult = residentRegistry.TryGetDefinition(
+                session.SecondResidentId,
+                out ResidentDefinition secondDefinition);
+            ActionResult validationFailure = FirstFailure(
+                firstDefinitionResult,
+                secondDefinitionResult);
+            if (validationFailure.Failed)
+            {
+                return validationFailure;
+            }
+
+            bool ownerIsFirst = ownerResidentId == session.FirstResidentId;
+            ResidentDefinition owner = ownerIsFirst
+                ? firstDefinition
+                : secondDefinition;
+            ResidentDefinition other = ownerIsFirst
+                ? secondDefinition
+                : firstDefinition;
+            return destination.AddObservation(
+                ownerResidentId,
+                gameSeconds,
+                CreateMemoryText(session, owner, other, includeOutcome: false),
+                6,
+                WorldEventKind.ConversationInterrupted,
+                MemorySourceKind.Conversation,
+                sourceEventId: session.ConversationId.Value,
+                rootFactId: null,
+                parentKnowledgeId: null,
+                immediateSourceResidentId: other.ResidentId,
+                tags: new[] { "conversation-fragment" },
+                isShareable: false,
+                out MemoryEntry _);
         }
 
         public static void GetDeltas(

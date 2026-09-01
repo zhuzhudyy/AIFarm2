@@ -101,6 +101,9 @@ class MockProvider:
     requires_api_key = False
     api_key_configured = False
 
+    _propose_town_event_intent = "propose_town_event"
+    _harvest_dinner_tags = frozenset({"harvest", "carrot"})
+
     def probe(self) -> ProviderProbeResult:
         return ProviderProbeResult(
             ok=True,
@@ -227,7 +230,32 @@ class MockProvider:
         self,
         request: ResidentDecisionRequest,
     ) -> ResidentDecisionSpec:
-        intent = request.allowed_intents[0]
+        can_propose_harvest_dinner = (
+            self._propose_town_event_intent in request.allowed_intents
+            and self._has_harvest_dinner_memory(request)
+        )
+        if can_propose_harvest_dinner:
+            intent = self._propose_town_event_intent
+            reason = (
+                "我从对话中得知了胡萝卜收获消息，可以提议全镇参加收获晚餐。"
+            )
+        else:
+            intent = next(
+                (
+                    candidate
+                    for candidate in request.allowed_intents
+                    if candidate != self._propose_town_event_intent
+                ),
+                None,
+            )
+            if intent is None:
+                raise ProviderInputError(
+                    "no_safe_intent",
+                    "propose_town_event requires a shareable carrot-harvest "
+                    "fact learned in conversation.",
+                )
+            reason = "本地规则从本次请求的允许集合中选择安全的高层意图。"
+
         target_required = intent in {
             "RequestConversation",
             "ContinueConversation",
@@ -241,9 +269,26 @@ class MockProvider:
                 if target_required and request.allowed_target_resident_ids
                 else None
             ),
-            reason="本地规则从本次请求的允许集合中选择安全的高层意图。",
+            reason=reason,
             provider="mock",
         )
+
+    @classmethod
+    def _has_harvest_dinner_memory(
+        cls,
+        request: ResidentDecisionRequest,
+    ) -> bool:
+        for memory in request.context.relevant_memories:
+            # The cross-gateway provenance contract permits an immediate source only
+            # for conversation-derived memory. Pydantic has already checked that the
+            # source ID is syntactically valid and differs from this memory's owner.
+            if (
+                memory.is_shareable
+                and memory.immediate_source_resident_id is not None
+                and cls._harvest_dinner_tags.issubset(memory.tags)
+            ):
+                return True
+        return False
 
     def generate_conversation_script(
         self,

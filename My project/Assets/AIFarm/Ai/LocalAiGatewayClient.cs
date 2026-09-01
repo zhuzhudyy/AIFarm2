@@ -161,6 +161,110 @@ namespace AIFarm.Ai
             yield break;
         }
 
+        public IEnumerator DecideResident(
+            ResidentDecisionRequest request,
+            Action<AiGatewayResult<ResidentDecisionSpec>> completed)
+        {
+            if (request == null)
+            {
+                throw new ArgumentNullException(nameof(request));
+            }
+
+            EnsureCallback(completed);
+            bool canProposeHarvestDinner =
+                request.IsAllowedIntent(ResidentHighLevelIntents.ProposeTownEvent) &&
+                HasHarvestDinnerConversationMemory(request);
+            string intent = canProposeHarvestDinner
+                ? ResidentHighLevelIntents.ProposeTownEvent
+                : FirstSafeNonProposalIntent(request.AllowedIntents);
+            if (intent == null)
+            {
+                completed(AiGatewayResult<ResidentDecisionSpec>.Failure(
+                    request.ResidentId,
+                    ActionResult.Failure(
+                        ActionFailureReason.InvalidArgument,
+                        "propose_town_event requires a shareable carrot-harvest fact learned from another resident."),
+                    AiGatewayMode.Local));
+                yield break;
+            }
+
+            ResidentId? targetResidentId = RequiresTargetResident(intent) &&
+                request.AllowedTargetResidentIds.Count > 0
+                    ? (ResidentId?)request.AllowedTargetResidentIds[0]
+                    : null;
+            var decision = new ResidentDecisionSpec(
+                request.ResidentId,
+                intent,
+                targetResidentId,
+                canProposeHarvestDinner
+                    ? "我从对话中得知了胡萝卜收获消息，可以提议全镇参加收获晚餐。"
+                    : "本地规则从本次请求的允许集合中选择安全的高层意图。",
+                "mock");
+            completed(AiGatewayResult<ResidentDecisionSpec>.Success(
+                request.ResidentId,
+                decision,
+                AiGatewayMode.Local,
+                "Deterministic local resident decision selected."));
+            yield break;
+        }
+
+        private static string FirstSafeNonProposalIntent(
+            IReadOnlyList<string> allowedIntents)
+        {
+            foreach (string intent in allowedIntents)
+            {
+                if (!string.Equals(
+                        intent,
+                        ResidentHighLevelIntents.ProposeTownEvent,
+                        StringComparison.Ordinal))
+                {
+                    return intent;
+                }
+            }
+
+            return null;
+        }
+
+        private static bool HasHarvestDinnerConversationMemory(
+            ResidentDecisionRequest request)
+        {
+            foreach (ResidentMemorySnapshot memory in request.Context.RelevantMemories)
+            {
+                if (memory.OwnerResidentId == request.ResidentId &&
+                    memory.IsShareable &&
+                    memory.ImmediateSourceResidentId.HasValue &&
+                    memory.ImmediateSourceResidentId.Value.IsValid &&
+                    memory.ImmediateSourceResidentId.Value != request.ResidentId &&
+                    ContainsTag(memory.Tags, "harvest") &&
+                    ContainsTag(memory.Tags, "carrot"))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static bool ContainsTag(IReadOnlyList<string> tags, string expected)
+        {
+            foreach (string tag in tags)
+            {
+                if (string.Equals(tag, expected, StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static bool RequiresTargetResident(string intent)
+        {
+            return string.Equals(intent, "RequestConversation", StringComparison.Ordinal) ||
+                string.Equals(intent, "ContinueConversation", StringComparison.Ordinal) ||
+                string.Equals(intent, "ShareKnownFact", StringComparison.Ordinal);
+        }
+
         private static NpcExpressionTrigger SelectReflectionTrigger(
             NpcReflectionOutcome outcome)
         {

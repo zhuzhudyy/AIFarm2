@@ -102,6 +102,43 @@ namespace AIFarm.Tests.EditMode
         }
 
         [Test]
+        public void ReservationService_AuthoritativeResetInvalidatesOrphanAnchorAndOldToken()
+        {
+            var service = new InteractionPointReservationService();
+            var missingParticipant = new ResidentId("resident-missing-participant");
+            var replacementResident = new ResidentId("resident-anchor-replacement");
+
+            Assert.That(
+                service.TryReserve(
+                    missingParticipant,
+                    "conversation-anchor-01:a",
+                    nowSeconds: 0d,
+                    leaseSeconds: 30d,
+                    out InteractionPointReservation staleReservation).Succeeded,
+                Is.True);
+
+            Assert.That(service.InvalidateAll(), Is.EqualTo(1));
+            Assert.That(service.ReservationCount, Is.Zero);
+            Assert.That(
+                service.TryReserve(
+                    replacementResident,
+                    "conversation-anchor-01:a",
+                    nowSeconds: 1d,
+                    leaseSeconds: 30d,
+                    out InteractionPointReservation replacementReservation).Succeeded,
+                Is.True);
+            Assert.That(replacementReservation.Revision, Is.GreaterThan(staleReservation.Revision));
+            Assert.That(service.Release(staleReservation).Failed, Is.True);
+            Assert.That(
+                service.TryGetOwner(
+                    "conversation-anchor-01:a",
+                    nowSeconds: 1d,
+                    out ResidentId owner),
+                Is.True);
+            Assert.That(owner, Is.EqualTo(replacementResident));
+        }
+
+        [Test]
         public void ResidentRuntime_EntersNewTargetWhenScheduleSlotChanges()
         {
             var residentId = new ResidentId("resident-switch-test");
@@ -189,6 +226,61 @@ namespace AIFarm.Tests.EditMode
                 "work-point-01",
                 "work-point-02"
             }));
+        }
+
+        [Test]
+        public void ResidentRuntime_AuthoritativeResetCancelsMoveAndNextTickReplans()
+        {
+            var residentId = new ResidentId("resident-load-reset-test");
+            var workshop = new TownLocationId("location-reset-workshop");
+            TownScheduler scheduler = CreateScheduler(
+                residentId,
+                new DailyScheduleEntry(
+                    "00:00",
+                    "24:00",
+                    workshop,
+                    ResidentActivityKind.Work));
+            TownLocationPointDirectory points = CreatePointDirectory(
+                new TownInteractionPointDefinition("reset-work-point-01", workshop));
+            var reservations = new InteractionPointReservationService();
+            var navigator = new FakeLocationNavigator
+            {
+                UnreachablePointId = "reset-work-point-01"
+            };
+            var runtime = new ResidentScheduleRuntime(
+                residentId,
+                scheduler,
+                reservations,
+                points,
+                navigator,
+                arrivalTimeoutSeconds: 2f,
+                retryDelaySeconds: 0.1f,
+                reservationLeaseSeconds: 4d);
+
+            Assert.That(runtime.Tick(9 * 60, 0d, 0.1f).Succeeded, Is.True);
+            Assert.That(runtime.State, Is.EqualTo(ResidentScheduleState.Moving));
+            Assert.That(navigator.IsMoving, Is.True);
+            Assert.That(reservations.ReservationCount, Is.EqualTo(1));
+
+            ActionResult reset = runtime.ResetForAuthoritativeStateChange();
+
+            Assert.That(reset.Succeeded, Is.True, reset.Message);
+            Assert.That(runtime.State, Is.EqualTo(ResidentScheduleState.WaitingForSchedule));
+            Assert.That(runtime.ActiveEntry, Is.Null);
+            Assert.That(runtime.ActiveInteractionPointId, Is.Empty);
+            Assert.That(navigator.IsMoving, Is.False);
+            Assert.That(reservations.ReservationCount, Is.Zero);
+
+            navigator.UnreachablePointId = null;
+            ActionResult replanned = runtime.Tick(9 * 60, 1d, 0.1f);
+
+            Assert.That(replanned.Succeeded, Is.True, replanned.Message);
+            Assert.That(runtime.State, Is.EqualTo(ResidentScheduleState.Working));
+            Assert.That(runtime.CurrentLocationId, Is.EqualTo(workshop));
+            Assert.That(runtime.ActiveInteractionPointId, Is.EqualTo("reset-work-point-01"));
+            Assert.That(
+                navigator.BeginMoveHistory,
+                Is.EqualTo(new[] { "reset-work-point-01", "reset-work-point-01" }));
         }
 
         private static TownScheduler CreateScheduler(

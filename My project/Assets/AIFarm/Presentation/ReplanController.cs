@@ -41,6 +41,8 @@ namespace AIFarm.Presentation
         private DemoMode demoMode;
         private bool gatewayRequestPending;
         private bool reflectionRequestPending;
+        private long asyncRequestGeneration;
+        private GameBootstrap subscribedBootstrap;
         private int activeCycleNumber;
         private string fallbackExpressionText = "等待你的种田目标。";
 
@@ -124,6 +126,11 @@ namespace AIFarm.Presentation
 
             bootstrap = gameBootstrap;
             executor = planExecutor;
+            if (IsInitialized)
+            {
+                SubscribeToAuthoritativeStateReset();
+            }
+
             return ActionResult.Success("ReplanController scene references configured.");
         }
 
@@ -254,6 +261,7 @@ namespace AIFarm.Presentation
             executor.ActionCompleted += HandleActionCompleted;
             executor.ActionFailed += HandleActionFailed;
             IsInitialized = true;
+            SubscribeToAuthoritativeStateReset();
             return ActionResult.Success($"{ConfiguredAiMode} AI replanning initialized.");
         }
 
@@ -302,10 +310,7 @@ namespace AIFarm.Presentation
                 }
             }
 
-            StopAllCoroutines();
-            gatewayRequestPending = false;
-            reflectionRequestPending = false;
-            pendingExpressionTriggers.Clear();
+            InvalidateAsyncRequests();
             ActionResult goalRestore = savedGoal == null
                 ? savedRuntimeState.ClearCurrentGoal()
                 : savedRuntimeState.SetCurrentGoal(savedGoal);
@@ -374,10 +379,7 @@ namespace AIFarm.Presentation
                     "ReplanController must be initialized before starting a new demo.");
             }
 
-            StopAllCoroutines();
-            gatewayRequestPending = false;
-            reflectionRequestPending = false;
-            pendingExpressionTriggers.Clear();
+            InvalidateAsyncRequests();
             harvestedPlotNumbers.Clear();
             activeCycleNumber = 0;
             var resetRuntimeState = new ResidentRuntimeState(runtimeState.Definition);
@@ -419,11 +421,14 @@ namespace AIFarm.Presentation
             TownResidentScheduleController scheduleController = executor == null
                 ? null
                 : executor.GetComponent<TownResidentScheduleController>();
-            if (scheduleController != null && scheduleController.IsConversationSuspended)
+            if (scheduleController != null &&
+                (scheduleController.IsConversationSuspended ||
+                    scheduleController.IsTownEventSuspended))
             {
                 return ActionResult.Failure(
                     ActionFailureReason.InvalidState,
-                    "The resident is finishing a conversation; submit the player instruction afterward.");
+                    "The resident is finishing a conversation or HarvestDinner; " +
+                    "submit the player instruction afterward.");
             }
 
             if (gatewayRequestPending || reflectionRequestPending || IsGoalActive || executor.IsBusy)
@@ -439,7 +444,10 @@ namespace AIFarm.Presentation
                 gatewayRequestPending = true;
                 CurrentGoalText = "Contacting Remote AI…";
                 CurrentDecisionReason = "正在请求远程 AI 网关解释命令。";
-                StartCoroutine(RequestGoalInterpretation(command));
+                StartCoroutine(RequestGoalInterpretation(
+                    command,
+                    asyncRequestGeneration,
+                    CaptureAuthoritativeStateRevision()));
                 return ActionResult.Success("Remote AI interpretation requested.");
             }
 
@@ -473,6 +481,17 @@ namespace AIFarm.Presentation
             if (!IsGoalActive)
             {
                 return ActionResult.Success("No farm goal requires replanning.");
+            }
+
+            TownResidentScheduleController scheduleController = executor == null
+                ? null
+                : executor.GetComponent<TownResidentScheduleController>();
+            if (scheduleController != null &&
+                (scheduleController.IsConversationSuspended ||
+                    scheduleController.IsTownEventSuspended))
+            {
+                return ActionResult.Success(
+                    "Farm replanning is paused while the resident is in a conversation or HarvestDinner.");
             }
 
             if (executor.Status == NpcExecutionStatus.Failed)
@@ -515,6 +534,8 @@ namespace AIFarm.Presentation
                         activeCycleNumber,
                         interrupt: true);
                 }
+
+                runtimeState.ClearCurrentGoal();
                 return ActionResult.Success("端到端种田目标已完成。");
             }
 
@@ -555,6 +576,7 @@ namespace AIFarm.Presentation
 
         private void OnDestroy()
         {
+            UnsubscribeFromAuthoritativeStateReset();
             if (executor != null)
             {
                 executor.ActionStarted -= HandleActionStarted;
@@ -568,13 +590,85 @@ namespace AIFarm.Presentation
             }
         }
 
-        private IEnumerator RequestGoalInterpretation(string command)
+        private void SubscribeToAuthoritativeStateReset()
+        {
+            if (subscribedBootstrap == bootstrap)
+            {
+                return;
+            }
+
+            UnsubscribeFromAuthoritativeStateReset();
+            if (bootstrap != null)
+            {
+                bootstrap.AuthoritativeStateResetting +=
+                    HandleAuthoritativeStateResetting;
+                subscribedBootstrap = bootstrap;
+            }
+        }
+
+        private void UnsubscribeFromAuthoritativeStateReset()
+        {
+            if (subscribedBootstrap == null)
+            {
+                return;
+            }
+
+            subscribedBootstrap.AuthoritativeStateResetting -=
+                HandleAuthoritativeStateResetting;
+            subscribedBootstrap = null;
+        }
+
+        private void HandleAuthoritativeStateResetting()
+        {
+            // GameBootstrap cancels and releases coordinator tickets before invoking
+            // reset listeners. Stopping the owning coroutines here therefore cannot
+            // strand a shared slot, and no stale parent continuation can touch the
+            // state that the loader is about to install.
+            InvalidateAsyncRequests();
+        }
+
+        private void InvalidateAsyncRequests()
+        {
+            asyncRequestGeneration = asyncRequestGeneration == long.MaxValue
+                ? 1L
+                : asyncRequestGeneration + 1L;
+            StopAllCoroutines();
+            gatewayRequestPending = false;
+            reflectionRequestPending = false;
+            pendingExpressionTriggers.Clear();
+        }
+
+        private long CaptureAuthoritativeStateRevision()
+        {
+            return bootstrap == null ? 0L : bootstrap.AuthoritativeStateRevision;
+        }
+
+        private bool IsCurrentAsyncRequest(
+            long requestGeneration,
+            long authoritativeStateRevision)
+        {
+            return requestGeneration == asyncRequestGeneration &&
+                (bootstrap == null ||
+                    authoritativeStateRevision == bootstrap.AuthoritativeStateRevision);
+        }
+
+        private IEnumerator RequestGoalInterpretation(
+            string command,
+            long requestGeneration,
+            long authoritativeStateRevision)
         {
             AiGatewayResult<FarmGoalSpec> gatewayResult = null;
             yield return aiGatewayClient.InterpretCommand(
                 ResidentId,
                 command,
                 result => gatewayResult = result);
+            if (!IsCurrentAsyncRequest(
+                    requestGeneration,
+                    authoritativeStateRevision))
+            {
+                yield break;
+            }
+
             gatewayRequestPending = false;
             CompleteGoalInterpretation(gatewayResult);
         }
@@ -606,6 +700,25 @@ namespace AIFarm.Presentation
                 LastFailureReason = mismatch.Message;
                 Status = ReplanStatus.Idle;
                 return mismatch;
+            }
+
+            TownResidentScheduleController scheduleController = executor == null
+                ? null
+                : executor.GetComponent<TownResidentScheduleController>();
+            if (scheduleController != null &&
+                (scheduleController.IsConversationSuspended ||
+                    scheduleController.IsTownEventSuspended))
+            {
+                ActionResult stale = ActionResult.Failure(
+                    ActionFailureReason.InvalidState,
+                    "AI interpretation became stale because the resident entered a " +
+                    "conversation or HarvestDinner before it returned.");
+                LastGatewaySubmissionResult = stale;
+                CurrentGoalText = "Rejected";
+                CurrentDecisionReason = stale.Message;
+                LastFailureReason = stale.Message;
+                Status = ReplanStatus.Idle;
+                return stale;
             }
 
             LastGatewaySubmissionResult = gatewayResult.Outcome;
@@ -709,6 +822,7 @@ namespace AIFarm.Presentation
                 NpcExpressionTrigger.ActionFailed,
                 LastFailureReason,
                 interrupt: true);
+            runtimeState?.ClearCurrentGoal();
             return ActionResult.Failure(failureReason, LastFailureReason);
         }
 
@@ -745,7 +859,13 @@ namespace AIFarm.Presentation
                     $"Expression trigger {trigger} already has a pending AI request.");
             }
 
-            StartCoroutine(RequestExpression(trigger, context, generationContext, interrupt));
+            StartCoroutine(RequestExpression(
+                trigger,
+                context,
+                generationContext,
+                interrupt,
+                asyncRequestGeneration,
+                CaptureAuthoritativeStateRevision()));
             return ActionResult.Success("Remote NPC utterance requested.");
         }
 
@@ -759,6 +879,7 @@ namespace AIFarm.Presentation
             if (CurrentAiMode == AiGatewayMode.Local)
             {
                 return CreateAndApplyLocalReflection(
+                    ActiveGoal,
                     outcome,
                     eventSummary,
                     trigger,
@@ -780,7 +901,9 @@ namespace AIFarm.Presentation
                 eventSummary,
                 trigger,
                 cycleNumber,
-                interrupt));
+                interrupt,
+                asyncRequestGeneration,
+                CaptureAuthoritativeStateRevision()));
             return ActionResult.Success("Remote NPC reflection requested.");
         }
 
@@ -788,7 +911,9 @@ namespace AIFarm.Presentation
             NpcExpressionTrigger trigger,
             string localContext,
             string generationContext,
-            bool interrupt)
+            bool interrupt,
+            long requestGeneration,
+            long authoritativeStateRevision)
         {
             AiGatewayResult<NpcExpression> result = null;
             yield return aiGatewayClient.GenerateUtterance(
@@ -796,6 +921,13 @@ namespace AIFarm.Presentation
                 trigger,
                 generationContext,
                 gatewayResult => result = gatewayResult);
+            if (!IsCurrentAsyncRequest(
+                    requestGeneration,
+                    authoritativeStateRevision))
+            {
+                yield break;
+            }
+
             pendingExpressionTriggers.Remove(trigger);
 
             if (result != null && result.ResidentId == ResidentId &&
@@ -818,7 +950,9 @@ namespace AIFarm.Presentation
             string eventSummary,
             NpcExpressionTrigger trigger,
             int cycleNumber,
-            bool interrupt)
+            bool interrupt,
+            long requestGeneration,
+            long authoritativeStateRevision)
         {
             AiGatewayResult<NpcReflection> result = null;
             yield return aiGatewayClient.Reflect(
@@ -827,6 +961,13 @@ namespace AIFarm.Presentation
                 outcome,
                 eventSummary,
                 gatewayResult => result = gatewayResult);
+            if (!IsCurrentAsyncRequest(
+                    requestGeneration,
+                    authoritativeStateRevision))
+            {
+                yield break;
+            }
+
             pendingExpressionTriggers.Remove(trigger);
             reflectionRequestPending = false;
 
@@ -838,6 +979,7 @@ namespace AIFarm.Presentation
             }
 
             CreateAndApplyLocalReflection(
+                goal,
                 outcome,
                 eventSummary,
                 trigger,
@@ -846,6 +988,7 @@ namespace AIFarm.Presentation
         }
 
         private ActionResult CreateAndApplyLocalReflection(
+            FarmGoalSpec goal,
             NpcReflectionOutcome outcome,
             string eventSummary,
             NpcExpressionTrigger trigger,
@@ -853,7 +996,7 @@ namespace AIFarm.Presentation
             bool interrupt)
         {
             ActionResult created = reflectionService.CreateLocalReflection(
-                ActiveGoal,
+                goal,
                 outcome,
                 eventSummary,
                 out NpcReflection reflection);

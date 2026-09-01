@@ -52,13 +52,26 @@ namespace AIFarm.Ai
 
             public bool IsActive { get; set; }
 
-            public bool IsCancelled => Cancellation != null &&
-                Cancellation.IsCancellationRequested;
+            public IEnumerator ActiveRoutine { get; set; }
+
+            public bool ActiveRoutineUsesSharedClient { get; set; }
+
+            public bool IsInvalidated { get; private set; }
+
+            public bool IsCancelled => IsInvalidated ||
+                (Cancellation != null && Cancellation.IsCancellationRequested);
+
+            public void Invalidate()
+            {
+                IsInvalidated = true;
+            }
         }
 
         private readonly IAiGatewayClient sharedClient;
         private readonly IAiGatewayClient localFallback;
         private readonly List<RequestTicket> pending = new List<RequestTicket>();
+        private readonly HashSet<RequestTicket> activeTickets =
+            new HashSet<RequestTicket>();
         private readonly HashSet<ResidentId> activeResidents = new HashSet<ResidentId>();
         private long nextSequence;
         private int activeRequestCount;
@@ -125,6 +138,48 @@ namespace AIFarm.Ai
         {
             isShutdown = true;
             activeMode = AiGatewayMode.Local;
+            foreach (RequestTicket ticket in activeTickets)
+            {
+                if (ticket.ActiveRoutineUsesSharedClient)
+                {
+                    DisposeActiveRoutine(ticket);
+                }
+            }
+        }
+
+        public int CancelAllForAuthoritativeReset()
+        {
+            var cancelledTickets = new HashSet<RequestTicket>();
+            foreach (RequestTicket ticket in pending)
+            {
+                cancelledTickets.Add(ticket);
+            }
+
+            foreach (RequestTicket ticket in activeTickets)
+            {
+                cancelledTickets.Add(ticket);
+            }
+
+            foreach (RequestTicket ticket in cancelledTickets)
+            {
+                ticket.Invalidate();
+            }
+
+            pending.Clear();
+            var activeSnapshot = new List<RequestTicket>(activeTickets);
+            foreach (RequestTicket ticket in activeSnapshot)
+            {
+                DisposeActiveRoutine(ticket);
+                Release(ticket);
+            }
+
+            // Release is deliberately idempotent, but clear these collections as a
+            // final invariant guard so a reset can never strand a slot or owner.
+            activeTickets.Clear();
+            activeResidents.Clear();
+            activeRequestCount = 0;
+            activeMode = isShutdown ? AiGatewayMode.Local : sharedClient.ActiveMode;
+            return cancelledTickets.Count;
         }
 
         public IEnumerator InterpretCommand(
@@ -240,6 +295,36 @@ namespace AIFarm.Ai
                 completed);
         }
 
+        public IEnumerator DecideResident(
+            ResidentDecisionRequest request,
+            Action<AiGatewayResult<ResidentDecisionSpec>> completed)
+        {
+            return DecideResident(
+                request,
+                AiRequestPriority.Normal,
+                cancellation: null,
+                completed);
+        }
+
+        public IEnumerator DecideResident(
+            ResidentDecisionRequest request,
+            AiRequestPriority priority,
+            AiRequestCancellation cancellation,
+            Action<AiGatewayResult<ResidentDecisionSpec>> completed)
+        {
+            if (request == null)
+            {
+                throw new ArgumentNullException(nameof(request));
+            }
+
+            return Coordinate(
+                new[] { request.ResidentId },
+                priority,
+                cancellation,
+                (client, callback) => client.DecideResident(request, callback),
+                completed);
+        }
+
         private IEnumerator Coordinate<T>(
             IEnumerable<ResidentId> ownerResidentIds,
             AiRequestPriority priority,
@@ -293,89 +378,53 @@ namespace AIFarm.Ai
                 cancellation);
             pending.Add(ticket);
 
-            // The first yield ensures a transport is never launched from an Update() call
-            // that happened to enqueue this request. It also lets same-frame priorities settle.
-            yield return null;
-
-            while (!ticket.IsCancelled && !CanStart(ticket))
-            {
-                yield return null;
-            }
-
-            if (ticket.IsCancelled)
-            {
-                pending.Remove(ticket);
-                yield break;
-            }
-
-            Activate(ticket);
-            IAiGatewayClient selectedClient = isShutdown ? localFallback : sharedClient;
-            AiGatewayResult<T> result = null;
-            Exception operationException = null;
-            IEnumerator routine = null;
             try
             {
-                routine = operation(selectedClient, value => result = value);
-            }
-            catch (Exception exception)
-            {
-                operationException = exception;
-            }
+                // The first yield ensures a transport is never launched from an Update() call
+                // that happened to enqueue this request. It also lets same-frame priorities settle.
+                yield return null;
 
-            if (operationException == null && routine != null)
-            {
-                while (true)
+                while (!ticket.IsCancelled && !CanStart(ticket))
                 {
-                    bool moved = false;
-                    object current = null;
-                    try
-                    {
-                        moved = routine.MoveNext();
-                        if (moved)
-                        {
-                            current = routine.Current;
-                        }
-                    }
-                    catch (Exception exception)
-                    {
-                        operationException = exception;
-                    }
-
-                    if (operationException != null || !moved)
-                    {
-                        break;
-                    }
-
-                    yield return current;
+                    yield return null;
                 }
-            }
 
-            if (isShutdown && selectedClient != localFallback && !ticket.IsCancelled)
-            {
-                result = null;
-                operationException = null;
-                IEnumerator fallbackRoutine = null;
+                if (ticket.IsCancelled)
+                {
+                    pending.Remove(ticket);
+                    yield break;
+                }
+
+                Activate(ticket);
+                IAiGatewayClient selectedClient = isShutdown ? localFallback : sharedClient;
+                AiGatewayResult<T> result = null;
+                Exception operationException = null;
                 try
                 {
-                    fallbackRoutine = operation(localFallback, value => result = value);
+                    ticket.ActiveRoutine = operation(
+                        selectedClient,
+                        value => result = value);
+                    ticket.ActiveRoutineUsesSharedClient = selectedClient != localFallback;
                 }
                 catch (Exception exception)
                 {
                     operationException = exception;
                 }
 
-                if (operationException == null && fallbackRoutine != null)
+                if (operationException == null && ticket.ActiveRoutine != null)
                 {
-                    while (true)
+                    while (!ticket.IsCancelled &&
+                        !(isShutdown && ticket.ActiveRoutineUsesSharedClient) &&
+                        ticket.ActiveRoutine != null)
                     {
                         bool moved = false;
                         object current = null;
                         try
                         {
-                            moved = fallbackRoutine.MoveNext();
+                            moved = ticket.ActiveRoutine.MoveNext();
                             if (moved)
                             {
-                                current = fallbackRoutine.Current;
+                                current = ticket.ActiveRoutine.Current;
                             }
                         }
                         catch (Exception exception)
@@ -391,36 +440,91 @@ namespace AIFarm.Ai
                         yield return current;
                     }
                 }
-            }
 
-            Release(ticket);
-            if (ticket.IsCancelled)
-            {
-                yield break;
-            }
+                DisposeActiveRoutine(ticket);
 
-            ResidentId resultOwner = ticket.OwnerResidentIds[0];
-            if (operationException != null)
-            {
-                result = AiGatewayResult<T>.Failure(
-                    resultOwner,
-                    ActionResult.Failure(
-                        ActionFailureReason.ServiceUnavailable,
-                        $"AI request failed safely: {operationException.Message}"),
-                    AiGatewayMode.Local);
-            }
-            else if (result == null)
-            {
-                result = AiGatewayResult<T>.Failure(
-                    resultOwner,
-                    ActionResult.Failure(
-                        ActionFailureReason.ServiceUnavailable,
-                        "AI request completed without a result."),
-                    AiGatewayMode.Local);
-            }
+                if (isShutdown && selectedClient != localFallback && !ticket.IsCancelled)
+                {
+                    result = null;
+                    operationException = null;
+                    try
+                    {
+                        ticket.ActiveRoutine = operation(
+                            localFallback,
+                            value => result = value);
+                        ticket.ActiveRoutineUsesSharedClient = false;
+                    }
+                    catch (Exception exception)
+                    {
+                        operationException = exception;
+                    }
 
-            activeMode = result.Source;
-            completed(result);
+                    if (operationException == null && ticket.ActiveRoutine != null)
+                    {
+                        while (!ticket.IsCancelled && ticket.ActiveRoutine != null)
+                        {
+                            bool moved = false;
+                            object current = null;
+                            try
+                            {
+                                moved = ticket.ActiveRoutine.MoveNext();
+                                if (moved)
+                                {
+                                    current = ticket.ActiveRoutine.Current;
+                                }
+                            }
+                            catch (Exception exception)
+                            {
+                                operationException = exception;
+                            }
+
+                            if (operationException != null || !moved)
+                            {
+                                break;
+                            }
+
+                            yield return current;
+                        }
+                    }
+
+                    DisposeActiveRoutine(ticket);
+                }
+
+                if (ticket.IsCancelled)
+                {
+                    yield break;
+                }
+
+                ResidentId resultOwner = ticket.OwnerResidentIds[0];
+                if (operationException != null)
+                {
+                    result = AiGatewayResult<T>.Failure(
+                        resultOwner,
+                        ActionResult.Failure(
+                            ActionFailureReason.ServiceUnavailable,
+                            $"AI request failed safely: {operationException.Message}"),
+                        AiGatewayMode.Local);
+                }
+                else if (result == null)
+                {
+                    result = AiGatewayResult<T>.Failure(
+                        resultOwner,
+                        ActionResult.Failure(
+                            ActionFailureReason.ServiceUnavailable,
+                            "AI request completed without a result."),
+                        AiGatewayMode.Local);
+                }
+
+                activeMode = result.Source;
+                completed(result);
+            }
+            finally
+            {
+                // Iterator disposal (including an owning scene coroutine being stopped)
+                // must never leak a global slot or a resident ownership lock.
+                DisposeActiveRoutine(ticket);
+                Release(ticket);
+            }
         }
 
         private bool CanStart(RequestTicket candidate)
@@ -467,6 +571,7 @@ namespace AIFarm.Ai
         {
             pending.Remove(ticket);
             ticket.IsActive = true;
+            activeTickets.Add(ticket);
             activeRequestCount++;
             foreach (ResidentId residentId in ticket.OwnerResidentIds)
             {
@@ -483,10 +588,32 @@ namespace AIFarm.Ai
             }
 
             ticket.IsActive = false;
+            activeTickets.Remove(ticket);
             activeRequestCount = Math.Max(0, activeRequestCount - 1);
             foreach (ResidentId residentId in ticket.OwnerResidentIds)
             {
                 activeResidents.Remove(residentId);
+            }
+        }
+
+        private static void DisposeActiveRoutine(RequestTicket ticket)
+        {
+            if (ticket?.ActiveRoutine is IDisposable disposable)
+            {
+                try
+                {
+                    disposable.Dispose();
+                }
+                catch (Exception)
+                {
+                    // Cleanup must not prevent fallback or leak coordinator ownership.
+                }
+            }
+
+            if (ticket != null)
+            {
+                ticket.ActiveRoutine = null;
+                ticket.ActiveRoutineUsesSharedClient = false;
             }
         }
     }

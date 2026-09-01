@@ -251,6 +251,14 @@ namespace AIFarm.Editor
                 coordinator,
                 residentControllers,
                 conversationAnchors));
+            TownEventSceneCoordinator eventCoordinator =
+                bootstrap.gameObject.AddComponent<TownEventSceneCoordinator>();
+            EnsureSucceeded(eventCoordinator.Configure(
+                bootstrap,
+                coordinator,
+                socialCoordinator,
+                residentControllers,
+                GetHarvestDinnerAttendancePoints(arrivalPoints)));
             CreateUi(bootstrap, executor, replanController, executor.transform);
             NavMeshSurface navMeshSurface = CreateNavigation();
             navMeshSurface.BuildNavMesh();
@@ -262,6 +270,31 @@ namespace AIFarm.Editor
 
             AssetDatabase.SaveAssets();
             return true;
+        }
+
+        private static LocationArrivalPoint[] GetHarvestDinnerAttendancePoints(
+            LocationArrivalPoint[] arrivalPoints)
+        {
+            var points = new List<LocationArrivalPoint>();
+            foreach (LocationArrivalPoint point in arrivalPoints)
+            {
+                if (point != null && point.LocationId.Value == "location-plaza" &&
+                    point.InteractionPointId.StartsWith("location-plaza-point-"))
+                {
+                    points.Add(point);
+                }
+            }
+
+            points.Sort((left, right) => string.CompareOrdinal(
+                left.InteractionPointId,
+                right.InteractionPointId));
+            if (points.Count != ResidentSpecs.Length)
+            {
+                throw new System.InvalidOperationException(
+                    "HarvestDinner requires exactly four ordinary plaza arrival points.");
+            }
+
+            return points.ToArray();
         }
 
         private static DemoInventoryConfig GetOrCreateInventoryConfig()
@@ -351,6 +384,15 @@ namespace AIFarm.Editor
                     AssetDatabase.CreateAsset(asset, path);
                 }
 
+                bool isHarvestStoryPair =
+                    spec.Definition.ResidentId == ResidentIds.Yaya ||
+                    spec.Definition.ResidentId == ResidentIds.Xiaosui;
+                string lateAfternoonLocationId = isHarvestStoryPair
+                    ? "location-plaza"
+                    : spec.AfternoonLocationId;
+                ResidentActivityKind lateAfternoonActivity = isHarvestStoryPair
+                    ? ResidentActivityKind.Gather
+                    : ResidentActivityKind.Work;
                 var slots = new[]
                 {
                     CreateScheduleSlot("00:00", "07:00", spec.HomeLocationId, ResidentActivityKind.Home, locations),
@@ -358,7 +400,12 @@ namespace AIFarm.Editor
                     CreateScheduleSlot("08:00", "12:00", spec.MorningLocationId, ResidentActivityKind.Work, locations),
                     CreateScheduleSlot("12:00", "13:00", "location-cafeteria", ResidentActivityKind.Meal, locations),
                     CreateScheduleSlot("13:00", "17:00", spec.AfternoonLocationId, ResidentActivityKind.Work, locations),
-                    CreateScheduleSlot("17:00", "18:00", "location-plaza", ResidentActivityKind.Gather, locations),
+                    CreateScheduleSlot(
+                        "17:00",
+                        "18:00",
+                        lateAfternoonLocationId,
+                        lateAfternoonActivity,
+                        locations),
                     CreateScheduleSlot("18:00", "19:00", "location-well", ResidentActivityKind.FetchWater, locations),
                     CreateScheduleSlot("19:00", "24:00", spec.HomeLocationId, ResidentActivityKind.Home, locations)
                 };
@@ -1294,6 +1341,12 @@ namespace AIFarm.Editor
                 out _);
             SetControlRect(apiSettingsButton.GetComponent<RectTransform>(), 400f, 128f);
 
+            LocalAiGatewayProcess gatewayProcess =
+                bootstrap.gameObject.GetComponent<LocalAiGatewayProcess>() ??
+                bootstrap.gameObject.AddComponent<LocalAiGatewayProcess>();
+            EnsureSucceeded(gatewayProcess.Configure(
+                bootstrap.SceneConfig.AiGatewayBaseUrl));
+
             GameObject backpackPanel = CreatePanel(
                 "BackpackPanel",
                 canvasObject.transform,
@@ -1567,6 +1620,150 @@ namespace AIFarm.Editor
                 new Vector2(236f, 12f),
                 new Vector2(112f, 42f));
 
+            GameObject apiSetupPanel = CreatePanel(
+                "ApiGatewaySetupPanel",
+                canvasObject.transform,
+                new Color(0.025f, 0.045f, 0.04f, 0.98f));
+            SetRect(
+                apiSetupPanel.GetComponent<RectTransform>(),
+                new Vector2(0.5f, 0.5f),
+                new Vector2(0.5f, 0.5f),
+                new Vector2(0.5f, 0.5f),
+                Vector2.zero,
+                new Vector2(720f, 450f));
+
+            Text apiSetupTitle = CreateText(
+                "TitleText",
+                apiSetupPanel.transform,
+                "CONNECT SHARED AI GATEWAY",
+                font,
+                25,
+                FontStyle.Bold);
+            SetTopRow(apiSetupTitle.rectTransform, -16f, 38f);
+
+            Text apiSetupHelp = CreateText(
+                "HelpText",
+                apiSetupPanel.transform,
+                "输入一次 API Key 与模型后，游戏会自动启动本机网关。" +
+                "Key 不进入命令行、场景、存档或 PlayerPrefs。",
+                font,
+                16,
+                FontStyle.Normal);
+            SetTopRow(apiSetupHelp.rectTransform, -58f, 54f);
+            apiSetupHelp.alignment = TextAnchor.UpperLeft;
+
+            Text apiKeyLabel = CreateText(
+                "ApiKeyLabel",
+                apiSetupPanel.transform,
+                "DEEPSEEK API KEY",
+                font,
+                17,
+                FontStyle.Bold);
+            SetTopRow(apiKeyLabel.rectTransform, -120f, 26f);
+            InputField apiKeyInput = CreateInputField(
+                "ApiKeyInput",
+                apiSetupPanel.transform,
+                font,
+                "输入 API Key（提交后立即清空）",
+                string.Empty);
+            SetRect(
+                apiKeyInput.GetComponent<RectTransform>(),
+                new Vector2(0f, 1f),
+                new Vector2(1f, 1f),
+                new Vector2(0.5f, 1f),
+                new Vector2(0f, -152f),
+                new Vector2(-48f, 50f));
+            apiKeyInput.contentType = InputField.ContentType.Password;
+            apiKeyInput.characterLimit = LocalAiGatewayLaunchSpec.MaximumApiKeyLength;
+
+            Text modelLabel = CreateText(
+                "ModelLabel",
+                apiSetupPanel.transform,
+                "MODEL ID",
+                font,
+                17,
+                FontStyle.Bold);
+            SetTopRow(modelLabel.rectTransform, -216f, 26f);
+            InputField modelInput = CreateInputField(
+                "ModelInput",
+                apiSetupPanel.transform,
+                font,
+                LocalAiGatewayProcess.DefaultModelId,
+                LocalAiGatewayProcess.DefaultModelId);
+            SetRect(
+                modelInput.GetComponent<RectTransform>(),
+                new Vector2(0f, 1f),
+                new Vector2(1f, 1f),
+                new Vector2(0.5f, 1f),
+                new Vector2(0f, -248f),
+                new Vector2(-48f, 50f));
+            modelInput.characterLimit = LocalAiGatewayLaunchSpec.MaximumModelIdLength;
+
+            Text gatewayStatusText = CreateText(
+                "GatewayStatusText",
+                apiSetupPanel.transform,
+                "未启动；居民继续使用本地 AI。",
+                font,
+                16,
+                FontStyle.Normal);
+            SetTopRow(gatewayStatusText.rectTransform, -310f, 54f);
+            gatewayStatusText.alignment = TextAnchor.UpperLeft;
+            gatewayStatusText.color = new Color(0.72f, 0.92f, 0.76f, 1f);
+
+            Button startGatewayButton = CreateControlButton(
+                "StartGatewayButton",
+                "START & CONNECT",
+                apiSetupPanel.transform,
+                font,
+                out _);
+            SetRect(
+                startGatewayButton.GetComponent<RectTransform>(),
+                new Vector2(0f, 0f),
+                new Vector2(0f, 0f),
+                new Vector2(0f, 0f),
+                new Vector2(24f, 22f),
+                new Vector2(260f, 48f));
+            Button stopGatewayButton = CreateControlButton(
+                "StopGatewayButton",
+                "STOP OWNED",
+                apiSetupPanel.transform,
+                font,
+                out _);
+            SetRect(
+                stopGatewayButton.GetComponent<RectTransform>(),
+                new Vector2(0f, 0f),
+                new Vector2(0f, 0f),
+                new Vector2(0f, 0f),
+                new Vector2(296f, 22f),
+                new Vector2(176f, 48f));
+            Button closeApiSetupButton = CreateControlButton(
+                "CloseButton",
+                "CLOSE",
+                apiSetupPanel.transform,
+                font,
+                out _);
+            SetRect(
+                closeApiSetupButton.GetComponent<RectTransform>(),
+                new Vector2(0f, 0f),
+                new Vector2(0f, 0f),
+                new Vector2(0f, 0f),
+                new Vector2(484f, 22f),
+                new Vector2(212f, 48f));
+
+            ApiGatewaySetupPanel apiSetupController =
+                canvasObject.AddComponent<ApiGatewaySetupPanel>();
+            EnsureSucceeded(apiSetupController.Configure(
+                gatewayProcess,
+                apiSettingsButton,
+                apiSetupPanel,
+                apiKeyInput,
+                modelInput,
+                startGatewayButton,
+                stopGatewayButton,
+                closeApiSetupButton,
+                gatewayStatusText));
+            apiSetupPanel.SetActive(false);
+
             DemoHud hud = canvasObject.AddComponent<DemoHud>();
             hud.Configure(
                 bootstrap,
@@ -1591,7 +1788,7 @@ namespace AIFarm.Editor
                 aiModeText,
                 recentMemoriesText,
                 recentReflectionsText,
-                apiSettingsButton,
+                null,
                 memoryTitle,
                 personaText,
                 yayaResidentButton,
@@ -1646,18 +1843,39 @@ namespace AIFarm.Editor
 
         private static InputField CreateInputField(Transform parent, Font font)
         {
-            GameObject inputObject = CreateUiObject("CommandInput", parent);
+            return CreateInputField(
+                "CommandInput",
+                parent,
+                font,
+                "把地种满胡萝卜并照顾到收获。",
+                string.Empty);
+        }
+
+        private static InputField CreateInputField(
+            string name,
+            Transform parent,
+            Font font,
+            string placeholderText,
+            string initialValue)
+        {
+            GameObject inputObject = CreateUiObject(name, parent);
             Image background = inputObject.AddComponent<Image>();
             background.color = new Color(0.93f, 0.95f, 0.91f, 1f);
 
-            Text inputText = CreateText("Text", inputObject.transform, string.Empty, font, 21, FontStyle.Normal);
+            Text inputText = CreateText(
+                "Text",
+                inputObject.transform,
+                initialValue ?? string.Empty,
+                font,
+                21,
+                FontStyle.Normal);
             inputText.color = new Color(0.08f, 0.10f, 0.09f);
             StretchRect(inputText.rectTransform, 16f, 12f);
 
             Text placeholder = CreateText(
                 "Placeholder",
                 inputObject.transform,
-                "把地种满胡萝卜并照顾到收获。",
+                placeholderText ?? string.Empty,
                 font,
                 20,
                 FontStyle.Italic);
@@ -1669,6 +1887,7 @@ namespace AIFarm.Editor
             inputField.textComponent = inputText;
             inputField.placeholder = placeholder;
             inputField.lineType = InputField.LineType.SingleLine;
+            inputField.text = initialValue ?? string.Empty;
             return inputField;
         }
 

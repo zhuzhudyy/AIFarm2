@@ -124,26 +124,19 @@ namespace AIFarm.Presentation
             {
                 LastOperationResult = loaded;
                 SetStatus(
-                    service.LastLoadUsedSafeReplan
+                    service.LastLoadRecoveredBackup
+                        ? "主存档不可用；已从最近的有效备份恢复。"
+                        : service.LastLoadUsedSafeReplan
                         ? "加载成功；未完成任务已安全重新规划。"
                         : "加载成功。",
                     false);
                 return;
             }
 
-            string loadFailure = loaded.Message;
-            ActionResult fallback = service.NewDemo(deleteSave: true);
-            LastOperationResult = fallback.Failed ? fallback : loaded;
-            if (fallback.Failed)
-            {
-                SetStatus(
-                    $"存档损坏/不可读：{loadFailure}；新 Demo 恢复也失败：{fallback.Message}",
-                    true);
-                return;
-            }
-
+            LastOperationResult = loaded;
             SetStatus(
-                $"存档损坏或不可读：{loadFailure}；已回到新 Demo。",
+                $"存档损坏或不可读：{loaded.Message}；当前游戏未被修改。" +
+                "请重试，或明确选择“新 Demo”。",
                 true);
         }
 

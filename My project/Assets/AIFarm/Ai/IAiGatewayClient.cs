@@ -46,5 +46,9 @@ namespace AIFarm.Ai
         IEnumerator GenerateConversationScript(
             ConversationScriptRequest request,
             Action<AiGatewayResult<ConversationScriptSpec>> completed);
+
+        IEnumerator DecideResident(
+            ResidentDecisionRequest request,
+            Action<AiGatewayResult<ResidentDecisionSpec>> completed);
     }
 }

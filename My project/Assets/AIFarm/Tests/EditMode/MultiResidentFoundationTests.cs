@@ -147,7 +147,7 @@ namespace AIFarm.Tests.EditMode
         }
 
         [Test]
-        public void LegacySingleResidentSave_MigratesToYayaResidentRecord()
+        public void LegacySingleResidentSave_MigratesToCompleteTownRoster()
         {
             var legacy = new LegacySaveDataV1
             {
@@ -173,13 +173,18 @@ namespace AIFarm.Tests.EditMode
             Assert.That(result.Succeeded, Is.True, result.Message);
             Assert.That(migrated, Is.True);
             Assert.That(migratedData.version, Is.EqualTo(SaveData.CurrentVersion));
-            Assert.That(migratedData.residents, Has.Length.EqualTo(1));
+            Assert.That(migratedData.residents, Has.Length.EqualTo(4));
+            Assert.That(migratedData.relationships, Has.Length.EqualTo(12));
             Assert.That(
                 migratedData.residents[0].residentId,
                 Is.EqualTo(ResidentIds.YayaValue));
             Assert.That(
                 migratedData.residents[0].recentMemories[0].ownerResidentId,
                 Is.EqualTo(ResidentIds.YayaValue));
+            for (int index = 1; index < migratedData.residents.Length; index++)
+            {
+                Assert.That(migratedData.residents[index].recentMemories, Is.Empty);
+            }
         }
 
         [Test]
@@ -209,15 +214,13 @@ namespace AIFarm.Tests.EditMode
             Assert.That(result.Succeeded, Is.True, result.Message);
             Assert.That(migratedLegacySave, Is.True);
             Assert.That(migratedData.version, Is.EqualTo(SaveData.CurrentVersion));
-            Assert.That(
-                migratedData.residents[0].recentMemories[0].ownerResidentId,
-                Is.EqualTo(ResidentIds.YayaValue));
-            Assert.That(
-                migratedData.residents[1].recentMemories[0].ownerResidentId,
-                Is.EqualTo(ResidentIds.AmuValue));
-            foreach (ResidentSaveData resident in migratedData.residents)
+            Assert.That(migratedData.residents, Has.Length.EqualTo(4));
+            Assert.That(migratedData.relationships, Has.Length.EqualTo(12));
+            for (int index = 0; index < 2; index++)
             {
+                ResidentSaveData resident = migratedData.residents[index];
                 MemorySaveData memory = resident.recentMemories[0];
+                Assert.That(memory.ownerResidentId, Is.EqualTo(resident.residentId));
                 Assert.That(
                     memory.sourceKind,
                     Is.EqualTo((int)MemorySourceKind.LegacyImported));
@@ -225,6 +228,11 @@ namespace AIFarm.Tests.EditMode
                 Assert.That(memory.knowledgeId, Is.Not.Empty);
                 Assert.That(memory.rootFactId, Is.EqualTo(memory.knowledgeId));
                 Assert.That(memory.tags, Does.Contain("legacy-imported"));
+            }
+
+            for (int index = 2; index < migratedData.residents.Length; index++)
+            {
+                Assert.That(migratedData.residents[index].recentMemories, Is.Empty);
             }
         }
 

@@ -52,6 +52,19 @@ namespace AIFarm.Town
 
         public int ReservationCount => reservationsByPoint.Count;
 
+        /// <summary>
+        /// Invalidates every active lease without rewinding the revision counter.
+        /// Keeping revisions monotonic ensures that a token captured before an
+        /// authoritative state reset can never release or renew a later lease.
+        /// </summary>
+        public int InvalidateAll()
+        {
+            int invalidatedCount = reservationsByPoint.Count;
+            reservationsByPoint.Clear();
+            pointByResident.Clear();
+            return invalidatedCount;
+        }
+
         public ActionResult TryReserve(
             ResidentId residentId,
             string interactionPointId,

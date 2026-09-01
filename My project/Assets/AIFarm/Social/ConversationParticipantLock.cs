@@ -107,6 +107,13 @@ namespace AIFarm.Social
             return residentId.IsValid && locksByResident.ContainsKey(residentId);
         }
 
+        public int InvalidateAll()
+        {
+            int invalidatedCount = locksByResident.Count;
+            locksByResident.Clear();
+            return invalidatedCount;
+        }
+
         public bool TryGetConversationId(
             ResidentId residentId,
             out ConversationId conversationId)

@@ -1,5 +1,6 @@
 using System;
 using AIFarm.Core;
+using AIFarm.Npc;
 using AIFarm.Town;
 using UnityEngine;
 
@@ -23,6 +24,8 @@ namespace AIFarm.Presentation
         [SerializeField]
         private TownResidentScheduleController[] residents =
             Array.Empty<TownResidentScheduleController>();
+
+        private GameBootstrap subscribedBootstrap;
 
         public TownScheduler Scheduler { get; private set; }
 
@@ -54,6 +57,11 @@ namespace AIFarm.Presentation
             Array.Sort(
                 residents,
                 (left, right) => left.ResidentId.CompareTo(right.ResidentId));
+            if (IsInitialized)
+            {
+                SubscribeToAuthoritativeStateReset();
+            }
+
             return ActionResult.Success("Town schedule scene references configured.");
         }
 
@@ -131,7 +139,69 @@ namespace AIFarm.Presentation
             }
 
             IsInitialized = true;
+            SubscribeToAuthoritativeStateReset();
             return ActionResult.Success("Deterministic town scheduling initialized.");
+        }
+
+        public ActionResult TryGetResidentController(
+            ResidentId residentId,
+            out TownResidentScheduleController residentController)
+        {
+            residentController = null;
+            if (!residentId.IsValid)
+            {
+                return ActionResult.Failure(
+                    ActionFailureReason.InvalidArgument,
+                    "A valid ResidentId is required to find a schedule controller.");
+            }
+
+            foreach (TownResidentScheduleController resident in residents)
+            {
+                if (resident != null && resident.ResidentId == residentId)
+                {
+                    residentController = resident;
+                    return ActionResult.Success(
+                        $"Schedule controller found for resident '{residentId}'.");
+                }
+            }
+
+            return ActionResult.Failure(
+                ActionFailureReason.InvalidState,
+                $"No schedule controller is registered for resident '{residentId}'.");
+        }
+
+        public ActionResult ResetForAuthoritativeStateChange()
+        {
+            if (!IsInitialized || ReservationService == null)
+            {
+                return ActionResult.Failure(
+                    ActionFailureReason.InvalidState,
+                    "Town scheduling must be initialized before it can be reset.");
+            }
+
+            ActionResult firstFailure = ActionResult.Success();
+            foreach (TownResidentScheduleController resident in residents)
+            {
+                if (resident == null)
+                {
+                    continue;
+                }
+
+                ActionResult reset = resident.ResetForAuthoritativeStateChange();
+                if (reset.Failed && firstFailure.Succeeded)
+                {
+                    firstFailure = reset;
+                }
+            }
+
+            // Participant cleanup normally releases its own tokens, but a damaged
+            // save or missing participant may leave an unowned anchor lease behind.
+            // The authoritative reset boundary invalidates those leases as well.
+            ReservationService.InvalidateAll();
+            return firstFailure.Failed
+                ? firstFailure
+                : ActionResult.Success(
+                    "Town schedules and all transient interaction reservations were reset.");
         }
 
         public ActionResult TickSchedules(float deltaTime, double elapsedRealSeconds)
@@ -157,6 +227,11 @@ namespace AIFarm.Presentation
             ActionResult firstFailure = ActionResult.Success();
             foreach (TownResidentScheduleController resident in residents)
             {
+                if (resident == null || !resident.isActiveAndEnabled)
+                {
+                    continue;
+                }
+
                 ActionResult result = resident.TickSchedule(
                     minuteOfDay,
                     elapsedRealSeconds,
@@ -192,6 +267,47 @@ namespace AIFarm.Presentation
             if (result.Failed)
             {
                 Debug.LogWarning($"Town schedule recovered from: {result.Message}", this);
+            }
+        }
+
+        private void OnDestroy()
+        {
+            UnsubscribeFromAuthoritativeStateReset();
+        }
+
+        private void SubscribeToAuthoritativeStateReset()
+        {
+            if (subscribedBootstrap == bootstrap)
+            {
+                return;
+            }
+
+            UnsubscribeFromAuthoritativeStateReset();
+            if (bootstrap != null)
+            {
+                bootstrap.AuthoritativeStateResetting += HandleAuthoritativeStateResetting;
+                subscribedBootstrap = bootstrap;
+            }
+        }
+
+        private void UnsubscribeFromAuthoritativeStateReset()
+        {
+            if (subscribedBootstrap != null)
+            {
+                subscribedBootstrap.AuthoritativeStateResetting -=
+                    HandleAuthoritativeStateResetting;
+                subscribedBootstrap = null;
+            }
+        }
+
+        private void HandleAuthoritativeStateResetting()
+        {
+            ActionResult reset = ResetForAuthoritativeStateChange();
+            if (reset.Failed)
+            {
+                Debug.LogWarning(
+                    $"Town schedule reset completed with a recoverable error: {reset.Message}",
+                    this);
             }
         }
 

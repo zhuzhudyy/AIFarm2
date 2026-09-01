@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using AIFarm.Core;
 using AIFarm.Farming;
@@ -43,6 +44,10 @@ namespace AIFarm.Presentation
         public ActionResult? LastSimulationResult { get; private set; }
 
         public bool IsInitialized { get; private set; }
+
+        public long AuthoritativeStateRevision { get; private set; }
+
+        public event Action AuthoritativeStateResetting;
 
         public void Configure(DemoSceneConfig config)
         {
@@ -120,6 +125,8 @@ namespace AIFarm.Presentation
                     "GameBootstrap must be initialized before starting a new demo.");
             }
 
+            NotifyAuthoritativeStateResetting();
+
             foreach (FarmPlot plot in Field.Plots)
             {
                 ActionResult plotResult = plot.RestoreState(
@@ -171,6 +178,34 @@ namespace AIFarm.Presentation
                 "已创建新 Demo；本地规划与表达服务可用。");
             LastSimulationResult = null;
             return ActionResult.Success("New demo state initialized.");
+        }
+
+        public void NotifyAuthoritativeStateResetting()
+        {
+            AuthoritativeStateRevision++;
+            AiRequests?.CancelAllForAuthoritativeReset();
+
+            Action handlers = AuthoritativeStateResetting;
+            if (handlers == null)
+            {
+                return;
+            }
+
+            foreach (Action handler in handlers.GetInvocationList())
+            {
+                try
+                {
+                    handler();
+                }
+                catch (Exception exception)
+                {
+                    // One damaged scene participant must not prevent the remaining
+                    // residents from releasing locks, paths and reservations.
+                    Debug.LogError(
+                        $"Authoritative reset listener failed safely: {exception.Message}",
+                        this);
+                }
+            }
         }
 
         private void OnDestroy()

@@ -111,6 +111,8 @@ namespace AIFarm.Tests.PlayMode
 
             Assert.That(UnityEngine.Time.realtimeSinceStartup, Is.LessThan(deadline), "Offline goal timed out.");
             Assert.That(controller.Status, Is.EqualTo(ReplanStatus.Completed), controller.LastFailureReason);
+            Assert.That(controller.ActiveGoal, Is.Null,
+                "A completed farm command must not remain a mutable player instruction.");
             Assert.That(controller.HarvestedPlotCount, Is.EqualTo(FarmField.PlotCount));
             Assert.That(executor.Status, Is.EqualTo(NpcExecutionStatus.Completed));
             Assert.That(executor.IsBusy, Is.False);

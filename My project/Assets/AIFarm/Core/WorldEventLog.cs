@@ -20,7 +20,11 @@ namespace AIFarm.Core
         GoalCompleted = 10,
         ConversationCompleted = 11,
         DayEnded = 12,
-        ConversationInterrupted = 13
+        ConversationInterrupted = 13,
+        TownEventProposed = 14,
+        TownEventStarted = 15,
+        TownEventCompleted = 16,
+        TownEventCancelled = 17
     }
 
     public enum WorldEventVisibility

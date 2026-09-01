@@ -1,3 +1,4 @@
+using System;
 using AIFarm.Core;
 using AIFarm.Npc;
 using AIFarm.Social;
@@ -23,6 +24,8 @@ namespace AIFarm.Presentation
 
         private bool scheduleSuspendedForFarming;
         private bool scheduleSuspendedForConversation;
+        private bool scheduleSuspendedForTownEvent;
+        private TownEventState townEventState = TownEventState.Scheduled;
 
         public ResidentId ResidentId => definitionAsset == null
             ? default
@@ -37,6 +40,8 @@ namespace AIFarm.Presentation
         public bool IsFarmingBusy => farmingExecutor != null && farmingExecutor.IsBusy;
 
         public bool IsConversationSuspended => scheduleSuspendedForConversation;
+
+        public bool IsTownEventSuspended => scheduleSuspendedForTownEvent;
 
         public TownResidentNavigator Navigator => navigator;
 
@@ -116,6 +121,12 @@ namespace AIFarm.Presentation
                     "Resident schedule controller is not initialized.");
             }
 
+            if (scheduleSuspendedForTownEvent)
+            {
+                residentView.SetTownEventState(townEventState);
+                return ActionResult.Success("Town schedule paused for HarvestDinner.");
+            }
+
             if (scheduleSuspendedForConversation)
             {
                 residentView.SetConversationState(true);
@@ -158,7 +169,8 @@ namespace AIFarm.Presentation
                     "The resident schedule must be initialized before conversation.");
             }
 
-            if (scheduleSuspendedForConversation || scheduleSuspendedForFarming ||
+            if (scheduleSuspendedForConversation || scheduleSuspendedForTownEvent ||
+                scheduleSuspendedForFarming ||
                 IsFarmingBusy || Runtime.ActiveEntry == null ||
                 Runtime.ActiveEntry.Activity == ResidentActivityKind.Home)
             {
@@ -220,6 +232,141 @@ namespace AIFarm.Presentation
             return Runtime.Resume();
         }
 
+        public bool CanAttendTownEvent()
+        {
+            return IsInitialized && navigator != null && residentView != null &&
+                !scheduleSuspendedForConversation && !scheduleSuspendedForTownEvent &&
+                !scheduleSuspendedForFarming && !IsFarmingBusy &&
+                Runtime.ActiveEntry != null &&
+                Runtime.ActiveEntry.Activity != ResidentActivityKind.Home;
+        }
+
+        public ActionResult SuspendForTownEvent()
+        {
+            if (!CanAttendTownEvent())
+            {
+                return ActionResult.Failure(
+                    ActionFailureReason.InvalidState,
+                    "The resident cannot leave the current priority activity for HarvestDinner.");
+            }
+
+            ActionResult suspended = Runtime.Suspend();
+            if (suspended.Failed)
+            {
+                return suspended;
+            }
+
+            scheduleSuspendedForTownEvent = true;
+            townEventState = TownEventState.Gathering;
+            residentView.SetTownEventState(townEventState);
+            return ActionResult.Success("Resident schedule suspended for HarvestDinner.");
+        }
+
+        public ActionResult BeginTownEventMove(string interactionPointId)
+        {
+            if (!scheduleSuspendedForTownEvent || navigator == null)
+            {
+                return ActionResult.Failure(
+                    ActionFailureReason.InvalidState,
+                    "The resident must be town-event-suspended before moving to the plaza.");
+            }
+
+            return navigator.BeginMove(interactionPointId);
+        }
+
+        public ActionResult TickTownEventMove(float deltaTime, out bool arrived)
+        {
+            arrived = false;
+            if (!scheduleSuspendedForTownEvent || navigator == null)
+            {
+                return ActionResult.Failure(
+                    ActionFailureReason.InvalidState,
+                    "The resident has no active HarvestDinner movement.");
+            }
+
+            return navigator.Tick(deltaTime, out arrived);
+        }
+
+        public ActionResult SetTownEventActive()
+        {
+            if (!scheduleSuspendedForTownEvent)
+            {
+                return ActionResult.Failure(
+                    ActionFailureReason.InvalidState,
+                    "Only a HarvestDinner participant can begin the activity performance.");
+            }
+
+            townEventState = TownEventState.Active;
+            residentView.SetTownEventState(townEventState);
+            return ActionResult.Success("Resident began the deterministic HarvestDinner performance.");
+        }
+
+        public void ShowTownEventWelcome(string text)
+        {
+            if (scheduleSuspendedForTownEvent)
+            {
+                residentView.ShowTownEventLine(text, "🍲", NpcMood.Happy);
+            }
+        }
+
+        public void ShowTownEventProposal(string text)
+        {
+            if (!scheduleSuspendedForConversation && !scheduleSuspendedForTownEvent)
+            {
+                residentView.ShowConversationLine(text, "🍲", NpcMood.Happy);
+            }
+        }
+
+        public ActionResult ResumeAfterTownEvent()
+        {
+            if (!scheduleSuspendedForTownEvent)
+            {
+                return ActionResult.Success("Resident was not HarvestDinner-suspended.");
+            }
+
+            navigator?.CancelMove();
+            scheduleSuspendedForTownEvent = false;
+            townEventState = TownEventState.Scheduled;
+            residentView.SetTownEventState(TownEventState.Completed);
+            return Runtime.Resume();
+        }
+
+        public ActionResult ResetForAuthoritativeStateChange()
+        {
+            if (!IsInitialized)
+            {
+                return ActionResult.Failure(
+                    ActionFailureReason.InvalidState,
+                    "The resident schedule must be initialized before it can be reset.");
+            }
+
+            ActionResult scheduleReset = Runtime.ResetForAuthoritativeStateChange();
+            ActionResult executorReset = ActionResult.Success();
+            if (farmingExecutor != null && farmingExecutor.IsInitialized && farmingExecutor.IsBusy)
+            {
+                executorReset = farmingExecutor.RestorePendingActions(Array.Empty<INpcAction>());
+            }
+
+            scheduleSuspendedForFarming = false;
+            scheduleSuspendedForConversation = false;
+            scheduleSuspendedForTownEvent = false;
+            townEventState = TownEventState.Scheduled;
+            residentView?.SetConversationState(false);
+            residentView?.SetTownEventState(TownEventState.Scheduled);
+            residentView?.SetScheduleState(ResidentScheduleState.WaitingForSchedule, null);
+            residentView?.ClearConversationLine();
+
+            if (scheduleReset.Failed)
+            {
+                return scheduleReset;
+            }
+
+            return executorReset.Failed
+                ? executorReset
+                : ActionResult.Success(
+                    $"Resident '{ResidentId}' reset and ready for deterministic replanning.");
+        }
+
         public ActionResult FaceConversationPartner(Transform partner)
         {
             if (!scheduleSuspendedForConversation || partner == null)
@@ -259,10 +406,23 @@ namespace AIFarm.Presentation
         {
             if (Runtime != null)
             {
+                // Release any schedule reservation or in-flight social/event move.
+                // The runtime stays suspended while this component is disabled,
+                // even though TownScheduleCoordinator still owns the reference.
                 Runtime.Suspend();
             }
 
             scheduleSuspendedForConversation = false;
+            scheduleSuspendedForTownEvent = false;
+            townEventState = TownEventState.Scheduled;
+        }
+
+        private void OnEnable()
+        {
+            // Unity invokes Start only once; a transient component toggle must make
+            // the deterministic schedule runnable again without restoring a stale
+            // reservation or movement.
+            Runtime?.Resume();
         }
     }
 }

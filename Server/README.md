@@ -10,9 +10,10 @@ python -m venv .venv
 .\.venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
-Open `http://127.0.0.1:8000/setup`, or click `API SETUP` in the Unity HUD,
-to configure the shared provider and model. Open
-`http://127.0.0.1:8000/docs` for the generated API contract. Run tests with:
+Open `http://127.0.0.1:8000/setup` to configure a gateway that is already
+running. In Unity, `API SETUP` opens the native in-game startup panel described
+below. Open `http://127.0.0.1:8000/docs` for the generated API contract. Run
+tests with:
 
 ```powershell
 .\.venv\Scripts\python.exe -m pytest
@@ -20,14 +21,49 @@ to configure the shared provider and model. Open
 
 The default suite uses injected fake clients and never calls a real model.
 
+## Unity automatic startup
+
+In the Editor or a desktop player, click `API SETUP`, enter the DeepSeek API
+key and shared model ID, then click `Start & Connect`. The model field defaults
+to `deepseek-v4-flash`. Unity validates a root `http://127.0.0.1:<port>` URL, locates the
+gateway sidecar and Python runtime, and starts a hidden Uvicorn child process
+bound to `127.0.0.1`. Hostnames, other loopback addresses, and non-root gateway
+URLs are rejected so launch, probe, and client traffic use the same IPv4 endpoint.
+
+For this Unity-managed path, the API key is passed only in the owned child
+process environment as `OPENAI_API_KEY`. It is not placed in process arguments,
+Unity assets or preferences, save data, the gateway's local configuration file,
+logs, status messages, or API responses. The key field is masked and is cleared
+after every start submission. The model ID and an unguessable instance ID are
+also passed in the child environment; the instance ID lets Unity verify that
+the process answering on the port is the one it just launched.
+
+Before starting a process, Unity probes the configured loopback endpoint. If an
+already-running gateway uses provider `openai`, has a key configured, and uses
+the requested model, Unity reuses it without applying the newly entered key and
+without assuming ownership. A reachable but mismatched service causes startup
+to fail safely; Unity neither overwrites its configuration nor terminates it.
+`Stop Owned` and application shutdown stop only the exact process started by
+this Unity session. Startup, readiness, configuration, Python, or provider
+failures leave all residents on the existing deterministic local fallback.
+
+Desktop distributions must ship a runnable gateway sidecar and its Python
+dependencies. The launcher searches `<player directory>/Server` and
+`StreamingAssets/AIFarmGateway` (and the repository `Server` directory in the
+Editor), prefers the sidecar's `.venv` Python, then falls back to `python` or
+`python3`. Packaged deployments may set `AIFARM_GATEWAY_SERVER_DIR` and
+`AIFARM_GATEWAY_PYTHON` to explicit trusted paths. Automatic process startup is
+not supported by non-desktop players; those builds continue locally unless a
+compatible gateway is managed outside the player.
+
 ## Player API settings
 
-The setup page can switch immediately between DeepSeek and the deterministic
-offline `MockProvider`, set the shared model ID, accept a masked API key, test
-authentication/model availability, and clear the local configuration. The page
-loads no third-party resources. Configuration routes accept only loopback clients
-and same-origin requests with a short-lived CSRF token; the key is never returned
-by an API response or sent to Unity.
+The separate browser setup page can switch immediately between DeepSeek and the
+deterministic offline `MockProvider`, set the shared model ID, accept a masked
+API key, test authentication/model availability, and clear the local
+configuration. The page loads no third-party resources. Configuration routes
+accept only loopback clients and same-origin requests with a short-lived CSRF
+token; the key is never returned by an API response or sent to Unity.
 
 With **Remember locally** enabled, the gateway writes one current-user file outside
 the repository:
@@ -41,6 +77,8 @@ secret manager. Use process environment variables or an operating-system secret
 manager on shared or production machines. `AIFARM_PROVIDER` in the process
 environment takes precedence at server startup; UI changes still apply to the
 current process, but that environment configuration will be restored on restart.
+This optional browser-page persistence is not used by the Unity automatic-start
+path, whose entered key remains child-process-only.
 
 The generated Unity demo scene uses the local HTTP gateway by default. If the
 gateway or upstream model is unavailable, `RemoteAiGatewayClient` continues with

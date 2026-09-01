@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using AIFarm.Core;
 using AIFarm.Npc;
 using UnityEngine;
@@ -10,7 +11,8 @@ namespace AIFarm.Presentation
     {
         public const int LegacySingleResidentVersion = 1;
         public const int LegacyMultiResidentVersion = 2;
-        public const int CurrentVersion = 3;
+        public const int LegacyProvenanceVersion = 3;
+        public const int CurrentVersion = 4;
 
         public int version = CurrentVersion;
         public string savedAtUtc = string.Empty;
@@ -19,6 +21,7 @@ namespace AIFarm.Presentation
         public InventorySaveData inventory = new InventorySaveData();
         public SimulationSaveData simulation = new SimulationSaveData();
         public ResidentSaveData[] residents = Array.Empty<ResidentSaveData>();
+        public RelationshipSaveData[] relationships = Array.Empty<RelationshipSaveData>();
     }
 
     [Serializable]
@@ -83,19 +86,26 @@ namespace AIFarm.Presentation
                         : ActionResult.Success("Current save data read.");
                 }
 
-                if (header.version == SaveData.LegacyMultiResidentVersion)
+                if (header.version == SaveData.LegacyMultiResidentVersion ||
+                    header.version == SaveData.LegacyProvenanceVersion)
                 {
                     data = JsonUtility.FromJson<SaveData>(json);
                     if (data == null)
                     {
-                        return InvalidSave("Version 2 save JSON could not be read.");
+                        return InvalidSave(
+                            $"Version {header.version} save JSON could not be read.");
                     }
 
+                    if (header.version == SaveData.LegacyMultiResidentVersion)
+                    {
+                        NormalizeLegacyMemoryOwners(data.residents);
+                    }
+
+                    UpgradeToCurrentTownRoster(data);
                     data.version = SaveData.CurrentVersion;
-                    NormalizeLegacyMemoryOwners(data.residents);
                     migratedLegacySave = true;
                     return ActionResult.Success(
-                        "Version 2 multi-resident save migrated to the provenance-aware format.");
+                        $"Version {header.version} save migrated to the fault-recovery format.");
                 }
 
                 if (header.version != SaveData.LegacySingleResidentVersion)
@@ -103,7 +113,8 @@ namespace AIFarm.Presentation
                     return InvalidSave(
                         $"Unsupported save version {header.version}; expected " +
                         $"{SaveData.LegacySingleResidentVersion}, " +
-                        $"{SaveData.LegacyMultiResidentVersion}, or {SaveData.CurrentVersion}.");
+                        $"{SaveData.LegacyMultiResidentVersion}, " +
+                        $"{SaveData.LegacyProvenanceVersion}, or {SaveData.CurrentVersion}.");
                 }
 
                 LegacySaveDataV1 legacy = JsonUtility.FromJson<LegacySaveDataV1>(json);
@@ -148,22 +159,141 @@ namespace AIFarm.Presentation
                 plots = legacy.plots,
                 inventory = legacy.inventory,
                 simulation = legacy.simulation,
-                residents = new[]
-                {
+                residents = CreateMigratedTownResidents(
                     new ResidentSaveData
                     {
                         residentId = ResidentIds.YayaValue,
                         displayName = ResidentDefinition.Yaya.DisplayName,
-                        npc = legacy.npc,
+                        npc = legacy.npc ?? new NpcSaveData(),
                         hasFarmGoal = legacy.hasFarmGoal,
-                        farmGoal = legacy.farmGoal,
-                        executor = legacy.executor,
+                        farmGoal = legacy.farmGoal ?? new FarmGoalSaveData(),
+                        executor = legacy.executor ?? new ExecutorSaveData(),
                         recentMemories = memories,
-                        recentReflections = legacy.recentReflections,
-                        runtime = legacy.npcRuntime
+                        recentReflections = legacy.recentReflections ??
+                            Array.Empty<ReflectionSaveData>(),
+                        runtime = legacy.npcRuntime ?? new NpcRuntimeSaveData()
+                    }),
+                relationships = CreateDefaultRelationships()
+            };
+        }
+
+        private static void UpgradeToCurrentTownRoster(SaveData data)
+        {
+            data.residents = CreateMigratedTownResidents(data.residents);
+            data.relationships = CreateDefaultRelationships();
+        }
+
+        private static ResidentSaveData[] CreateMigratedTownResidents(
+            params ResidentSaveData[] existingResidents)
+        {
+            var residents = new List<ResidentSaveData>();
+            var existingIds = new HashSet<string>(StringComparer.Ordinal);
+            if (existingResidents != null)
+            {
+                foreach (ResidentSaveData resident in existingResidents)
+                {
+                    if (resident == null)
+                    {
+                        residents.Add(null);
+                        continue;
                     }
+
+                    NormalizeResidentContainers(resident);
+                    if (resident.residentId == ResidentIds.YayaValue)
+                    {
+                        // Versions 1-3 only captured a trustworthy live transform for
+                        // the active farming resident. Background zero/stale transforms
+                        // are deliberately ignored and will be schedule-replanned.
+                        resident.npc.hasSceneTransform = true;
+                    }
+
+                    residents.Add(resident);
+                    existingIds.Add(resident.residentId ?? string.Empty);
+                }
+            }
+
+            foreach (ResidentDefinition definition in ResidentDefinition.TownResidents)
+            {
+                if (!existingIds.Contains(definition.ResidentId.Value))
+                {
+                    residents.Add(CreateDefaultResident(definition));
+                }
+            }
+
+            residents.Sort((left, right) => string.Compare(
+                left?.residentId,
+                right?.residentId,
+                StringComparison.Ordinal));
+            return residents.ToArray();
+        }
+
+        private static void NormalizeResidentContainers(ResidentSaveData resident)
+        {
+            resident.npc = resident.npc ?? new NpcSaveData();
+            resident.farmGoal = resident.farmGoal ?? new FarmGoalSaveData();
+            resident.executor = resident.executor ?? new ExecutorSaveData();
+            resident.executor.currentAction = resident.executor.currentAction ??
+                new NpcActionSaveData();
+            resident.executor.remainingActions = resident.executor.remainingActions ??
+                Array.Empty<NpcActionSaveData>();
+            resident.recentMemories = resident.recentMemories ?? Array.Empty<MemorySaveData>();
+            resident.recentReflections = resident.recentReflections ??
+                Array.Empty<ReflectionSaveData>();
+            resident.runtime = resident.runtime ?? new NpcRuntimeSaveData();
+            resident.runtime.reflectedCycleNumbers = resident.runtime.reflectedCycleNumbers ??
+                Array.Empty<int>();
+        }
+
+        private static ResidentSaveData CreateDefaultResident(ResidentDefinition definition)
+        {
+            return new ResidentSaveData
+            {
+                residentId = definition.ResidentId.Value,
+                displayName = definition.DisplayName,
+                npc = new NpcSaveData
+                {
+                    hasSceneTransform = false,
+                    executorStatus = (int)NpcExecutionStatus.Completed,
+                    replanStatus = (int)ReplanStatus.Idle,
+                    currentMood = (int)NpcMood.Focused
                 }
             };
+        }
+
+        private static RelationshipSaveData[] CreateDefaultRelationships()
+        {
+            var relationships = new List<RelationshipSaveData>();
+            foreach (ResidentDefinition owner in ResidentDefinition.TownResidents)
+            {
+                foreach (ResidentDefinition other in ResidentDefinition.TownResidents)
+                {
+                    if (owner.ResidentId == other.ResidentId)
+                    {
+                        continue;
+                    }
+
+                    relationships.Add(new RelationshipSaveData
+                    {
+                        ownerResidentId = owner.ResidentId.Value,
+                        otherResidentId = other.ResidentId.Value
+                    });
+                }
+            }
+
+            relationships.Sort((left, right) =>
+            {
+                int owner = string.Compare(
+                    left.ownerResidentId,
+                    right.ownerResidentId,
+                    StringComparison.Ordinal);
+                return owner != 0
+                    ? owner
+                    : string.Compare(
+                        left.otherResidentId,
+                        right.otherResidentId,
+                        StringComparison.Ordinal);
+            });
+            return relationships.ToArray();
         }
 
         private static void NormalizeLegacyMemoryOwners(ResidentSaveData[] residents)
@@ -290,6 +420,7 @@ namespace AIFarm.Presentation
     [Serializable]
     public sealed class NpcSaveData
     {
+        public bool hasSceneTransform;
         public float positionX;
         public float positionY;
         public float positionZ;
@@ -307,6 +438,17 @@ namespace AIFarm.Presentation
         public string lastFailureReason = string.Empty;
         public int activeCycleNumber;
         public int[] harvestedPlotNumbers = Array.Empty<int>();
+    }
+
+    [Serializable]
+    public sealed class RelationshipSaveData
+    {
+        public string ownerResidentId = string.Empty;
+        public string otherResidentId = string.Empty;
+        public int familiarity;
+        public int trust;
+        public long relationVersion;
+        public string lastChangeEventId = string.Empty;
     }
 
     [Serializable]

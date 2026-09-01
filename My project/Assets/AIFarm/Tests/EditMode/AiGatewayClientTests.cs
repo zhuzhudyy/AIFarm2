@@ -352,6 +352,237 @@ namespace AIFarm.Tests.EditMode
             Assert.That(client.LastRemoteFailure, Does.Contain("participant"));
         }
 
+        [Test]
+        public void LocalClient_ResidentDecisionProposesHarvestDinnerFromEligibleConversationFact()
+        {
+            ResidentDecisionRequest request = CreateResidentDecisionRequest();
+            var client = new LocalAiGatewayClient();
+            AiGatewayResult<ResidentDecisionSpec> result = null;
+
+            RunCoroutine(client.DecideResident(request, value => result = value));
+
+            Assert.That(result, Is.Not.Null);
+            Assert.That(result.Succeeded, Is.True, result.Outcome.Message);
+            Assert.That(result.Source, Is.EqualTo(AiGatewayMode.Local));
+            Assert.That(result.ResidentId, Is.EqualTo(ResidentIds.Xiaosui));
+            Assert.That(result.Value.ResidentId, Is.EqualTo(ResidentIds.Xiaosui));
+            Assert.That(result.Value.Intent, Is.EqualTo(ResidentHighLevelIntents.ProposeTownEvent));
+            Assert.That(result.Value.TargetResidentId, Is.Null);
+            Assert.That(result.Value.Provider, Is.EqualTo("mock"));
+            Assert.That(result.Value.Reason, Does.Contain("胡萝卜收获消息"));
+        }
+
+        [TestCase(false, "harvest,carrot", true)]
+        [TestCase(true, "harvest", true)]
+        [TestCase(true, "carrot", true)]
+        [TestCase(true, "harvest,carrot", false)]
+        public void LocalClient_ResidentDecisionUsesSafeIntentWhenProposalEvidenceIsIncomplete(
+            bool isShareable,
+            string memoryTagsCsv,
+            bool hasConversationSource)
+        {
+            ResidentDecisionRequest request = CreateResidentDecisionRequest(
+                isShareable,
+                memoryTagsCsv.Split(','),
+                hasConversationSource);
+            var client = new LocalAiGatewayClient();
+            AiGatewayResult<ResidentDecisionSpec> result = null;
+
+            RunCoroutine(client.DecideResident(request, value => result = value));
+
+            Assert.That(result, Is.Not.Null);
+            Assert.That(result.Succeeded, Is.True, result.Outcome.Message);
+            Assert.That(result.Source, Is.EqualTo(AiGatewayMode.Local));
+            Assert.That(result.Value.Intent, Is.EqualTo(ResidentHighLevelIntents.Idle));
+            Assert.That(result.Value.TargetResidentId, Is.Null);
+        }
+
+        [Test]
+        public void LocalClient_ResidentDecisionFailsWhenUnsafeProposalIsOnlyIntent()
+        {
+            ResidentDecisionRequest request = CreateResidentDecisionRequest(
+                isShareable: false,
+                memoryTags: new[] { "harvest", "carrot" },
+                hasConversationSource: true,
+                allowedIntents: new[]
+                {
+                    ResidentHighLevelIntents.ProposeTownEvent
+                });
+            var client = new LocalAiGatewayClient();
+            AiGatewayResult<ResidentDecisionSpec> result = null;
+
+            RunCoroutine(client.DecideResident(request, value => result = value));
+
+            Assert.That(result, Is.Not.Null);
+            Assert.That(result.Failed, Is.True);
+            Assert.That(result.Value, Is.Null);
+            Assert.That(result.Outcome.Message, Does.Contain("requires"));
+        }
+
+        [Test]
+        public void RemoteClient_ResidentDecisionSendsOwnerContextAndValidatesAllowlist()
+        {
+            ResidentDecisionRequest request = CreateResidentDecisionRequest();
+            const string response =
+                "{\"resident_id\":\"resident-003\",\"intent\":\"propose_town_event\"," +
+                "\"target_resident_id\":null,\"reason\":\"晚上做胡萝卜汤吧。\"," +
+                "\"provider\":\"openai\"}";
+            var transport = new FakeTransport(AiGatewayHttpResult.Success(200, response));
+            var client = new RemoteAiGatewayClient(
+                "https://gateway.example",
+                requestTimeoutSeconds: 5,
+                gatewayTransport: transport);
+            AiGatewayResult<ResidentDecisionSpec> result = null;
+
+            RunCoroutine(client.DecideResident(request, value => result = value));
+
+            Assert.That(result, Is.Not.Null);
+            Assert.That(result.Succeeded, Is.True, result.Outcome.Message);
+            Assert.That(result.Source, Is.EqualTo(AiGatewayMode.Remote));
+            Assert.That(result.Value.Intent, Is.EqualTo(ResidentHighLevelIntents.ProposeTownEvent));
+            Assert.That(result.Value.TargetResidentId, Is.Null);
+            Assert.That(transport.LastUrl, Does.EndWith("/v1/resident-decision"));
+            Assert.That(transport.LastJson, Does.Contain("\"resident_id\":\"resident-003\""));
+            Assert.That(transport.LastJson, Does.Contain("\"context\""));
+            Assert.That(transport.LastJson, Does.Contain("XIAOSUI-HARVEST-KNOWLEDGE"));
+            Assert.That(transport.LastJson, Does.Contain("\"allowed_intents\""));
+            Assert.That(transport.LastJson, Does.Contain("propose_town_event"));
+            Assert.That(transport.LastJson, Does.Not.Contain("api_key").IgnoreCase);
+        }
+
+        [Test]
+        public void RemoteClient_ResidentDecisionRejectsIllegalIntentAndFallsBackLocally()
+        {
+            ResidentDecisionRequest request = CreateResidentDecisionRequest();
+            const string response =
+                "{\"resident_id\":\"resident-003\",\"intent\":\"teleport_everyone\"," +
+                "\"target_resident_id\":null,\"reason\":\"直接移动所有居民。\"," +
+                "\"provider\":\"openai\"}";
+            var client = new RemoteAiGatewayClient(
+                "https://gateway.example",
+                requestTimeoutSeconds: 5,
+                gatewayTransport: new FakeTransport(
+                    AiGatewayHttpResult.Success(200, response)));
+            AiGatewayResult<ResidentDecisionSpec> result = null;
+
+            RunCoroutine(client.DecideResident(request, value => result = value));
+
+            Assert.That(result, Is.Not.Null);
+            Assert.That(result.Succeeded, Is.True, result.Outcome.Message);
+            Assert.That(result.Source, Is.EqualTo(AiGatewayMode.Local));
+            Assert.That(result.Value.Intent, Is.EqualTo(ResidentHighLevelIntents.ProposeTownEvent));
+            Assert.That(client.LastRemoteFailure, Does.Contain("intent"));
+        }
+
+        [Test]
+        public void JsonValidation_ResidentDecisionRejectsUnknownTargetAndExtraProperty()
+        {
+            ResidentDecisionRequest request = CreateResidentDecisionRequest();
+            const string unknownTarget =
+                "{\"resident_id\":\"resident-003\",\"intent\":\"propose_town_event\"," +
+                "\"target_resident_id\":\"resident-004\",\"reason\":\"邀请墨墨。\"," +
+                "\"provider\":\"openai\"}";
+            const string extraProperty =
+                "{\"resident_id\":\"resident-003\",\"intent\":\"propose_town_event\"," +
+                "\"target_resident_id\":null,\"reason\":\"晚上做汤。\"," +
+                "\"provider\":\"openai\",\"schedule\":\"18:00\"}";
+
+            Assert.That(
+                AiGatewayJsonCodec.TryParseResidentDecision(
+                    unknownTarget,
+                    request,
+                    out _).Failed,
+                Is.True);
+            Assert.That(
+                AiGatewayJsonCodec.TryParseResidentDecision(
+                    extraProperty,
+                    request,
+                    out _).Failed,
+                Is.True);
+        }
+
+        [Test]
+        public void JsonValidation_ResidentDecisionRejectsEmptyTargetString()
+        {
+            ResidentDecisionRequest request = CreateResidentDecisionRequest();
+            const string response =
+                "{\"resident_id\":\"resident-003\",\"intent\":\"propose_town_event\"," +
+                "\"target_resident_id\":\"\",\"reason\":\"local validation\"," +
+                "\"provider\":\"openai\"}";
+
+            var outcome = AiGatewayJsonCodec.TryParseResidentDecision(
+                response,
+                request,
+                out ResidentDecisionSpec decision);
+
+            Assert.That(outcome.Succeeded, Is.False);
+            Assert.That(decision, Is.Null);
+        }
+
+        [Test]
+        public void RemoteClient_ResidentDecisionTransportFailureUsesLocalFallback()
+        {
+            ResidentDecisionRequest request = CreateResidentDecisionRequest();
+            var client = new RemoteAiGatewayClient(
+                "https://gateway.example",
+                requestTimeoutSeconds: 3,
+                gatewayTransport: new FakeTransport(
+                    AiGatewayHttpResult.Failure(401, "Authentication failed.")));
+            AiGatewayResult<ResidentDecisionSpec> result = null;
+
+            RunCoroutine(client.DecideResident(request, value => result = value));
+
+            Assert.That(result, Is.Not.Null);
+            Assert.That(result.Succeeded, Is.True, result.Outcome.Message);
+            Assert.That(result.Source, Is.EqualTo(AiGatewayMode.Local));
+            Assert.That(client.LastRemoteFailure, Does.Contain("Authentication failed"));
+        }
+
+        private static ResidentDecisionRequest CreateResidentDecisionRequest(
+            bool isShareable = true,
+            IEnumerable<string> memoryTags = null,
+            bool hasConversationSource = true,
+            IEnumerable<string> allowedIntents = null)
+        {
+            var context = new ResidentContext(
+                ResidentIds.Xiaosui,
+                ResidentPersonaSnapshot.FromDefinition(ResidentDefinition.Xiaosui),
+                "schedule=Working;activity=Gather;location=location-plaza",
+                new[]
+                {
+                    new RelationshipSnapshot(
+                        ResidentIds.Xiaosui,
+                        ResidentIds.Yaya,
+                        12,
+                        7)
+                },
+                new[]
+                {
+                    new ResidentMemorySnapshot(
+                        ResidentIds.Xiaosui,
+                        "XIAOSUI-HARVEST-KNOWLEDGE",
+                        9,
+                        "knowledge:resident-003:harvest-0001",
+                        "fact:carrot-harvest-0001",
+                        memoryTags ??
+                            new[] { "harvest", "carrot", "received-fact" },
+                        isShareable,
+                        hasConversationSource
+                            ? (ResidentId?)ResidentIds.Yaya
+                            : null)
+                });
+            return new ResidentDecisionRequest(
+                ResidentIds.Xiaosui,
+                context,
+                "芽芽刚告诉我胡萝卜已经收获。",
+                allowedIntents ?? new[]
+                {
+                    ResidentHighLevelIntents.Idle,
+                    ResidentHighLevelIntents.ProposeTownEvent
+                },
+                new[] { ResidentIds.Yaya });
+        }
+
         private static ConversationScriptRequest CreateConversationRequest()
         {
             var yaya = new ResidentContext(

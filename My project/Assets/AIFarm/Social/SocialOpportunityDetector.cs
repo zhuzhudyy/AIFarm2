@@ -173,6 +173,11 @@ namespace AIFarm.Social
                 gameSeconds - lastStart >= CooldownGameSeconds;
         }
 
+        public void ResetCooldowns()
+        {
+            lastSocialStartByResident.Clear();
+        }
+
         private static bool IsFiniteNonNegative(double value)
         {
             return !double.IsNaN(value) && !double.IsInfinity(value) && value >= 0d;

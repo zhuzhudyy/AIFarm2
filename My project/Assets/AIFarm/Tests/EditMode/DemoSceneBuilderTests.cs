@@ -1,8 +1,12 @@
 using System.Collections.Generic;
+using System.Linq;
+using System.Reflection;
 using AIFarm.Ai;
+using AIFarm.Core;
 using AIFarm.Editor;
 using AIFarm.Npc;
 using AIFarm.Presentation;
+using AIFarm.Social;
 using AIFarm.Town;
 using NUnit.Framework;
 using Unity.AI.Navigation;
@@ -31,6 +35,781 @@ namespace AIFarm.Tests.EditMode
                 OpenSceneMode.Single);
             Assert.That(reopened.IsValid(), Is.True);
             AssertGeneratedScene();
+        }
+
+        [Test]
+        public void BuiltScene_TransientLifecycleAndHarvestDinnerLoadRecoveryRemainSafe()
+        {
+            Assert.That(DemoSceneBuilder.BuildDemoScene(promptToSaveCurrentScenes: false), Is.True);
+            GameBootstrap bootstrap = GameObject.Find("GameBootstrap").GetComponent<GameBootstrap>();
+            TownScheduleCoordinator schedules =
+                bootstrap.GetComponent<TownScheduleCoordinator>();
+            TownSocialCoordinator social =
+                bootstrap.GetComponent<TownSocialCoordinator>();
+            TownEventSceneCoordinator townEvents =
+                bootstrap.GetComponent<TownEventSceneCoordinator>();
+            ReplanController replanner = bootstrap.GetComponent<ReplanController>();
+            GameObject yayaObject = GameObject.Find("NPC_Blockout_Capsule");
+            NpcPlanExecutor executor = yayaObject.GetComponent<NpcPlanExecutor>();
+            TownResidentScheduleController[] residents =
+                Object.FindObjectsByType<TownResidentScheduleController>();
+
+            Assert.That(residents, Has.Length.EqualTo(4));
+            Assert.That(bootstrap.Initialize().Succeeded, Is.True);
+            Assert.That(executor.Initialize().Succeeded, Is.True);
+            Assert.That(replanner.Initialize().Succeeded, Is.True);
+            Assert.That(schedules.Initialize().Succeeded, Is.True);
+            Assert.That(social.Initialize().Succeeded, Is.True);
+            Assert.That(townEvents.Initialize().Succeeded, Is.True);
+            Assert.That(townEvents.IsInitialized, Is.True);
+            foreach (TownResidentScheduleController resident in residents)
+            {
+                resident.enabled = false;
+                InvokeLifecycle(resident, "OnDisable");
+                Assert.That(
+                    resident.Runtime.State,
+                    Is.EqualTo(ResidentScheduleState.Suspended));
+            }
+
+            Assert.That(schedules.ReservationService.ReservationCount, Is.Zero);
+            Assert.That(schedules.TickSchedules(0.1f, 10d).Succeeded, Is.True);
+            Assert.That(
+                schedules.ReservationService.ReservationCount,
+                Is.Zero,
+                "Disabled resident controllers must not reacquire schedule reservations.");
+            foreach (TownResidentScheduleController resident in residents)
+            {
+                resident.enabled = true;
+                InvokeLifecycle(resident, "OnEnable");
+                Assert.That(
+                    resident.Runtime.State,
+                    Is.EqualTo(ResidentScheduleState.WaitingForSchedule));
+            }
+
+            townEvents.enabled = false;
+            InvokeLifecycle(townEvents, "OnDisable");
+            Assert.That(townEvents.IsInitialized, Is.True);
+            townEvents.enabled = true;
+            InvokeLifecycle(townEvents, "OnEnable");
+            Assert.That(townEvents.IsInitialized, Is.True);
+
+            TownResidentScheduleController yaya =
+                yayaObject.GetComponent<TownResidentScheduleController>();
+            Assert.That(yaya.TickSchedule(17 * 60, 20d, 0f).Succeeded, Is.True);
+            Assert.That(yaya.SuspendForTownEvent().Succeeded, Is.True);
+            ActionResult blockedGoal = replanner.SubmitGoal(
+                "把九块地种满胡萝卜并照顾到收获");
+            Assert.That(blockedGoal.Failed, Is.True);
+            Assert.That(replanner.RuntimeState.CurrentGoal, Is.Null);
+            Assert.That(executor.IsBusy, Is.False);
+            Assert.That(yaya.ResumeAfterTownEvent().Succeeded, Is.True);
+
+            const string conversationId = "conversation:scene-save-guard";
+            const string rootFactId = "fact:scene-save-guard-carrot-harvest";
+            double proposedAt = bootstrap.Clock.ElapsedGameSeconds;
+            Assert.That(
+                bootstrap.ResidentRegistry.TryGetRuntimeState(
+                    ResidentIds.Yaya,
+                    out ResidentRuntimeState yayaRuntime).Succeeded,
+                Is.True);
+            Assert.That(
+                bootstrap.ResidentRegistry.TryGetRuntimeState(
+                    ResidentIds.Xiaosui,
+                    out ResidentRuntimeState xiaosuiRuntime).Succeeded,
+                Is.True);
+            Assert.That(
+                yayaRuntime.Memories.AddObservation(
+                    ResidentIds.Yaya,
+                    proposedAt - 2d,
+                    "I harvested the carrots.",
+                    9,
+                    WorldEventKind.ActionCompleted,
+                    MemorySourceKind.Perception,
+                    "farm-event:scene-save-guard",
+                    rootFactId,
+                    string.Empty,
+                    default,
+                    new[] { "carrot", "harvest" },
+                    true,
+                    out MemoryEntry sourceKnowledge).Succeeded,
+                Is.True);
+            Assert.That(
+                xiaosuiRuntime.Memories.AddObservation(
+                    ResidentIds.Xiaosui,
+                    proposedAt - 1d,
+                    "Yaya told me about the carrot harvest.",
+                    9,
+                    WorldEventKind.ConversationCompleted,
+                    MemorySourceKind.Conversation,
+                    conversationId,
+                    rootFactId,
+                    sourceKnowledge.KnowledgeId,
+                    ResidentIds.Yaya,
+                    new[] { "carrot", "harvest" },
+                    true,
+                    out MemoryEntry receivedKnowledge).Succeeded,
+                Is.True);
+            var decision = new ResidentDecisionSpec(
+                ResidentIds.Xiaosui,
+                ResidentHighLevelIntents.ProposeTownEvent,
+                null,
+                "Let's make carrot soup tonight.",
+                "Test");
+            Assert.That(
+                TownEventProposal.TryCreateFromDecision(
+                    decision,
+                    receivedKnowledge.KnowledgeId,
+                    conversationId,
+                    proposedAt,
+                    out TownEventProposal proposal).Succeeded,
+                Is.True);
+            Assert.That(
+                townEvents.TrySubmitProposal(proposal, out TownEventSession session).Succeeded,
+                Is.True);
+
+            var storage = new RecordingSaveStorage();
+            var saveService = new SaveGameService(
+                bootstrap,
+                executor,
+                replanner,
+                yayaObject.transform,
+                storage);
+            ActionResult stableSave = saveService.Save();
+            Assert.That(stableSave.Succeeded, Is.True, stableSave.Message);
+            Assert.That(storage.WriteCount, Is.EqualTo(1));
+            Assert.That(session.IsTerminal, Is.False);
+            Assert.That(townEvents.EventCoordinator.ActiveTownEventCount, Is.EqualTo(1));
+            Assert.That(storage.Json, Does.Not.Contain("TownEventSession"));
+            Assert.That(storage.Json, Does.Not.Contain("activeRequest"));
+
+            Assert.That(
+                townEvents.EventCoordinator.TryBeginGathering(
+                    session.ScheduledStartGameSeconds,
+                    monotonicSeconds: 0d).Succeeded,
+                Is.True);
+            Assert.That(session.State, Is.EqualTo(TownEventState.Gathering));
+            Assert.That(schedules.ReservationService.ReservationCount, Is.EqualTo(2));
+
+            ActionResult loadedDuringEvent = saveService.Load();
+
+            Assert.That(loadedDuringEvent.Succeeded, Is.True, loadedDuringEvent.Message);
+            Assert.That(session.State, Is.EqualTo(TownEventState.Cancelled));
+            Assert.That(townEvents.EventCoordinator.ActiveTownEventCount, Is.Zero);
+            Assert.That(schedules.ReservationService.ReservationCount, Is.Zero);
+            foreach (ResidentId residentId in ResidentIds.TownResidents)
+            {
+                Assert.That(
+                    bootstrap.ResidentRegistry.TryGetRuntimeState(
+                        residentId,
+                        out ResidentRuntimeState runtime).Succeeded,
+                    Is.True);
+                Assert.That(
+                    runtime.Memories.Entries.Any(entry =>
+                        entry.SourceEventKind == WorldEventKind.TownEventCompleted &&
+                        entry.Tags.Contains("attended")),
+                    Is.False);
+            }
+
+            Assert.That(townEvents.IsInitialized, Is.True);
+            Assert.That(saveService.Save().Succeeded, Is.True);
+            Assert.That(storage.WriteCount, Is.EqualTo(2));
+        }
+
+        [Test]
+        public void BuiltScene_SaveLoadDuringConversation_CancelsAndCanStartAgain()
+        {
+            BuiltSceneFixture fixture = BuildAndInitializeFixture();
+            TownResidentScheduleController yaya = fixture.Resident(ResidentIds.Yaya);
+            TownResidentScheduleController xiaosui = fixture.Resident(ResidentIds.Xiaosui);
+            const double conversationGameSeconds = 17d * 60d * 60d;
+            Assert.That(
+                fixture.Bootstrap.Clock.Restore(
+                    conversationGameSeconds,
+                    fixture.Bootstrap.Clock.TimeScale,
+                    false).Succeeded,
+                Is.True);
+            MoveResidentToScheduledActivity(yaya, 17 * 60, 1d);
+            MoveResidentToScheduledActivity(xiaosui, 17 * 60, 1d);
+            Assert.That(yaya.CurrentLocationId.Value, Is.EqualTo("location-plaza"));
+            Assert.That(xiaosui.CurrentLocationId.Value, Is.EqualTo("location-plaza"));
+
+            double firstMonotonicSeconds =
+                UnityEngine.Time.realtimeSinceStartupAsDouble + 100d;
+            ActionResult started = fixture.Social.TickSocial(
+                0f,
+                firstMonotonicSeconds,
+                conversationGameSeconds);
+
+            Assert.That(started.Succeeded, Is.True, started.Message);
+            Assert.That(fixture.Social.ActiveSceneConversationCount, Is.EqualTo(1));
+            Assert.That(fixture.Social.ConversationCoordinator.ActiveSessionCount, Is.EqualTo(1));
+            Assert.That(fixture.Social.ParticipantLock.LockedResidentCount, Is.EqualTo(2));
+            Assert.That(fixture.Schedules.ReservationService.ReservationCount, Is.EqualTo(2));
+            Assert.That(yaya.IsConversationSuspended, Is.True);
+            Assert.That(xiaosui.IsConversationSuspended, Is.True);
+            Assert.That(
+                fixture.Social.ParticipantLock.TryGetConversationId(
+                    ResidentIds.Yaya,
+                    out ConversationId firstConversationId),
+                Is.True);
+            Assert.That(
+                fixture.Social.ConversationCoordinator.TryGetSession(
+                    firstConversationId,
+                    ResidentIds.Yaya,
+                    out ConversationSession firstSession).Succeeded,
+                Is.True);
+            Assert.That(
+                fixture.Social.ConversationCoordinator.PrepareLocalFallbackScript(
+                    firstConversationId).Succeeded,
+                Is.True);
+            Assert.That(firstSession.PreparedLines, Has.Count.GreaterThanOrEqualTo(2));
+            string firstUnplayedText = firstSession.PreparedLines[1].Text;
+            ActionResult played = fixture.Social.TickSocial(
+                1f,
+                firstMonotonicSeconds + 0.1d,
+                conversationGameSeconds + 0.1d);
+            Assert.That(played.Succeeded, Is.True, played.Message);
+            Assert.That(firstSession.State, Is.EqualTo(ConversationState.Active));
+            Assert.That(firstSession.Utterances, Has.Count.EqualTo(1));
+            string playedText = firstSession.Utterances[0].Text;
+            Assert.That(playedText, Is.Not.EqualTo(firstUnplayedText));
+            Assert.That(
+                fixture.Social.SocialGraph.TryGetRelationship(
+                    ResidentIds.Yaya,
+                    ResidentIds.Xiaosui,
+                    out RelationshipState relationshipBeforeLoad).Succeeded,
+                Is.True);
+            int savedFamiliarity = relationshipBeforeLoad.Familiarity;
+            int savedTrust = relationshipBeforeLoad.Trust;
+            long savedRelationshipVersion = relationshipBeforeLoad.RelationVersion;
+
+            var storage = new RecordingSaveStorage();
+            SaveGameService saveService = fixture.CreateSaveService(storage);
+            ActionResult saved = saveService.Save();
+
+            Assert.That(saved.Succeeded, Is.True, saved.Message);
+            SaveData captured = JsonUtility.FromJson<SaveData>(storage.Json);
+            foreach (ResidentId participant in new[] { ResidentIds.Yaya, ResidentIds.Xiaosui })
+            {
+                ResidentSaveData savedResident = captured.residents.Single(resident =>
+                    resident.residentId == participant.Value);
+                MemorySaveData[] fragments = savedResident.recentMemories.Where(memory =>
+                    memory.hasSourceEventKind &&
+                    memory.sourceEventKind == (int)WorldEventKind.ConversationInterrupted &&
+                    memory.sourceEventId == firstConversationId.Value &&
+                    memory.tags.Contains("conversation-fragment")).ToArray();
+                Assert.That(fragments, Has.Length.EqualTo(1));
+                Assert.That(fragments[0].ownerResidentId, Is.EqualTo(participant.Value));
+                Assert.That(fragments[0].text, Does.Contain(playedText));
+                Assert.That(fragments[0].text, Does.Not.Contain(firstUnplayedText));
+                Assert.That(fragments[0].isShareable, Is.False);
+            }
+
+            Assert.That(storage.Json, Does.Not.Contain("ConversationSession"));
+            Assert.That(storage.Json, Does.Not.Contain("participantLock"));
+            Assert.That(storage.Json, Does.Not.Contain("reservation"));
+            Assert.That(storage.Json, Does.Not.Contain("DeadlineAtMonotonicSeconds"));
+            ActionResult loaded = saveService.Load();
+
+            Assert.That(loaded.Succeeded, Is.True, loaded.Message);
+            Assert.That(firstSession.State, Is.EqualTo(ConversationState.Cancelled));
+            Assert.That(fixture.Social.ActiveSceneConversationCount, Is.Zero);
+            Assert.That(fixture.Social.ConversationCoordinator.ActiveSessionCount, Is.Zero);
+            Assert.That(fixture.Social.ParticipantLock.LockedResidentCount, Is.Zero);
+            Assert.That(fixture.Schedules.ReservationService.ReservationCount, Is.Zero);
+            Assert.That(yaya.IsConversationSuspended, Is.False);
+            Assert.That(xiaosui.IsConversationSuspended, Is.False);
+            Assert.That(yaya.Navigator.IsMoving, Is.False);
+            Assert.That(xiaosui.Navigator.IsMoving, Is.False);
+            Assert.That(yaya.Runtime.State, Is.EqualTo(ResidentScheduleState.WaitingForSchedule));
+            Assert.That(xiaosui.Runtime.State, Is.EqualTo(ResidentScheduleState.WaitingForSchedule));
+            foreach (ResidentId participant in new[] { ResidentIds.Yaya, ResidentIds.Xiaosui })
+            {
+                Assert.That(
+                    fixture.Bootstrap.ResidentRegistry.TryGetRuntimeState(
+                        participant,
+                        out ResidentRuntimeState runtime).Succeeded,
+                    Is.True);
+                Assert.That(
+                    runtime.Memories.Entries.Where(memory =>
+                        memory.SourceEventKind == WorldEventKind.ConversationInterrupted &&
+                        memory.SourceEventId == firstConversationId.Value &&
+                        memory.Tags.Contains("conversation-fragment")),
+                    Has.Exactly(1).Matches<MemoryEntry>(memory =>
+                        memory.OwnerResidentId == participant &&
+                        !memory.IsShareable &&
+                        memory.Text.Contains(playedText) &&
+                        !memory.Text.Contains(firstUnplayedText)),
+                    "Only the actually played fragment may survive an interrupted conversation.");
+                Assert.That(
+                    runtime.Memories.Entries.Any(memory =>
+                        memory.SourceEventKind == WorldEventKind.ConversationCompleted &&
+                        memory.SourceEventId == firstConversationId.Value),
+                    Is.False);
+            }
+            Assert.That(firstSession.Outcome, Is.Null);
+            Assert.That(
+                fixture.Social.SocialGraph.TryGetRelationship(
+                    ResidentIds.Yaya,
+                    ResidentIds.Xiaosui,
+                    out RelationshipState relationshipAfterLoad).Succeeded,
+                Is.True);
+            Assert.That(relationshipAfterLoad.Familiarity, Is.EqualTo(savedFamiliarity));
+            Assert.That(relationshipAfterLoad.Trust, Is.EqualTo(savedTrust));
+            Assert.That(
+                relationshipAfterLoad.RelationVersion,
+                Is.EqualTo(savedRelationshipVersion));
+
+            MoveResidentToScheduledActivity(yaya, 17 * 60, firstMonotonicSeconds + 1d);
+            MoveResidentToScheduledActivity(xiaosui, 17 * 60, firstMonotonicSeconds + 1d);
+            ActionResult restarted = fixture.Social.TickSocial(
+                0f,
+                firstMonotonicSeconds + 100d,
+                conversationGameSeconds + 1d);
+
+            Assert.That(restarted.Succeeded, Is.True, restarted.Message);
+            Assert.That(fixture.Social.ActiveSceneConversationCount, Is.EqualTo(1));
+            Assert.That(fixture.Social.ParticipantLock.LockedResidentCount, Is.EqualTo(2));
+            Assert.That(
+                fixture.Social.ParticipantLock.TryGetConversationId(
+                    ResidentIds.Yaya,
+                    out ConversationId replacementConversationId),
+                Is.True);
+            Assert.That(replacementConversationId, Is.Not.EqualTo(firstConversationId));
+
+            fixture.Bootstrap.NotifyAuthoritativeStateResetting();
+            Assert.That(fixture.Social.ActiveSceneConversationCount, Is.Zero);
+            Assert.That(fixture.Social.ParticipantLock.LockedResidentCount, Is.Zero);
+            Assert.That(fixture.Schedules.ReservationService.ReservationCount, Is.Zero);
+        }
+
+        [Test]
+        public void BuiltScene_SaveLoadWhileBackgroundResidentMoves_ClearsAndReplans()
+        {
+            BuiltSceneFixture fixture = BuildAndInitializeFixture();
+            TownResidentScheduleController amu = fixture.Resident(ResidentIds.Amu);
+            const double workGameSeconds = 8d * 60d * 60d;
+            Assert.That(
+                fixture.Bootstrap.Clock.Restore(
+                    workGameSeconds,
+                    fixture.Bootstrap.Clock.TimeScale,
+                    false).Succeeded,
+                Is.True);
+            Assert.That(
+                amu.Navigator.Configure(
+                    amu.GetComponent<NavMeshAgent>(),
+                    fixture.ArrivalPoints,
+                    requireNavMesh: false,
+                    movementSpeed: 0.1f).Succeeded,
+                Is.True);
+
+            ActionResult moving = amu.TickSchedule(8 * 60, 0d, 0f);
+
+            Assert.That(moving.Succeeded, Is.True, moving.Message);
+            Assert.That(amu.Runtime.State, Is.EqualTo(ResidentScheduleState.Moving));
+            Assert.That(amu.Navigator.IsMoving, Is.True);
+            Assert.That(amu.Navigator.CurrentTarget, Is.Not.Null);
+            Assert.That(amu.Runtime.ActiveInteractionPointId, Is.Not.Empty);
+            string stalePointId = amu.Runtime.ActiveInteractionPointId;
+            Vector3 savedPosition = amu.transform.position;
+            Assert.That(fixture.Schedules.ReservationService.ReservationCount, Is.EqualTo(1));
+            Assert.That(
+                fixture.Schedules.ReservationService.TryGetOwner(
+                    stalePointId,
+                    0d,
+                    out ResidentId movingOwner),
+                Is.True);
+            Assert.That(movingOwner, Is.EqualTo(ResidentIds.Amu));
+
+            var storage = new RecordingSaveStorage();
+            SaveGameService saveService = fixture.CreateSaveService(storage);
+            Assert.That(saveService.Save().Succeeded, Is.True);
+
+            ActionResult loaded = saveService.Load();
+
+            Assert.That(loaded.Succeeded, Is.True, loaded.Message);
+            Assert.That(amu.transform.position, Is.EqualTo(savedPosition));
+            Assert.That(amu.Runtime.State, Is.EqualTo(ResidentScheduleState.WaitingForSchedule));
+            Assert.That(amu.Runtime.ActiveEntry, Is.Null);
+            Assert.That(amu.Runtime.ActiveInteractionPointId, Is.Empty);
+            Assert.That(amu.Navigator.IsMoving, Is.False);
+            Assert.That(amu.Navigator.CurrentTarget, Is.Null);
+            Assert.That(fixture.Schedules.ReservationService.ReservationCount, Is.Zero);
+            Assert.That(
+                fixture.Schedules.ReservationService.TryGetOwner(
+                    stalePointId,
+                    1d,
+                    out _),
+                Is.False);
+
+            Assert.That(
+                amu.Navigator.Configure(
+                    amu.GetComponent<NavMeshAgent>(),
+                    fixture.ArrivalPoints,
+                    requireNavMesh: false,
+                    movementSpeed: 1000f).Succeeded,
+                Is.True);
+            ActionResult replanned = amu.TickSchedule(8 * 60, 2d, 1f);
+
+            Assert.That(replanned.Succeeded, Is.True, replanned.Message);
+            Assert.That(amu.Runtime.State, Is.EqualTo(ResidentScheduleState.Working));
+            Assert.That(amu.CurrentLocationId.Value, Is.EqualTo("location-workshop"));
+            Assert.That(amu.Runtime.ActiveInteractionPointId, Is.Not.Empty);
+            Assert.That(amu.Navigator.IsMoving, Is.False);
+            Assert.That(fixture.Schedules.ReservationService.ReservationCount, Is.EqualTo(1));
+            Assert.That(
+                fixture.Schedules.ReservationService.TryGetOwner(
+                    amu.Runtime.ActiveInteractionPointId,
+                    2d,
+                    out ResidentId replannedOwner),
+                Is.True);
+            Assert.That(replannedOwner, Is.EqualTo(ResidentIds.Amu));
+        }
+
+        [Test]
+        public void BuiltScene_LoadWithDestroyedConversationParticipant_CleansTransientState()
+        {
+            BuiltSceneFixture fixture = BuildAndInitializeFixture();
+            TownResidentScheduleController yaya = fixture.Resident(ResidentIds.Yaya);
+            TownResidentScheduleController xiaosui = fixture.Resident(ResidentIds.Xiaosui);
+            const double conversationGameSeconds = 17d * 60d * 60d;
+            Assert.That(
+                fixture.Bootstrap.Clock.Restore(
+                    conversationGameSeconds,
+                    fixture.Bootstrap.Clock.TimeScale,
+                    false).Succeeded,
+                Is.True);
+            MoveResidentToScheduledActivity(yaya, 17 * 60, 1d);
+            MoveResidentToScheduledActivity(xiaosui, 17 * 60, 1d);
+            double monotonicSeconds =
+                UnityEngine.Time.realtimeSinceStartupAsDouble + 100d;
+            ActionResult started = fixture.Social.TickSocial(
+                0f,
+                monotonicSeconds,
+                conversationGameSeconds);
+
+            Assert.That(started.Succeeded, Is.True, started.Message);
+            Assert.That(fixture.Social.ActiveSceneConversationCount, Is.EqualTo(1));
+            Assert.That(fixture.Social.ParticipantLock.LockedResidentCount, Is.EqualTo(2));
+            Assert.That(fixture.Schedules.ReservationService.ReservationCount, Is.EqualTo(2));
+            Assert.That(
+                fixture.Social.ParticipantLock.TryGetConversationId(
+                    ResidentIds.Yaya,
+                    out ConversationId conversationId),
+                Is.True);
+            Assert.That(
+                fixture.Social.ConversationCoordinator.TryGetSession(
+                    conversationId,
+                    ResidentIds.Yaya,
+                    out ConversationSession session).Succeeded,
+                Is.True);
+
+            var storage = new RecordingSaveStorage();
+            SaveGameService saveService = fixture.CreateSaveService(storage);
+            Assert.That(saveService.Save().Succeeded, Is.True);
+
+            Object.DestroyImmediate(xiaosui.gameObject);
+            Assert.That(xiaosui == null, Is.True);
+            ActionResult loaded = default;
+            Assert.DoesNotThrow(() => loaded = saveService.Load());
+
+            Assert.That(loaded.Succeeded, Is.True, loaded.Message);
+            Assert.That(session.State, Is.EqualTo(ConversationState.Cancelled));
+            Assert.That(fixture.Social.ActiveSceneConversationCount, Is.Zero);
+            Assert.That(fixture.Social.ConversationCoordinator.ActiveSessionCount, Is.Zero);
+            Assert.That(fixture.Social.ParticipantLock.LockedResidentCount, Is.Zero);
+            Assert.That(fixture.Schedules.ReservationService.ReservationCount, Is.Zero);
+            Assert.That(yaya.IsConversationSuspended, Is.False);
+            Assert.That(yaya.IsFarmingBusy, Is.False);
+            Assert.That(yaya.Navigator.IsMoving, Is.False);
+            Assert.That(yaya.Runtime.State, Is.EqualTo(ResidentScheduleState.WaitingForSchedule));
+            Assert.That(fixture.Executor.IsBusy, Is.False);
+            foreach (ResidentId residentId in ResidentIds.TownResidents)
+            {
+                Assert.That(
+                    fixture.Bootstrap.ResidentRegistry.TryGetRuntimeState(
+                        residentId,
+                        out ResidentRuntimeState runtime).Succeeded,
+                    Is.True);
+                Assert.That(runtime.ResidentId, Is.EqualTo(residentId));
+                Assert.That(runtime.Memories.OwnerResidentId, Is.EqualTo(residentId));
+                Assert.That(
+                    runtime.Memories.Entries.All(memory =>
+                        memory.OwnerResidentId == residentId),
+                    Is.True,
+                    $"Loaded memory ownership crossed into {residentId}.");
+            }
+        }
+
+        [Test]
+        public void BuiltScene_LoadDuringGatheringWithDestroyedLocation_CancelsWithoutLeak()
+        {
+            BuiltSceneFixture fixture = BuildAndInitializeFixture();
+            const double eventStartGameSeconds = 18d * 60d * 60d;
+            Assert.That(
+                fixture.Bootstrap.Clock.Restore(
+                    eventStartGameSeconds,
+                    fixture.Bootstrap.Clock.TimeScale,
+                    false).Succeeded,
+                Is.True);
+            MoveResidentToScheduledActivity(
+                fixture.Resident(ResidentIds.Yaya),
+                18 * 60,
+                1d);
+            MoveResidentToScheduledActivity(
+                fixture.Resident(ResidentIds.Xiaosui),
+                18 * 60,
+                1d);
+            TownEventSession session = ScheduleHarvestDinner(
+                fixture,
+                proposedAtGameSeconds: 17d * 60d * 60d);
+            double monotonicSeconds =
+                UnityEngine.Time.realtimeSinceStartupAsDouble + 100d;
+            ActionResult gathering = fixture.TownEvents.TickTownEvent(
+                0f,
+                monotonicSeconds,
+                session.ScheduledStartGameSeconds);
+
+            Assert.That(gathering.Succeeded, Is.True, gathering.Message);
+            Assert.That(session.State, Is.EqualTo(TownEventState.Gathering));
+            Assert.That(fixture.Schedules.ReservationService.ReservationCount, Is.EqualTo(2));
+            foreach (ResidentId participant in session.ParticipantResidentIds)
+            {
+                TownResidentScheduleController resident = fixture.Resident(participant);
+                Assert.That(resident.IsTownEventSuspended, Is.True);
+                Assert.That(resident.Navigator.IsMoving, Is.True);
+            }
+
+            var storage = new RecordingSaveStorage();
+            SaveGameService saveService = fixture.CreateSaveService(storage);
+            Assert.That(saveService.Save().Succeeded, Is.True);
+            ResidentId invalidatedResidentId = session.ParticipantResidentIds.First();
+            Assert.That(
+                session.TryGetReservation(
+                    invalidatedResidentId,
+                    out InteractionPointReservation reservation),
+                Is.True);
+            LocationArrivalPoint invalidatedPoint = fixture.ArrivalPoints.Single(point =>
+                point != null &&
+                point.InteractionPointId == reservation.InteractionPointId);
+
+            Object.DestroyImmediate(invalidatedPoint.gameObject);
+                Assert.That(invalidatedPoint == null, Is.True);
+            ActionResult loaded = saveService.Load();
+
+            Assert.That(loaded.Succeeded, Is.True, loaded.Message);
+            Assert.That(session.State, Is.EqualTo(TownEventState.Cancelled));
+            Assert.That(fixture.TownEvents.EventCoordinator.ActiveTownEventCount, Is.Zero);
+            Assert.That(fixture.Schedules.ReservationService.ReservationCount, Is.Zero);
+            foreach (ResidentId participant in session.ParticipantResidentIds)
+            {
+                TownResidentScheduleController resident = fixture.Resident(participant);
+                Assert.That(resident.IsTownEventSuspended, Is.False);
+                Assert.That(resident.Navigator.IsMoving, Is.False);
+                Assert.That(resident.Runtime.State, Is.EqualTo(ResidentScheduleState.WaitingForSchedule));
+            }
+
+            foreach (ResidentId residentId in ResidentIds.TownResidents)
+            {
+                Assert.That(
+                    fixture.Bootstrap.ResidentRegistry.TryGetRuntimeState(
+                        residentId,
+                        out ResidentRuntimeState runtime).Succeeded,
+                    Is.True);
+                Assert.That(
+                    runtime.Memories.Entries.Any(memory =>
+                        memory.SourceEventKind == WorldEventKind.TownEventCompleted &&
+                        memory.Tags.Contains("attended")),
+                    Is.False,
+                    $"{residentId} must not remember attending an interrupted event.");
+            }
+        }
+
+        private static BuiltSceneFixture BuildAndInitializeFixture()
+        {
+            Assert.That(DemoSceneBuilder.BuildDemoScene(promptToSaveCurrentScenes: false), Is.True);
+            GameBootstrap bootstrap = GameObject.Find("GameBootstrap").GetComponent<GameBootstrap>();
+            TownScheduleCoordinator schedules =
+                bootstrap.GetComponent<TownScheduleCoordinator>();
+            TownSocialCoordinator social = bootstrap.GetComponent<TownSocialCoordinator>();
+            TownEventSceneCoordinator townEvents =
+                bootstrap.GetComponent<TownEventSceneCoordinator>();
+            ReplanController replanner = bootstrap.GetComponent<ReplanController>();
+            GameObject yayaObject = GameObject.Find("NPC_Blockout_Capsule");
+            NpcPlanExecutor executor = yayaObject.GetComponent<NpcPlanExecutor>();
+            TownResidentScheduleController[] residents =
+                Object.FindObjectsByType<TownResidentScheduleController>();
+            LocationArrivalPoint[] arrivalPoints =
+                Object.FindObjectsByType<LocationArrivalPoint>();
+
+            Assert.That(residents, Has.Length.EqualTo(4));
+            Assert.That(arrivalPoints.Length, Is.GreaterThan(0));
+            Assert.That(bootstrap.Initialize().Succeeded, Is.True);
+            Assert.That(executor.Initialize().Succeeded, Is.True);
+            Assert.That(replanner.Initialize().Succeeded, Is.True);
+            Assert.That(schedules.Initialize().Succeeded, Is.True);
+            Assert.That(social.Initialize().Succeeded, Is.True);
+            Assert.That(townEvents.Initialize().Succeeded, Is.True);
+            foreach (TownResidentScheduleController resident in residents)
+            {
+                Assert.That(
+                    resident.Navigator.Configure(
+                        resident.GetComponent<NavMeshAgent>(),
+                        arrivalPoints,
+                        requireNavMesh: false,
+                        movementSpeed: 1000f).Succeeded,
+                    Is.True);
+            }
+
+            return new BuiltSceneFixture(
+                bootstrap,
+                schedules,
+                social,
+                townEvents,
+                replanner,
+                executor,
+                yayaObject.transform,
+                residents,
+                arrivalPoints);
+        }
+
+        private static void MoveResidentToScheduledActivity(
+            TownResidentScheduleController resident,
+            int minuteOfDay,
+            double elapsedSeconds)
+        {
+            ActionResult moved = resident.TickSchedule(minuteOfDay, elapsedSeconds, 1f);
+            Assert.That(moved.Succeeded, Is.True, moved.Message);
+            Assert.That(resident.Runtime.State, Is.EqualTo(ResidentScheduleState.Working));
+            Assert.That(resident.Navigator.IsMoving, Is.False);
+        }
+
+        private static TownEventSession ScheduleHarvestDinner(
+            BuiltSceneFixture fixture,
+            double proposedAtGameSeconds)
+        {
+            const string conversationId = "conversation:destroyed-event-location";
+            const string rootFactId = "fact:destroyed-event-location-harvest";
+            Assert.That(
+                fixture.Bootstrap.ResidentRegistry.TryGetRuntimeState(
+                    ResidentIds.Yaya,
+                    out ResidentRuntimeState yaya).Succeeded,
+                Is.True);
+            Assert.That(
+                fixture.Bootstrap.ResidentRegistry.TryGetRuntimeState(
+                    ResidentIds.Xiaosui,
+                    out ResidentRuntimeState xiaosui).Succeeded,
+                Is.True);
+            Assert.That(
+                yaya.Memories.AddObservation(
+                    ResidentIds.Yaya,
+                    proposedAtGameSeconds - 2d,
+                    "I harvested the carrots.",
+                    9,
+                    WorldEventKind.ActionCompleted,
+                    MemorySourceKind.Perception,
+                    "farm-event:destroyed-event-location",
+                    rootFactId,
+                    string.Empty,
+                    default,
+                    new[] { "carrot", "harvest" },
+                    true,
+                    out MemoryEntry sourceKnowledge).Succeeded,
+                Is.True);
+            Assert.That(
+                xiaosui.Memories.AddObservation(
+                    ResidentIds.Xiaosui,
+                    proposedAtGameSeconds - 1d,
+                    "Yaya told me about the carrot harvest.",
+                    9,
+                    WorldEventKind.ConversationCompleted,
+                    MemorySourceKind.Conversation,
+                    conversationId,
+                    rootFactId,
+                    sourceKnowledge.KnowledgeId,
+                    ResidentIds.Yaya,
+                    new[] { "carrot", "harvest" },
+                    true,
+                    out MemoryEntry receivedKnowledge).Succeeded,
+                Is.True);
+            var decision = new ResidentDecisionSpec(
+                ResidentIds.Xiaosui,
+                ResidentHighLevelIntents.ProposeTownEvent,
+                null,
+                "Let's make carrot soup tonight.",
+                "Test");
+            Assert.That(
+                TownEventProposal.TryCreateFromDecision(
+                    decision,
+                    receivedKnowledge.KnowledgeId,
+                    conversationId,
+                    proposedAtGameSeconds,
+                    out TownEventProposal proposal).Succeeded,
+                Is.True);
+            Assert.That(
+                fixture.TownEvents.TrySubmitProposal(
+                    proposal,
+                    out TownEventSession session).Succeeded,
+                Is.True);
+            return session;
+        }
+
+        private sealed class BuiltSceneFixture
+        {
+            public BuiltSceneFixture(
+                GameBootstrap bootstrap,
+                TownScheduleCoordinator schedules,
+                TownSocialCoordinator social,
+                TownEventSceneCoordinator townEvents,
+                ReplanController replanner,
+                NpcPlanExecutor executor,
+                Transform yayaTransform,
+                TownResidentScheduleController[] residents,
+                LocationArrivalPoint[] arrivalPoints)
+            {
+                Bootstrap = bootstrap;
+                Schedules = schedules;
+                Social = social;
+                TownEvents = townEvents;
+                Replanner = replanner;
+                Executor = executor;
+                YayaTransform = yayaTransform;
+                Residents = residents;
+                ArrivalPoints = arrivalPoints;
+            }
+
+            public GameBootstrap Bootstrap { get; }
+
+            public TownScheduleCoordinator Schedules { get; }
+
+            public TownSocialCoordinator Social { get; }
+
+            public TownEventSceneCoordinator TownEvents { get; }
+
+            public ReplanController Replanner { get; }
+
+            public NpcPlanExecutor Executor { get; }
+
+            public Transform YayaTransform { get; }
+
+            public TownResidentScheduleController[] Residents { get; }
+
+            public LocationArrivalPoint[] ArrivalPoints { get; }
+
+            public TownResidentScheduleController Resident(ResidentId residentId)
+            {
+                return Residents.Single(resident => resident.ResidentId == residentId);
+            }
+
+            public SaveGameService CreateSaveService(ISaveGameStorage storage)
+            {
+                return new SaveGameService(
+                    Bootstrap,
+                    Executor,
+                    Replanner,
+                    YayaTransform,
+                    storage);
+            }
         }
 
         private static void AssertGeneratedScene()
@@ -219,6 +998,20 @@ namespace AIFarm.Tests.EditMode
             Assert.That(
                 GameObject.Find("UI_Canvas/StatusPanel/TimeControls/ApiSettingsButton").GetComponent<Button>(),
                 Is.Not.Null);
+            Transform apiSetupPanel = uiCanvas.transform.Find("ApiGatewaySetupPanel");
+            Assert.That(apiSetupPanel, Is.Not.Null);
+            Assert.That(apiSetupPanel.gameObject.activeSelf, Is.False);
+            InputField apiKeyInput = apiSetupPanel.Find("ApiKeyInput").GetComponent<InputField>();
+            InputField modelInput = apiSetupPanel.Find("ModelInput").GetComponent<InputField>();
+            Assert.That(apiKeyInput, Is.Not.Null);
+            Assert.That(apiKeyInput.contentType, Is.EqualTo(InputField.ContentType.Password));
+            Assert.That(apiKeyInput.text, Is.Empty);
+            Assert.That(modelInput, Is.Not.Null);
+            Assert.That(modelInput.text, Is.EqualTo(LocalAiGatewayProcess.DefaultModelId));
+            Assert.That(apiSetupPanel.Find("StartGatewayButton").GetComponent<Button>(), Is.Not.Null);
+            Assert.That(apiSetupPanel.Find("StopGatewayButton").GetComponent<Button>(), Is.Not.Null);
+            Assert.That(apiSetupPanel.Find("GatewayStatusText").GetComponent<Text>(), Is.Not.Null);
+            Assert.That(uiCanvas.GetComponent<ApiGatewaySetupPanel>(), Is.Not.Null);
             Assert.That(GameObject.Find("UI_Canvas/BackpackPanel/InventoryText"), Is.Not.Null);
             Assert.That(GameObject.Find("UI_Canvas/GoalPanel/GoalText"), Is.Not.Null);
             Assert.That(GameObject.Find("UI_Canvas/GoalPanel/ActionText"), Is.Not.Null);
@@ -258,6 +1051,8 @@ namespace AIFarm.Tests.EditMode
             Assert.That(bootstrap.GetComponent<ReplanController>(), Is.Not.Null);
             Assert.That(bootstrap.GetComponent<TownScheduleCoordinator>(), Is.Not.Null);
             Assert.That(bootstrap.GetComponent<TownSocialCoordinator>(), Is.Not.Null);
+            Assert.That(bootstrap.GetComponent<TownEventSceneCoordinator>(), Is.Not.Null);
+            Assert.That(bootstrap.GetComponent<LocalAiGatewayProcess>(), Is.Not.Null);
 
             DemoInventoryConfig inventoryConfig =
                 AssetDatabase.LoadAssetAtPath<DemoInventoryConfig>(DemoSceneBuilder.InventoryConfigPath);
@@ -317,6 +1112,45 @@ namespace AIFarm.Tests.EditMode
             }
 
             Assert.That(matches, Is.EqualTo(1), $"Expected exactly one root named {expectedName}.");
+        }
+
+        private static void InvokeLifecycle(MonoBehaviour component, string methodName)
+        {
+            MethodInfo method = component.GetType().GetMethod(
+                methodName,
+                BindingFlags.Instance | BindingFlags.NonPublic);
+            Assert.That(method, Is.Not.Null, $"Missing lifecycle method {methodName}.");
+            method.Invoke(component, null);
+        }
+
+        private sealed class RecordingSaveStorage : ISaveGameStorage
+        {
+            public string SavePath => "memory://town-event-save-guard";
+
+            public int WriteCount { get; private set; }
+
+            public string Json { get; private set; } = string.Empty;
+
+            public ActionResult Write(string json)
+            {
+                Json = json ?? string.Empty;
+                WriteCount++;
+                return ActionResult.Success("Recorded save JSON.");
+            }
+
+            public ActionResult Read(out string json)
+            {
+                json = Json;
+                return string.IsNullOrWhiteSpace(json)
+                    ? ActionResult.Failure(ActionFailureReason.InvalidState, "No save exists.")
+                    : ActionResult.Success("Read save JSON.");
+            }
+
+            public ActionResult Delete()
+            {
+                Json = string.Empty;
+                return ActionResult.Success("Deleted save JSON.");
+            }
         }
     }
 }

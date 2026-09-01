@@ -1,5 +1,6 @@
 using System;
 using System.Collections;
+using System.Collections.Generic;
 using AIFarm.Ai;
 using AIFarm.Core;
 using AIFarm.Npc;
@@ -58,17 +59,25 @@ namespace AIFarm.Presentation
                 boundedCommand.Length > AiGatewayJsonCodec.MaximumCommandLength)
             {
                 LastRemoteFailure = "Command is outside the remote gateway bounds.";
-                yield return CompleteLocalInterpretation(residentId, command, completed);
+                foreach (object step in RunChild(
+                    CompleteLocalInterpretation(residentId, command, completed)))
+                {
+                    yield return step;
+                }
+
                 yield break;
             }
 
             AiGatewayHttpResult httpResult = null;
             LogRequest(residentId, "interpret-command");
-            yield return transport.PostJson(
+            foreach (object step in RunChild(transport.PostJson(
                 Endpoint("/v1/interpret-command"),
                 AiGatewayJsonCodec.SerializeInterpretCommandRequest(residentId, boundedCommand),
                 timeoutSeconds,
-                result => httpResult = result);
+                result => httpResult = result)))
+            {
+                yield return step;
+            }
 
             ActionResult transportOutcome = ValidateHttpResult(httpResult);
             if (transportOutcome.Succeeded)
@@ -95,7 +104,11 @@ namespace AIFarm.Presentation
                 LastRemoteFailure = transportOutcome.Message;
             }
 
-            yield return CompleteLocalInterpretation(residentId, command, completed);
+            foreach (object step in RunChild(
+                CompleteLocalInterpretation(residentId, command, completed)))
+            {
+                yield return step;
+            }
         }
 
         public IEnumerator GenerateUtterance(
@@ -119,14 +132,17 @@ namespace AIFarm.Presentation
                 AiGatewayJsonCodec.MaximumContextLength);
             AiGatewayHttpResult httpResult = null;
             LogRequest(residentId, "generate-utterance");
-            yield return transport.PostJson(
+            foreach (object step in RunChild(transport.PostJson(
                 Endpoint("/v1/generate-utterance"),
                 AiGatewayJsonCodec.SerializeGenerateUtteranceRequest(
                     residentId,
                     trigger,
                     boundedContext),
                 timeoutSeconds,
-                result => httpResult = result);
+                result => httpResult = result)))
+            {
+                yield return step;
+            }
 
             ActionResult transportOutcome = ValidateHttpResult(httpResult);
             if (transportOutcome.Succeeded)
@@ -155,11 +171,15 @@ namespace AIFarm.Presentation
             }
 
             AiGatewayResult<NpcExpression> fallbackResult = null;
-            yield return fallback.GenerateUtterance(
+            foreach (object step in RunChild(fallback.GenerateUtterance(
                 residentId,
                 trigger,
                 context,
-                result => fallbackResult = result);
+                result => fallbackResult = result)))
+            {
+                yield return step;
+            }
+
             CompleteLocal(residentId, fallbackResult, completed);
         }
 
@@ -189,12 +209,16 @@ namespace AIFarm.Presentation
             if (goal == null)
             {
                 LastRemoteFailure = "Reflection requires a farm goal.";
-                yield return CompleteLocalReflection(
+                foreach (object step in RunChild(CompleteLocalReflection(
                     residentId,
                     goal,
                     outcome,
                     eventSummary,
-                    completed);
+                    completed)))
+                {
+                    yield return step;
+                }
+
                 yield break;
             }
 
@@ -204,18 +228,22 @@ namespace AIFarm.Presentation
             if (boundedSummary.Length == 0)
             {
                 LastRemoteFailure = "Reflection event summary cannot be empty.";
-                yield return CompleteLocalReflection(
+                foreach (object step in RunChild(CompleteLocalReflection(
                     residentId,
                     goal,
                     outcome,
                     eventSummary,
-                    completed);
+                    completed)))
+                {
+                    yield return step;
+                }
+
                 yield break;
             }
 
             AiGatewayHttpResult httpResult = null;
             LogRequest(residentId, "reflect");
-            yield return transport.PostJson(
+            foreach (object step in RunChild(transport.PostJson(
                 Endpoint("/v1/reflect"),
                 AiGatewayJsonCodec.SerializeReflectRequest(
                     residentId,
@@ -223,7 +251,10 @@ namespace AIFarm.Presentation
                     outcome,
                     boundedSummary),
                 timeoutSeconds,
-                result => httpResult = result);
+                result => httpResult = result)))
+            {
+                yield return step;
+            }
 
             ActionResult transportOutcome = ValidateHttpResult(httpResult);
             if (transportOutcome.Succeeded)
@@ -252,12 +283,15 @@ namespace AIFarm.Presentation
                 LastRemoteFailure = transportOutcome.Message;
             }
 
-            yield return CompleteLocalReflection(
+            foreach (object step in RunChild(CompleteLocalReflection(
                 residentId,
                 goal,
                 outcome,
                 eventSummary,
-                completed);
+                completed)))
+            {
+                yield return step;
+            }
         }
 
         public IEnumerator GenerateConversationScript(
@@ -272,11 +306,14 @@ namespace AIFarm.Presentation
             EnsureCallback(completed);
             AiGatewayHttpResult httpResult = null;
             LogRequest(request.ResidentId, "conversation-script");
-            yield return transport.PostJson(
+            foreach (object step in RunChild(transport.PostJson(
                 Endpoint("/v1/conversation-script"),
                 AiGatewayJsonCodec.SerializeConversationScriptRequest(request),
                 timeoutSeconds,
-                result => httpResult = result);
+                result => httpResult = result)))
+            {
+                yield return step;
+            }
 
             ActionResult transportOutcome = ValidateHttpResult(httpResult);
             if (transportOutcome.Succeeded)
@@ -314,16 +351,78 @@ namespace AIFarm.Presentation
                 AiGatewayMode.Local));
         }
 
+        public IEnumerator DecideResident(
+            ResidentDecisionRequest request,
+            Action<AiGatewayResult<ResidentDecisionSpec>> completed)
+        {
+            if (request == null)
+            {
+                throw new ArgumentNullException(nameof(request));
+            }
+
+            EnsureCallback(completed);
+            AiGatewayHttpResult httpResult = null;
+            LogRequest(request.ResidentId, "resident-decision");
+            foreach (object step in RunChild(transport.PostJson(
+                Endpoint("/v1/resident-decision"),
+                AiGatewayJsonCodec.SerializeResidentDecisionRequest(request),
+                timeoutSeconds,
+                result => httpResult = result)))
+            {
+                yield return step;
+            }
+
+            ActionResult transportOutcome = ValidateHttpResult(httpResult);
+            if (transportOutcome.Succeeded)
+            {
+                ActionResult parsed = AiGatewayJsonCodec.TryParseResidentDecision(
+                    httpResult.Body,
+                    request,
+                    out ResidentDecisionSpec decision);
+                if (parsed.Succeeded)
+                {
+                    CompleteRemote(
+                        AiGatewayResult<ResidentDecisionSpec>.Success(
+                            request.ResidentId,
+                            decision,
+                            AiGatewayMode.Remote,
+                            parsed.Message),
+                        completed);
+                    yield break;
+                }
+
+                LastRemoteFailure = parsed.Message;
+            }
+            else
+            {
+                LastRemoteFailure = transportOutcome.Message;
+            }
+
+            AiGatewayResult<ResidentDecisionSpec> fallbackResult = null;
+            foreach (object step in RunChild(fallback.DecideResident(
+                request,
+                result => fallbackResult = result)))
+            {
+                yield return step;
+            }
+
+            CompleteLocal(request.ResidentId, fallbackResult, completed);
+        }
+
         private IEnumerator CompleteLocalInterpretation(
             ResidentId residentId,
             string command,
             Action<AiGatewayResult<FarmGoalSpec>> completed)
         {
             AiGatewayResult<FarmGoalSpec> fallbackResult = null;
-            yield return fallback.InterpretCommand(
+            foreach (object step in RunChild(fallback.InterpretCommand(
                 residentId,
                 command,
-                result => fallbackResult = result);
+                result => fallbackResult = result)))
+            {
+                yield return step;
+            }
+
             CompleteLocal(residentId, fallbackResult, completed);
         }
 
@@ -335,13 +434,40 @@ namespace AIFarm.Presentation
             Action<AiGatewayResult<NpcReflection>> completed)
         {
             AiGatewayResult<NpcReflection> fallbackResult = null;
-            yield return fallback.Reflect(
+            foreach (object step in RunChild(fallback.Reflect(
                 residentId,
                 goal,
                 outcome,
                 eventSummary,
-                result => fallbackResult = result);
+                result => fallbackResult = result)))
+            {
+                yield return step;
+            }
+
             CompleteLocal(residentId, fallbackResult, completed);
+        }
+
+        private static IEnumerable<object> RunChild(IEnumerator child)
+        {
+            if (child == null)
+            {
+                yield break;
+            }
+
+            try
+            {
+                while (child.MoveNext())
+                {
+                    yield return child.Current;
+                }
+            }
+            finally
+            {
+                if (child is IDisposable disposable)
+                {
+                    disposable.Dispose();
+                }
+            }
         }
 
         private void CompleteRemote<T>(

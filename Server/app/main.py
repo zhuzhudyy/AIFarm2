@@ -186,12 +186,20 @@ def create_app(
         )
         return response
 
-    @application.get("/v1/gateway-config", response_model=GatewayConfigSpec)
+    @application.get(
+        "/v1/gateway-config",
+        response_model=GatewayConfigSpec,
+        response_model_exclude_none=True,
+    )
     async def gateway_config(request: Request) -> GatewayConfigSpec:
         _require_loopback(request)
         return runtime.status()
 
-    @application.post("/v1/gateway-config", response_model=GatewayConfigSpec)
+    @application.post(
+        "/v1/gateway-config",
+        response_model=GatewayConfigSpec,
+        response_model_exclude_none=True,
+    )
     def configure_gateway(
         request: Request,
         configuration: GatewayConfigureRequest,
@@ -224,6 +232,7 @@ def create_app(
     @application.post(
         "/v1/gateway-config/clear",
         response_model=GatewayConfigSpec,
+        response_model_exclude_none=True,
     )
     def clear_gateway_config(request: Request) -> GatewayConfigSpec:
         _require_same_origin_csrf(request)

@@ -17,7 +17,14 @@ namespace AIFarm.Presentation
         ActionResult Delete();
     }
 
-    public sealed class PersistentSaveGameStorage : ISaveGameStorage
+    public interface IRecoverableSaveGameStorage : ISaveGameStorage
+    {
+        string BackupPath { get; }
+
+        ActionResult ReadBackup(out string json);
+    }
+
+    public sealed class PersistentSaveGameStorage : IRecoverableSaveGameStorage
     {
         public const string DefaultFileName = "aifarm-save-v1.json";
         public const int MaximumSaveCharacters = 1024 * 1024;
@@ -36,6 +43,8 @@ namespace AIFarm.Presentation
         }
 
         public string SavePath { get; }
+
+        public string BackupPath => SavePath + ".bak";
 
         public ActionResult Write(string json)
         {
@@ -60,10 +69,11 @@ namespace AIFarm.Presentation
                 {
                     try
                     {
-                        File.Replace(temporaryPath, SavePath, null);
+                        File.Replace(temporaryPath, SavePath, BackupPath);
                     }
                     catch (PlatformNotSupportedException)
                     {
+                        File.Copy(SavePath, BackupPath, true);
                         File.Copy(temporaryPath, SavePath, true);
                         File.Delete(temporaryPath);
                     }
@@ -90,17 +100,30 @@ namespace AIFarm.Presentation
 
         public ActionResult Read(out string json)
         {
+            return ReadFile(SavePath, "save", out json);
+        }
+
+        public ActionResult ReadBackup(out string json)
+        {
+            return ReadFile(BackupPath, "backup save", out json);
+        }
+
+        private static ActionResult ReadFile(
+            string path,
+            string description,
+            out string json)
+        {
             json = string.Empty;
             try
             {
-                if (!File.Exists(SavePath))
+                if (!File.Exists(path))
                 {
                     return ActionResult.Failure(
                         ActionFailureReason.InvalidState,
-                        "No save file exists yet.");
+                        $"No {description} file exists yet.");
                 }
 
-                var fileInfo = new FileInfo(SavePath);
+                var fileInfo = new FileInfo(path);
                 if (fileInfo.Length > MaximumSaveCharacters * 4L)
                 {
                     return ActionResult.Failure(
@@ -108,7 +131,7 @@ namespace AIFarm.Presentation
                         "Save file exceeds the supported size limit.");
                 }
 
-                json = File.ReadAllText(SavePath, Encoding.UTF8);
+                json = File.ReadAllText(path, Encoding.UTF8);
                 if (json.Length == 0 || json.Length > MaximumSaveCharacters)
                 {
                     json = string.Empty;
@@ -117,7 +140,7 @@ namespace AIFarm.Presentation
                         "Save file is empty or exceeds the supported size limit.");
                 }
 
-                return ActionResult.Success("Save file read.");
+                return ActionResult.Success($"{description} file read.");
             }
             catch (Exception exception) when (
                 exception is IOException ||
@@ -128,7 +151,7 @@ namespace AIFarm.Presentation
                 json = string.Empty;
                 return ActionResult.Failure(
                     ActionFailureReason.ServiceUnavailable,
-                    $"Could not read the save file: {exception.Message}");
+                    $"Could not read the {description} file: {exception.Message}");
             }
         }
 
@@ -142,6 +165,7 @@ namespace AIFarm.Presentation
                 }
 
                 TryDeleteTemporaryFile(SavePath + ".tmp");
+                TryDeleteTemporaryFile(BackupPath);
                 return ActionResult.Success("Save file removed.");
             }
             catch (Exception exception) when (
