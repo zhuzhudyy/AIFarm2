@@ -137,6 +137,13 @@ namespace AIFarm.Tests.PlayMode
             Assert.That(history.Any(action => action is WaitAction), Is.True);
             Assert.That(events.Entries, Has.Count.LessThanOrEqualTo(10));
             Assert.That(events.Entries.Last().Kind, Is.EqualTo(WorldEventKind.GoalCompleted));
+            Assert.That(
+                events.GetVisibleEntries(ResidentIds.Yaya).Last().Kind,
+                Is.EqualTo(WorldEventKind.GoalCompleted));
+            Assert.That(
+                events.GetVisibleEntries(ResidentIds.Xiaosui),
+                Is.Empty,
+                "小穗不在农场时不能自动获知芽芽的收获结果。");
             Assert.That(controller.CurrentMood, Is.EqualTo(NpcMood.Proud));
             Assert.That(controller.CurrentEmoji, Is.Not.Empty);
             Assert.That(controller.Persona.Name, Is.EqualTo("芽芽"));

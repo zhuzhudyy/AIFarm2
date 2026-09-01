@@ -162,7 +162,7 @@ namespace AIFarm.Tests.EditMode
 
             ActionResult saved = service.Save();
             Assert.That(saved.Succeeded, Is.True, saved.Message);
-            Assert.That(storage.Json, Does.Contain("\"version\": 2"));
+            Assert.That(storage.Json, Does.Contain("\"version\": 3"));
             Assert.That(storage.Json, Does.Contain("\"residentId\": \"resident-001\""));
             Assert.That(storage.Json, Does.Not.Contain("OPENAI_API_KEY"));
             Assert.That(storage.Json, Does.Not.Contain("sk-"));
@@ -222,33 +222,93 @@ namespace AIFarm.Tests.EditMode
         }
 
         [Test]
-        public void SaveLoad_PreservesMultipleResidentSaveDataRecords()
+        public void SaveLoad_PreservesAllRegisteredResidentMemoriesAndProvenance()
         {
+            Assert.That(
+                bootstrap.ResidentRegistry.TryGetRuntimeState(
+                    ResidentIds.Amu,
+                    out ResidentRuntimeState amu).Succeeded,
+                Is.True);
+            Assert.That(
+                amu.Memories.AddObservation(
+                    ResidentIds.Amu,
+                    bootstrap.Clock.ElapsedGameSeconds,
+                    "芽芽告诉我：今天完成了胡萝卜收获。",
+                    9,
+                    WorldEventKind.ConversationCompleted,
+                    MemorySourceKind.Conversation,
+                    "conversation:test-save-amu-yaya",
+                    "fact-carrot-harvest-day-1",
+                    "knowledge:resident-001:000000000001",
+                    ResidentIds.Yaya,
+                    new[] { "carrot", "harvest" },
+                    true,
+                    out MemoryEntry sourceFact).Succeeded,
+                Is.True);
+
             Assert.That(service.Save().Succeeded, Is.True);
             SaveData data = JsonUtility.FromJson<SaveData>(storage.Json);
-            Assert.That(data.residents, Has.Length.EqualTo(1));
+            Assert.That(data.residents, Has.Length.EqualTo(4));
+            Assert.That(
+                Array.ConvertAll(data.residents, resident => resident.residentId),
+                Is.EqualTo(new[]
+                {
+                    ResidentIds.YayaValue,
+                    ResidentIds.AmuValue,
+                    ResidentIds.XiaosuiValue,
+                    ResidentIds.MomoValue
+                }));
+            ResidentSaveData savedAmu = Array.Find(
+                data.residents,
+                resident => resident.residentId == ResidentIds.AmuValue);
+            MemorySaveData savedFact = Array.Find(
+                savedAmu.recentMemories,
+                memory => memory.rootFactId == "fact-carrot-harvest-day-1");
+            Assert.That(savedFact, Is.Not.Null);
+            Assert.That(
+                savedFact.immediateSourceResidentId,
+                Is.EqualTo(ResidentIds.YayaValue));
+            Assert.That(
+                savedFact.rootFactId,
+                Is.EqualTo("fact-carrot-harvest-day-1"));
+            Assert.That(savedFact.knowledgeId, Is.EqualTo(sourceFact.KnowledgeId));
+            Assert.That(
+                savedFact.parentKnowledgeId,
+                Is.EqualTo("knowledge:resident-001:000000000001"));
+            Assert.That(
+                savedFact.sourceEventId,
+                Is.EqualTo("conversation:test-save-amu-yaya"));
+            Assert.That(savedFact.tags, Does.Contain("carrot").And.Contain("harvest"));
+            Assert.That(savedFact.isShareable, Is.True);
 
-            ResidentSaveData extra = JsonUtility.FromJson<ResidentSaveData>(
-                JsonUtility.ToJson(data.residents[0]));
-            extra.residentId = "resident-test-b";
-            extra.displayName = "测试居民";
-            foreach (MemorySaveData memory in extra.recentMemories)
-            {
-                memory.ownerResidentId = extra.residentId;
-            }
-
-            data.residents = new[] { data.residents[0], extra };
-            storage.Json = JsonUtility.ToJson(data, true);
-
+            amu.Memories.Clear();
             ActionResult loaded = service.Load();
             Assert.That(loaded.Succeeded, Is.True, loaded.Message);
-            Assert.That(service.Save().Succeeded, Is.True);
-
-            SaveData roundTripped = JsonUtility.FromJson<SaveData>(storage.Json);
-            Assert.That(roundTripped.residents, Has.Length.EqualTo(2));
-            Assert.That(roundTripped.residents[0].residentId, Is.EqualTo(ResidentIds.YayaValue));
-            Assert.That(roundTripped.residents[1].residentId, Is.EqualTo("resident-test-b"));
-            Assert.That(roundTripped.residents[1].displayName, Is.EqualTo("测试居民"));
+            Assert.That(
+                bootstrap.ResidentRegistry.TryGetRuntimeState(
+                    ResidentIds.Amu,
+                    out ResidentRuntimeState restoredAmu).Succeeded,
+                Is.True);
+            Assert.That(
+                restoredAmu.Memories.Query(
+                    ResidentIds.Amu,
+                    new[] { "harvest" },
+                    3,
+                    out IReadOnlyList<MemoryEntry> memories).Succeeded,
+                Is.True);
+            Assert.That(memories, Has.Count.EqualTo(1));
+            Assert.That(memories[0].SourceKind, Is.EqualTo(MemorySourceKind.Conversation));
+            Assert.That(memories[0].ImmediateSourceResidentId, Is.EqualTo(ResidentIds.Yaya));
+            Assert.That(memories[0].RootFactId, Is.EqualTo("fact-carrot-harvest-day-1"));
+            Assert.That(memories[0].KnowledgeId, Is.EqualTo(sourceFact.KnowledgeId));
+            Assert.That(
+                memories[0].ParentKnowledgeId,
+                Is.EqualTo("knowledge:resident-001:000000000001"));
+            Assert.That(
+                memories[0].SourceEventId,
+                Is.EqualTo("conversation:test-save-amu-yaya"));
+            Assert.That(memories[0].Tags, Does.Contain("carrot").And.Contain("harvest"));
+            Assert.That(memories[0].IsShareable, Is.True);
         }
 
         [Test]
@@ -289,7 +349,7 @@ namespace AIFarm.Tests.EditMode
             Assert.That(service.Save().Succeeded, Is.True);
             SaveData migrated = JsonUtility.FromJson<SaveData>(storage.Json);
             Assert.That(migrated.version, Is.EqualTo(SaveData.CurrentVersion));
-            Assert.That(migrated.residents, Has.Length.EqualTo(1));
+            Assert.That(migrated.residents, Has.Length.EqualTo(4));
             Assert.That(migrated.residents[0].residentId, Is.EqualTo(ResidentIds.YayaValue));
         }
 
@@ -322,6 +382,79 @@ namespace AIFarm.Tests.EditMode
             Assert.That(replanner.TickReplan().Succeeded, Is.True);
             Assert.That(executor.Queue.TryPeek(out INpcAction next).Succeeded, Is.True);
             Assert.That(next.TargetPlotNumber, Is.EqualTo(2));
+        }
+
+        [Test]
+        public void Load_RejectsConversationMemoryWithUnknownImmediateSource()
+        {
+            Assert.That(
+                bootstrap.ResidentRegistry.TryGetRuntimeState(
+                    ResidentIds.Amu,
+                    out ResidentRuntimeState amu).Succeeded,
+                Is.True);
+            Assert.That(
+                amu.Memories.AddObservation(
+                    ResidentIds.Amu,
+                    20d,
+                    "芽芽告诉阿木的可传播事实。",
+                    8,
+                    WorldEventKind.ConversationCompleted,
+                    MemorySourceKind.Conversation,
+                    "conversation:save-source-validation",
+                    "fact-save-source-validation",
+                    "knowledge:resident-001:000000000099",
+                    ResidentIds.Yaya,
+                    new[] { "source-validation" },
+                    true,
+                    out _).Succeeded,
+                Is.True);
+            Assert.That(service.Save().Succeeded, Is.True);
+            SaveData data = JsonUtility.FromJson<SaveData>(storage.Json);
+            ResidentSaveData savedAmu = Array.Find(
+                data.residents,
+                resident => resident.residentId == ResidentIds.AmuValue);
+            MemorySaveData fact = Array.Find(
+                savedAmu.recentMemories,
+                memory => memory.rootFactId == "fact-save-source-validation");
+            fact.immediateSourceResidentId = "resident-not-registered";
+            storage.Json = JsonUtility.ToJson(data, true);
+
+            ActionResult loaded = service.Load();
+
+            Assert.That(loaded.Failed, Is.True);
+            Assert.That(loaded.FailureReason, Is.EqualTo(ActionFailureReason.InvalidResponse));
+        }
+
+        [Test]
+        public void Load_RejectsShareableReflectionMemory()
+        {
+            Assert.That(
+                bootstrap.ResidentRegistry.TryGetRuntimeState(
+                    ResidentIds.Amu,
+                    out ResidentRuntimeState amu).Succeeded,
+                Is.True);
+            Assert.That(
+                amu.Memories.AddReflection(
+                    ResidentIds.Amu,
+                    20d,
+                    "这条反思必须保持私有。",
+                    out MemoryEntry reflection).Succeeded,
+                Is.True);
+            Assert.That(service.Save().Succeeded, Is.True);
+            SaveData data = JsonUtility.FromJson<SaveData>(storage.Json);
+            ResidentSaveData savedAmu = Array.Find(
+                data.residents,
+                resident => resident.residentId == ResidentIds.AmuValue);
+            MemorySaveData savedReflection = Array.Find(
+                savedAmu.recentMemories,
+                memory => memory.knowledgeId == reflection.KnowledgeId);
+            savedReflection.isShareable = true;
+            storage.Json = JsonUtility.ToJson(data, true);
+
+            ActionResult loaded = service.Load();
+
+            Assert.That(loaded.Failed, Is.True);
+            Assert.That(loaded.FailureReason, Is.EqualTo(ActionFailureReason.InvalidResponse));
         }
 
         [Test]

@@ -155,6 +155,18 @@ namespace AIFarm.Tests.EditMode
             Assert.That(
                 second.Memories.Entries.Single().SourceEventKind,
                 Is.EqualTo(WorldEventKind.ConversationCompleted));
+            Assert.That(
+                first.Memories.Entries.Single().Text,
+                Does.Contain("我与阿木").And.Contain("我说").And.Contain("阿木告诉我"));
+            Assert.That(
+                second.Memories.Entries.Single().Text,
+                Does.Contain("我与芽芽").And.Contain("我说").And.Contain("芽芽告诉我"));
+            Assert.That(
+                first.Memories.Entries.Single().ImmediateSourceResidentId,
+                Is.EqualTo(ResidentIds.Amu));
+            Assert.That(
+                second.Memories.Entries.Single().ImmediateSourceResidentId,
+                Is.EqualTo(ResidentIds.Yaya));
         }
 
         [Test]
@@ -470,6 +482,363 @@ namespace AIFarm.Tests.EditMode
             Assert.That(attached.Failed, Is.True);
             Assert.That(session.HasPreparedScript, Is.False);
             Assert.That(session.Utterances, Is.Empty);
+        }
+
+        [Test]
+        public void OfflineInformationPropagation_PreservesImmediateSourceAcrossTwoHops()
+        {
+            SocialFixture fixture = CreateFixture(
+                outcomeSelector: _ => ConversationOutcome.Helpful);
+            ResidentRuntimeState yaya = Runtime(fixture, ResidentIds.Yaya);
+            ResidentRuntimeState xiaosui = Runtime(fixture, ResidentIds.Xiaosui);
+            ResidentRuntimeState amu = Runtime(fixture, ResidentIds.Amu);
+            ResidentRuntimeState momo = Runtime(fixture, ResidentIds.Momo);
+            ActionResult perceived = yaya.Memories.AddObservation(
+                ResidentIds.Yaya,
+                gameSeconds: 100d,
+                text: "芽芽亲眼看到并完成了胡萝卜收获。",
+                importance: 9,
+                sourceEventKind: WorldEventKind.GoalCompleted,
+                sourceKind: MemorySourceKind.Perception,
+                rootFactId: "fact-carrot-harvest-001",
+                parentKnowledgeId: null,
+                immediateSourceResidentId: default,
+                tags: new[] { "carrot", "harvest" },
+                isShareable: true,
+                out MemoryEntry yayaKnowledge);
+            Assert.That(perceived.Succeeded, Is.True, perceived.Message);
+            Assert.That(xiaosui.Memories.Entries, Is.Empty);
+            Assert.That(amu.Memories.Entries, Is.Empty);
+            Assert.That(momo.Memories.Entries, Is.Empty);
+
+            ConversationSession firstConversation = Start(
+                fixture,
+                ResidentIds.Yaya,
+                ResidentIds.Xiaosui,
+                "plaza-yaya",
+                "plaza-xiaosui",
+                targetSentenceCount: 2);
+            ActionResult firstPrepared = fixture.Coordinator.PrepareLocalFallbackScript(
+                firstConversation.ConversationId);
+            Assert.That(firstPrepared.Succeeded, Is.True, firstPrepared.Message);
+            Complete(fixture, firstConversation);
+
+            MemoryEntry xiaosuiSummary = xiaosui.Memories.Entries.Single(
+                entry => entry.Kind == MemoryEntryKind.ConversationSummary);
+            MemoryEntry xiaosuiKnowledge = xiaosui.Memories.Entries.Single(
+                entry => entry.RootFactId == yayaKnowledge.RootFactId);
+            Assert.That(xiaosuiSummary.IsShareable, Is.False);
+            Assert.That(xiaosuiSummary.RootFactId, Is.Not.EqualTo(yayaKnowledge.RootFactId));
+            Assert.That(xiaosuiKnowledge.Kind, Is.EqualTo(MemoryEntryKind.Observation));
+            Assert.That(xiaosuiKnowledge.SourceKind, Is.EqualTo(MemorySourceKind.Conversation));
+            Assert.That(xiaosuiKnowledge.ImmediateSourceResidentId, Is.EqualTo(ResidentIds.Yaya));
+            Assert.That(xiaosuiKnowledge.RootFactId, Is.EqualTo(yayaKnowledge.RootFactId));
+            Assert.That(xiaosuiKnowledge.ParentKnowledgeId, Is.EqualTo(yayaKnowledge.KnowledgeId));
+            Assert.That(xiaosuiKnowledge.Tags, Does.Contain("harvest"));
+            Assert.That(xiaosuiKnowledge.Text, Does.Contain("芽芽告诉我"));
+
+            ConversationSession secondConversation = Start(
+                fixture,
+                ResidentIds.Xiaosui,
+                ResidentIds.Amu,
+                "plaza-xiaosui-second",
+                "plaza-amu",
+                targetSentenceCount: 2,
+                monotonicSeconds: 1d);
+            ActionResult secondPrepared = fixture.Coordinator.PrepareLocalFallbackScript(
+                secondConversation.ConversationId);
+            Assert.That(secondPrepared.Succeeded, Is.True, secondPrepared.Message);
+            Complete(fixture, secondConversation);
+
+            MemoryEntry amuSummary = amu.Memories.Entries.Single(
+                entry => entry.Kind == MemoryEntryKind.ConversationSummary);
+            MemoryEntry amuKnowledge = amu.Memories.Entries.Single(
+                entry => entry.RootFactId == yayaKnowledge.RootFactId);
+            Assert.That(amuSummary.IsShareable, Is.False);
+            Assert.That(amuKnowledge.Kind, Is.EqualTo(MemoryEntryKind.Observation));
+            Assert.That(amuKnowledge.ImmediateSourceResidentId, Is.EqualTo(ResidentIds.Xiaosui));
+            Assert.That(amuKnowledge.ImmediateSourceResidentId, Is.Not.EqualTo(ResidentIds.Yaya));
+            Assert.That(amuKnowledge.RootFactId, Is.EqualTo(yayaKnowledge.RootFactId));
+            Assert.That(amuKnowledge.ParentKnowledgeId, Is.EqualTo(xiaosuiKnowledge.KnowledgeId));
+            Assert.That(amuKnowledge.Text, Does.Contain("小穗告诉我"));
+            Assert.That(momo.Memories.Entries, Is.Empty);
+        }
+
+        [Test]
+        public void CompletedConversation_StoresEachSharedFactSeparately_FromPrivateSummary()
+        {
+            SocialFixture fixture = CreateFixture();
+            ResidentRuntimeState yaya = Runtime(fixture, ResidentIds.Yaya);
+            ResidentRuntimeState xiaosui = Runtime(fixture, ResidentIds.Xiaosui);
+            Assert.That(
+                yaya.Memories.AddObservation(
+                    ResidentIds.Yaya,
+                    1d,
+                    "胡萝卜已经收获。",
+                    9,
+                    WorldEventKind.GoalCompleted,
+                    MemorySourceKind.Perception,
+                    "fact-harvest-separate",
+                    null,
+                    default,
+                    new[] { "harvest" },
+                    true,
+                    out MemoryEntry harvest).Succeeded,
+                Is.True);
+            Assert.That(
+                yaya.Memories.AddObservation(
+                    ResidentIds.Yaya,
+                    2d,
+                    "水井今天已经修好。",
+                    8,
+                    WorldEventKind.System,
+                    MemorySourceKind.Perception,
+                    "fact-well-separate",
+                    null,
+                    default,
+                    new[] { "well" },
+                    true,
+                    out MemoryEntry well).Succeeded,
+                Is.True);
+            ConversationSession session = Start(
+                fixture,
+                ResidentIds.Yaya,
+                ResidentIds.Xiaosui,
+                "separate-facts-a",
+                "separate-facts-b",
+                targetSentenceCount: 4);
+            var script = new ConversationScriptSpec(
+                ResidentIds.Yaya,
+                new[]
+                {
+                    new ConversationLineSpec(
+                        ResidentIds.Yaya,
+                        NpcMood.Happy,
+                        "🥕",
+                        "第一条事实。",
+                        harvest.KnowledgeId),
+                    new ConversationLineSpec(
+                        ResidentIds.Xiaosui,
+                        NpcMood.Focused,
+                        "🙂",
+                        "这句只是普通回应。"),
+                    new ConversationLineSpec(
+                        ResidentIds.Yaya,
+                        NpcMood.Proud,
+                        "💧",
+                        "第二条事实。",
+                        well.KnowledgeId),
+                    new ConversationLineSpec(
+                        ResidentIds.Xiaosui,
+                        NpcMood.Happy,
+                        "✓",
+                        "这句私人寒暄不得跟随事实传播。")
+                },
+                ConversationOutcome.Helpful,
+                "test");
+            Assert.That(
+                fixture.Coordinator.SetConversationScript(
+                    session.ConversationId,
+                    script).Succeeded,
+                Is.True);
+            Complete(fixture, session);
+
+            MemoryEntry summary = xiaosui.Memories.Entries.Single(
+                entry => entry.Kind == MemoryEntryKind.ConversationSummary);
+            MemoryEntry receivedHarvest = xiaosui.Memories.Entries.Single(
+                entry => entry.RootFactId == harvest.RootFactId);
+            MemoryEntry receivedWell = xiaosui.Memories.Entries.Single(
+                entry => entry.RootFactId == well.RootFactId);
+            Assert.That(summary.IsShareable, Is.False);
+            Assert.That(summary.Text, Does.Contain("私人寒暄"));
+            Assert.That(receivedHarvest.ParentKnowledgeId, Is.EqualTo(harvest.KnowledgeId));
+            Assert.That(receivedWell.ParentKnowledgeId, Is.EqualTo(well.KnowledgeId));
+            Assert.That(receivedHarvest.Text, Does.Not.Contain("私人寒暄"));
+            Assert.That(receivedWell.Text, Does.Not.Contain("私人寒暄"));
+        }
+
+        [Test]
+        public void PreparedScript_RejectsKnowledgeReferenceNotOwnedBySpeaker()
+        {
+            SocialFixture fixture = CreateFixture();
+            ResidentRuntimeState yaya = Runtime(fixture, ResidentIds.Yaya);
+            Assert.That(
+                yaya.Memories.AddObservation(
+                    ResidentIds.Yaya,
+                    10d,
+                    "芽芽的私人来源事实。",
+                    8,
+                    WorldEventKind.GoalCompleted,
+                    MemorySourceKind.Perception,
+                    "fact-owned-by-yaya",
+                    null,
+                    default,
+                    new[] { "private-owner-check" },
+                    true,
+                    out MemoryEntry yayaKnowledge).Succeeded,
+                Is.True);
+            ConversationSession session = Start(
+                fixture,
+                ResidentIds.Yaya,
+                ResidentIds.Amu,
+                "owner-check-a",
+                "owner-check-b",
+                targetSentenceCount: 2);
+            var script = new ConversationScriptSpec(
+                session.FirstResidentId,
+                new[]
+                {
+                    new ConversationLineSpec(
+                        ResidentIds.Amu,
+                        NpcMood.Focused,
+                        "!",
+                        "阿木不能冒充这条记忆的拥有者。",
+                        yayaKnowledge.KnowledgeId),
+                    new ConversationLineSpec(
+                        ResidentIds.Yaya,
+                        NpcMood.Happy,
+                        "?",
+                        "这段脚本不应开始播放。")
+                },
+                ConversationOutcome.Neutral,
+                "test");
+
+            ActionResult attached = fixture.Coordinator.SetConversationScript(
+                session.ConversationId,
+                script);
+
+            Assert.That(attached.Failed, Is.True);
+            Assert.That(session.HasPreparedScript, Is.False);
+            Assert.That(session.Utterances, Is.Empty);
+        }
+
+        [Test]
+        public void PreparedKnowledgeSnapshot_SurvivesSourceMemoryEvictionBeforeCompletion()
+        {
+            SocialFixture fixture = CreateFixture();
+            ResidentRuntimeState yaya = Runtime(fixture, ResidentIds.Yaya);
+            ResidentRuntimeState xiaosui = Runtime(fixture, ResidentIds.Xiaosui);
+            Assert.That(
+                yaya.Memories.AddObservation(
+                    ResidentIds.Yaya,
+                    1d,
+                    "会话准备时仍存在的胡萝卜收获事实。",
+                    9,
+                    WorldEventKind.GoalCompleted,
+                    MemorySourceKind.Perception,
+                    "fact-evicted-after-script-preparation",
+                    null,
+                    default,
+                    new[] { "carrot", "harvest" },
+                    true,
+                    out MemoryEntry source).Succeeded,
+                Is.True);
+            ConversationSession session = Start(
+                fixture,
+                ResidentIds.Yaya,
+                ResidentIds.Xiaosui,
+                "snapshot-eviction-a",
+                "snapshot-eviction-b",
+                targetSentenceCount: 2);
+            Assert.That(
+                fixture.Coordinator.PrepareLocalFallbackScript(
+                    session.ConversationId).Succeeded,
+                Is.True);
+            Assert.That(
+                session.PreparedLines[0].SharedKnowledgeId,
+                Is.EqualTo(source.KnowledgeId));
+
+            for (int index = 0; index < MemoryStore.DefaultCapacity - 1; index++)
+            {
+                Assert.That(
+                    yaya.Memories.AddObservation(
+                        ResidentIds.Yaya,
+                        2d + index,
+                        $"用于填满记忆容量的高重要度事实 {index}。",
+                        10,
+                        WorldEventKind.System,
+                        MemorySourceKind.Perception,
+                        $"fact-capacity-filler-{index}",
+                        null,
+                        default,
+                        new[] { "capacity-filler" },
+                        true,
+                        out MemoryEntry _).Succeeded,
+                    Is.True);
+            }
+
+            Complete(fixture, session);
+
+            Assert.That(
+                yaya.Memories.TryGetKnowledge(
+                    ResidentIds.Yaya,
+                    source.KnowledgeId,
+                    out MemoryEntry _).Failed,
+                Is.True,
+                "Writing the first perspective summary should evict the older source entry.");
+            MemoryEntry received = xiaosui.Memories.Entries.Single(
+                entry => entry.RootFactId == source.RootFactId);
+            Assert.That(received.ParentKnowledgeId, Is.EqualTo(source.KnowledgeId));
+            Assert.That(received.ImmediateSourceResidentId, Is.EqualTo(ResidentIds.Yaya));
+            Assert.That(received.Text, Does.Contain("芽芽告诉我"));
+        }
+
+        [Test]
+        public void CancelledConversation_DoesNotPropagatePlayedKnowledgeReference()
+        {
+            SocialFixture fixture = CreateFixture();
+            ResidentRuntimeState yaya = Runtime(fixture, ResidentIds.Yaya);
+            ResidentRuntimeState xiaosui = Runtime(fixture, ResidentIds.Xiaosui);
+            Assert.That(
+                yaya.Memories.AddObservation(
+                    ResidentIds.Yaya,
+                    10d,
+                    "只在完整会话后传播的事实。",
+                    8,
+                    WorldEventKind.GoalCompleted,
+                    MemorySourceKind.Perception,
+                    "fact-cancelled-conversation",
+                    null,
+                    default,
+                    new[] { "cancel-check" },
+                    true,
+                    out MemoryEntry source).Succeeded,
+                Is.True);
+            ConversationSession session = Start(
+                fixture,
+                ResidentIds.Yaya,
+                ResidentIds.Xiaosui,
+                "cancel-transfer-a",
+                "cancel-transfer-b",
+                targetSentenceCount: 2);
+            Assert.That(
+                fixture.Coordinator.PrepareLocalFallbackScript(
+                    session.ConversationId).Succeeded,
+                Is.True);
+            Assert.That(
+                fixture.Coordinator.AdvanceConversation(
+                    session.ConversationId,
+                    0.1d,
+                    11d,
+                    out ConversationUtterance played).Succeeded,
+                Is.True);
+            Assert.That(played.SharedKnowledgeId, Is.EqualTo(source.KnowledgeId));
+
+            Assert.That(
+                fixture.Coordinator.CancelConversation(session.ConversationId).Succeeded,
+                Is.True);
+
+            MemoryEntry fragment = xiaosui.Memories.Entries.Single();
+            Assert.That(fragment.Kind, Is.EqualTo(MemoryEntryKind.Observation));
+            Assert.That(fragment.SourceKind, Is.EqualTo(MemorySourceKind.Conversation));
+            Assert.That(fragment.IsShareable, Is.False);
+            Assert.That(
+                xiaosui.Memories.ContainsRootFact(
+                    ResidentIds.Xiaosui,
+                    source.RootFactId,
+                    out bool learned).Succeeded,
+                Is.True);
+            Assert.That(learned, Is.False);
         }
 
         private static SocialFixture CreateFixture(

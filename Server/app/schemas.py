@@ -56,6 +56,19 @@ MemoryText = Annotated[
     StrictStr,
     StringConstraints(strip_whitespace=True, min_length=1, max_length=500),
 ]
+KnowledgeIdText = Annotated[
+    StrictStr,
+    StringConstraints(
+        strip_whitespace=True,
+        min_length=1,
+        max_length=160,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+    ),
+]
+MemoryTagText = Annotated[
+    StrictStr,
+    StringConstraints(strip_whitespace=True, min_length=1, max_length=48),
+]
 IntentText = Annotated[
     StrictStr,
     StringConstraints(
@@ -200,6 +213,27 @@ class ResidentMemorySnapshot(StrictSchema):
     owner_resident_id: ResidentIdText
     text: MemoryText
     importance: MemoryImportance
+    knowledge_id: KnowledgeIdText | None = None
+    root_fact_id: KnowledgeIdText | None = None
+    tags: Annotated[list[MemoryTagText], Field(max_length=16)] = Field(
+        default_factory=list
+    )
+    is_shareable: StrictBool = False
+    immediate_source_resident_id: ResidentIdText | None = None
+
+    @model_validator(mode="after")
+    def require_valid_provenance(self) -> Self:
+        if len(set(self.tags)) != len(self.tags):
+            raise ValueError("memory tags must not contain duplicates")
+        if self.immediate_source_resident_id == self.owner_resident_id:
+            raise ValueError("memory source resident must differ from its owner")
+        if self.is_shareable and (
+            self.knowledge_id is None or self.root_fact_id is None
+        ):
+            raise ValueError(
+                "a shareable memory requires knowledge_id and root_fact_id"
+            )
+        return self
 
 
 class ResidentContext(StrictSchema):
@@ -275,6 +309,7 @@ class ConversationLineSpec(StrictSchema):
     mood: NpcMood
     emoji: EmojiText
     text: ShortText
+    shared_knowledge_id: KnowledgeIdText | None
 
 
 class ConversationScriptRequest(StrictSchema):

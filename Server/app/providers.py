@@ -255,12 +255,32 @@ class MockProvider:
         }
         topic = request.topic or "今天的小镇生活"
         lines: list[ConversationLineSpec] = []
+        shared_by_speaker: set[str] = set()
         for index in range(request.max_lines):
             speaker_id = request.participant_ids[index % 2]
             listener_id = request.participant_ids[(index + 1) % 2]
             speaker = contexts[speaker_id]
             listener = contexts[listener_id]
-            if index % 3 == 0:
+            shareable_memory = next(
+                (
+                    memory
+                    for memory in speaker.relevant_memories
+                    if memory.is_shareable
+                    and memory.knowledge_id is not None
+                    and memory.knowledge_id not in shared_by_speaker
+                ),
+                None,
+            )
+            shared_knowledge_id = None
+            if shareable_memory is not None:
+                shared_knowledge_id = shareable_memory.knowledge_id
+                shared_by_speaker.add(shared_knowledge_id)
+                bounded_memory = shareable_memory.text[:220]
+                text = (
+                    f"{listener.persona.display_name}，"
+                    f"我想告诉你：{bounded_memory}"
+                )
+            elif index % 3 == 0:
                 text = (
                     f"{listener.persona.display_name}，我是"
                     f"{speaker.persona.display_name}。作为{speaker.persona.role}，"
@@ -286,6 +306,7 @@ class MockProvider:
                     mood=moods[index % len(moods)],
                     emoji=emojis[index % len(emojis)],
                     text=text,
+                    shared_knowledge_id=shared_knowledge_id,
                 )
             )
 
@@ -366,10 +387,11 @@ class OpenAIProvider:
         "Generate a bounded two-resident Chinese ConversationScriptSpec. Use each "
         "participant's persona, relationship snapshot, and only that participant's "
         "current state and owned relevant memories. Preserve resident_id. Every line "
-        "must contain speaker_id, mood, emoji and text; speaker_id must be in "
-        "participant_ids, return no more than max_lines and never more than six lines, "
-        "and set provider to openai. Do not merge or transfer private memories between "
-        "participant contexts."
+        "must contain speaker_id, mood, emoji, text, and shared_knowledge_id; the last "
+        "field must be null or a shareable knowledge_id from that exact speaker's "
+        "relevant_memories. Return no more than max_lines and never more than six "
+        "lines, and set provider to openai. Never infer, merge, or expose another "
+        "resident's private memory."
     )
     _resident_reflection_instructions = (
         "Generate one short Chinese ResidentReflectionSpec for the request owner. Use "
@@ -786,10 +808,27 @@ class OpenAIProvider:
             )
 
         participant_ids = set(request.participant_ids)
+        allowed_knowledge_ids = {
+            participant.resident_id: {
+                memory.knowledge_id
+                for memory in participant.relevant_memories
+                if memory.is_shareable and memory.knowledge_id is not None
+            }
+            for participant in request.participants
+        }
         for line in result.lines:
             if line.speaker_id not in participant_ids:
                 raise ProviderResponseError(
                     "Every conversation speaker_id must belong to participant_ids."
+                )
+            if (
+                line.shared_knowledge_id is not None
+                and line.shared_knowledge_id
+                not in allowed_knowledge_ids[line.speaker_id]
+            ):
+                raise ProviderResponseError(
+                    "A conversation line referenced knowledge that is not in the "
+                    "speaker's shareable allowlist."
                 )
 
     @staticmethod

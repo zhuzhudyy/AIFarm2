@@ -128,6 +128,30 @@ namespace AIFarm.Presentation
                 return replanResult;
             }
 
+            foreach (ResidentId residentId in bootstrap.ResidentRegistry.ResidentIds)
+            {
+                if (residentId == replanner.ResidentId)
+                {
+                    continue;
+                }
+
+                ActionResult definitionResult = bootstrap.ResidentRegistry.TryGetDefinition(
+                    residentId,
+                    out ResidentDefinition definition);
+                if (definitionResult.Failed)
+                {
+                    return definitionResult;
+                }
+
+                ActionResult replaced = bootstrap.ResidentRegistry.ReplaceRuntimeState(
+                    residentId,
+                    new ResidentRuntimeState(definition));
+                if (replaced.Failed)
+                {
+                    return replaced;
+                }
+            }
+
             ActionResult gameResult = bootstrap.ResetToConfiguredDefaults();
             if (gameResult.Failed)
             {
@@ -340,7 +364,17 @@ namespace AIFarm.Presentation
                     hasSourceEventKind = memory.SourceEventKind.HasValue,
                     sourceEventKind = memory.SourceEventKind.HasValue
                         ? (int)memory.SourceEventKind.Value
-                        : 0
+                        : 0,
+                    sourceKind = (int)memory.SourceKind,
+                    sourceEventId = memory.SourceEventId,
+                    knowledgeId = memory.KnowledgeId,
+                    rootFactId = memory.RootFactId,
+                    parentKnowledgeId = memory.ParentKnowledgeId,
+                    immediateSourceResidentId = memory.ImmediateSourceResidentId.IsValid
+                        ? memory.ImmediateSourceResidentId.Value
+                        : string.Empty,
+                    tags = CopyStrings(memory.Tags),
+                    isShareable = memory.IsShareable
                 };
             }
 
@@ -371,31 +405,23 @@ namespace AIFarm.Presentation
             ResidentSaveData activeResident)
         {
             var merged = new List<ResidentSaveData>();
-            bool replaced = false;
-            foreach (ResidentSaveData loadedResident in loadedResidents)
+            foreach (ResidentId residentId in bootstrap.ResidentRegistry.ResidentIds)
             {
-                if (loadedResident == null)
+                if (residentId == replanner.ResidentId)
+                {
+                    merged.Add(activeResident);
+                    continue;
+                }
+
+                ActionResult runtimeResult = bootstrap.ResidentRegistry.TryGetRuntimeState(
+                    residentId,
+                    out ResidentRuntimeState runtimeState);
+                if (runtimeResult.Failed || runtimeState == null)
                 {
                     continue;
                 }
 
-                if (loadedResident.residentId == activeResident.residentId)
-                {
-                    if (!replaced)
-                    {
-                        merged.Add(activeResident);
-                        replaced = true;
-                    }
-
-                    continue;
-                }
-
-                merged.Add(loadedResident);
-            }
-
-            if (!replaced)
-            {
-                merged.Add(activeResident);
+                merged.Add(CaptureBackgroundResident(runtimeState));
             }
 
             merged.Sort((left, right) => string.Compare(
@@ -405,7 +431,73 @@ namespace AIFarm.Presentation
             return merged.ToArray();
         }
 
-        private static ActionResult TrySelectResident(
+        private ResidentSaveData CaptureBackgroundResident(
+            ResidentRuntimeState runtimeState)
+        {
+            ResidentSaveData previous = null;
+            foreach (ResidentSaveData candidate in loadedResidents)
+            {
+                if (candidate != null &&
+                    candidate.residentId == runtimeState.ResidentId.Value)
+                {
+                    previous = candidate;
+                    break;
+                }
+            }
+
+            NpcSaveData npc = previous?.npc ?? new NpcSaveData();
+            ExecutorSaveData savedExecutor = previous?.executor ?? new ExecutorSaveData();
+            if (savedExecutor.currentAction == null)
+            {
+                savedExecutor.currentAction = new NpcActionSaveData();
+            }
+
+            if (savedExecutor.remainingActions == null)
+            {
+                savedExecutor.remainingActions = Array.Empty<NpcActionSaveData>();
+            }
+
+            bool hasFarmGoal = runtimeState.CurrentGoal != null;
+            npc.replanStatus = hasFarmGoal
+                ? (int)ReplanStatus.Running
+                : (int)ReplanStatus.Idle;
+            npc.activeCycleNumber = hasFarmGoal
+                ? Math.Max(1, runtimeState.CurrentCycleNumber)
+                : 0;
+            npc.harvestedPlotNumbers = npc.harvestedPlotNumbers ?? Array.Empty<int>();
+            npc.currentEmoji = npc.currentEmoji ?? string.Empty;
+            npc.currentExpression = npc.currentExpression ?? string.Empty;
+            npc.currentGoalText = npc.currentGoalText ?? string.Empty;
+            npc.currentDecisionReason = npc.currentDecisionReason ?? string.Empty;
+            npc.lastFailureReason = npc.lastFailureReason ?? string.Empty;
+
+            return new ResidentSaveData
+            {
+                residentId = runtimeState.ResidentId.Value,
+                displayName = runtimeState.Definition.DisplayName,
+                npc = npc,
+                hasFarmGoal = hasFarmGoal,
+                farmGoal = CaptureGoal(runtimeState.CurrentGoal),
+                executor = savedExecutor,
+                recentMemories = CaptureMemories(runtimeState.Memories.Entries),
+                recentReflections = CaptureReflections(runtimeState.RecentReflections),
+                runtime = CaptureRuntime(runtimeState)
+            };
+        }
+
+        private static NpcRuntimeSaveData CaptureRuntime(
+            ResidentRuntimeState runtimeState)
+        {
+            return new NpcRuntimeSaveData
+            {
+                startedCycleCount = runtimeState.StartedCycleCount,
+                currentCycleNumber = runtimeState.CurrentCycleNumber,
+                completedCycleCount = runtimeState.CompletedCycleCount,
+                reflectedCycleNumbers = CopyIntegers(runtimeState.ReflectedCycleNumbers)
+            };
+        }
+
+        private ActionResult TrySelectResident(
             ResidentSaveData[] residents,
             ResidentId selectedResidentId,
             out ResidentSaveData selectedResident)
@@ -424,6 +516,7 @@ namespace AIFarm.Presentation
                 if (resident == null ||
                     !ResidentId.TryCreate(resident.residentId, out ResidentId residentId) ||
                     !residentIds.Add(residentId) ||
+                    bootstrap.ResidentRegistry.TryGetDefinition(residentId, out _).Failed ||
                     !IsBoundedRequired(resident.displayName, 100) ||
                     resident.npc == null || resident.farmGoal == null ||
                     resident.executor == null || resident.executor.currentAction == null ||
@@ -465,7 +558,7 @@ namespace AIFarm.Presentation
                     $"Selected saved resident '{selectedResidentId}'.");
         }
 
-        private static ActionResult ValidateResidentRecord(
+        private ActionResult ValidateResidentRecord(
             ResidentSaveData resident,
             ResidentId residentId)
         {
@@ -843,7 +936,7 @@ namespace AIFarm.Presentation
             return ActionResult.Success("Saved NPC action restored.");
         }
 
-        private static ActionResult RestoreResidentRuntime(
+        private ActionResult RestoreResidentRuntime(
             ResidentSaveData data,
             ResidentId residentId,
             out ResidentRuntimeState runtimeState)
@@ -861,12 +954,47 @@ namespace AIFarm.Presentation
             {
                 foreach (MemorySaveData memoryData in data.recentMemories)
                 {
-                    if (memoryData == null ||
-                        memoryData.ownerResidentId != residentId.Value ||
+                    if (memoryData == null)
+                    {
+                        return InvalidSave("Saved NPC memory entry is invalid.");
+                    }
+
+                    ResidentId immediateSourceResidentId = default;
+                    bool hasImmediateSource = !string.IsNullOrWhiteSpace(
+                        memoryData.immediateSourceResidentId);
+                    bool immediateSourceIsValid = !hasImmediateSource ||
+                        (ResidentId.TryCreate(
+                            memoryData.immediateSourceResidentId,
+                            out immediateSourceResidentId) &&
+                            immediateSourceResidentId != residentId &&
+                            bootstrap.ResidentRegistry.TryGetDefinition(
+                                immediateSourceResidentId,
+                                out _).Succeeded);
+                    var memoryKind = (MemoryEntryKind)memoryData.kind;
+                    var sourceKind = (MemorySourceKind)memoryData.sourceKind;
+                    if (memoryData.ownerResidentId != residentId.Value ||
                         !Enum.IsDefined(typeof(MemoryEntryKind), memoryData.kind) ||
+                        !Enum.IsDefined(typeof(MemorySourceKind), memoryData.sourceKind) ||
                         !IsBoundedRequired(memoryData.text, MemoryStore.MaximumTextLength) ||
+                        !IsBounded(memoryData.sourceEventId, MemoryEntry.MaximumIdentifierLength) ||
+                        !IsBoundedRequired(
+                            memoryData.knowledgeId,
+                            MemoryEntry.MaximumIdentifierLength) ||
+                        !IsBoundedRequired(
+                            memoryData.rootFactId,
+                            MemoryEntry.MaximumIdentifierLength) ||
+                        !IsBounded(memoryData.parentKnowledgeId, MemoryEntry.MaximumIdentifierLength) ||
+                        memoryData.tags == null ||
+                        memoryData.tags.Length > MemoryEntry.MaximumTagCount ||
+                        !AreValidMemoryTags(memoryData.tags) ||
+                        !immediateSourceIsValid ||
                         (memoryData.hasSourceEventKind &&
-                            !Enum.IsDefined(typeof(WorldEventKind), memoryData.sourceEventKind)))
+                            !Enum.IsDefined(typeof(WorldEventKind), memoryData.sourceEventKind)) ||
+                        !HasValidSavedMemoryProvenance(
+                            memoryData,
+                            memoryKind,
+                            sourceKind,
+                            hasImmediateSource))
                     {
                         return InvalidSave("Saved NPC memory entry is invalid.");
                     }
@@ -875,12 +1003,20 @@ namespace AIFarm.Presentation
                         residentId,
                         memoryData.sequence,
                         memoryData.gameSeconds,
-                        (MemoryEntryKind)memoryData.kind,
+                        memoryKind,
                         memoryData.text,
                         memoryData.importance,
                         memoryData.hasSourceEventKind
                             ? (WorldEventKind?)memoryData.sourceEventKind
-                            : null));
+                            : null,
+                        sourceKind,
+                        memoryData.sourceEventId,
+                        memoryData.knowledgeId,
+                        memoryData.rootFactId,
+                        memoryData.parentKnowledgeId,
+                        immediateSourceResidentId,
+                        memoryData.tags,
+                        memoryData.isShareable));
                 }
             }
             catch (Exception exception) when (
@@ -939,6 +1075,56 @@ namespace AIFarm.Presentation
             return ActionResult.Success("Saved NPC runtime restored.");
         }
 
+        private static bool HasValidSavedMemoryProvenance(
+            MemorySaveData memory,
+            MemoryEntryKind memoryKind,
+            MemorySourceKind sourceKind,
+            bool hasImmediateSource)
+        {
+            if ((sourceKind == MemorySourceKind.Conversation) != hasImmediateSource)
+            {
+                return false;
+            }
+
+            if (memoryKind == MemoryEntryKind.Reflection &&
+                (sourceKind != MemorySourceKind.Reflection || memory.isShareable))
+            {
+                return false;
+            }
+
+            if (memoryKind == MemoryEntryKind.ConversationSummary &&
+                (sourceKind != MemorySourceKind.Conversation || memory.isShareable))
+            {
+                return false;
+            }
+
+            if (sourceKind == MemorySourceKind.Reflection &&
+                memoryKind != MemoryEntryKind.Reflection)
+            {
+                return false;
+            }
+
+            if (sourceKind == MemorySourceKind.LegacyImported && memory.isShareable)
+            {
+                return false;
+            }
+
+            bool hasParentKnowledge = !string.IsNullOrWhiteSpace(
+                memory.parentKnowledgeId);
+            if (hasParentKnowledge && sourceKind != MemorySourceKind.Conversation)
+            {
+                return false;
+            }
+
+            if (sourceKind == MemorySourceKind.Conversation && memory.isShareable &&
+                !hasParentKnowledge)
+            {
+                return false;
+            }
+
+            return true;
+        }
+
         private ActionResult ApplyRestorePlan(RestorePlan plan)
         {
             ActionResult executorReset = executor.RestorePendingActions(Array.Empty<INpcAction>());
@@ -985,6 +1171,8 @@ namespace AIFarm.Presentation
                 return clockResult;
             }
 
+            bootstrap.ResidentReflections?.Synchronize(clock.elapsedGameSeconds);
+
             SimulationSaveData simulation = plan.Data.simulation;
             ActionResult simulationResult = bootstrap.Simulation.RestoreRuntimeState(
                 simulation.waterDecayEventCount,
@@ -1017,6 +1205,12 @@ namespace AIFarm.Presentation
                 return replanResult;
             }
 
+            ActionResult residentsResult = RestoreBackgroundResidents(plan.Data.residents);
+            if (residentsResult.Failed)
+            {
+                return residentsResult;
+            }
+
             if (plan.ReplanStatus == ReplanStatus.Running)
             {
                 ActionResult replanned = replanner.TickReplan();
@@ -1043,6 +1237,80 @@ namespace AIFarm.Presentation
             }
 
             return ActionResult.Success("Game loaded; saved state restored.");
+        }
+
+        private ActionResult RestoreBackgroundResidents(
+            ResidentSaveData[] savedResidents)
+        {
+            foreach (ResidentId residentId in bootstrap.ResidentRegistry.ResidentIds)
+            {
+                if (residentId == replanner.ResidentId)
+                {
+                    continue;
+                }
+
+                ResidentSaveData savedResident = null;
+                foreach (ResidentSaveData candidate in savedResidents)
+                {
+                    if (candidate != null && candidate.residentId == residentId.Value)
+                    {
+                        savedResident = candidate;
+                        break;
+                    }
+                }
+
+                ResidentRuntimeState runtimeState;
+                if (savedResident == null)
+                {
+                    ActionResult definitionResult = bootstrap.ResidentRegistry.TryGetDefinition(
+                        residentId,
+                        out ResidentDefinition definition);
+                    if (definitionResult.Failed)
+                    {
+                        return definitionResult;
+                    }
+
+                    runtimeState = new ResidentRuntimeState(definition);
+                }
+                else
+                {
+                    ActionResult runtimeResult = RestoreResidentRuntime(
+                        savedResident,
+                        residentId,
+                        out runtimeState);
+                    if (runtimeResult.Failed)
+                    {
+                        return runtimeResult;
+                    }
+
+                    ActionResult goalResult = RestoreGoal(
+                        savedResident,
+                        out FarmGoalSpec backgroundGoal);
+                    if (goalResult.Failed)
+                    {
+                        return goalResult;
+                    }
+
+                    if (backgroundGoal != null)
+                    {
+                        ActionResult assigned = runtimeState.SetCurrentGoal(backgroundGoal);
+                        if (assigned.Failed)
+                        {
+                            return assigned;
+                        }
+                    }
+                }
+
+                ActionResult replaced = bootstrap.ResidentRegistry.ReplaceRuntimeState(
+                    residentId,
+                    runtimeState);
+                if (replaced.Failed)
+                {
+                    return replaced;
+                }
+            }
+
+            return ActionResult.Success("All registered resident runtime states restored.");
         }
 
         private static ActionResult CaptureAction(
@@ -1113,6 +1381,17 @@ namespace AIFarm.Presentation
             return result;
         }
 
+        private static string[] CopyStrings(IReadOnlyList<string> values)
+        {
+            var result = new string[values?.Count ?? 0];
+            for (int index = 0; index < result.Length; index++)
+            {
+                result[index] = values[index];
+            }
+
+            return result;
+        }
+
         private static bool MatchesIntegers(int[] saved, IReadOnlyList<int> expected)
         {
             if (saved == null || saved.Length != expected.Count)
@@ -1144,6 +1423,23 @@ namespace AIFarm.Presentation
         private static bool IsFinite(float value)
         {
             return !float.IsNaN(value) && !float.IsInfinity(value);
+        }
+
+        private static bool AreValidMemoryTags(IEnumerable<string> tags)
+        {
+            var unique = new HashSet<string>(StringComparer.Ordinal);
+            foreach (string tag in tags)
+            {
+                string normalized = (tag ?? string.Empty).Trim().ToLowerInvariant();
+                if (normalized.Length < 1 ||
+                    normalized.Length > MemoryEntry.MaximumTagLength ||
+                    !unique.Add(normalized))
+                {
+                    return false;
+                }
+            }
+
+            return true;
         }
 
         private static ActionResult InvalidSave(string message)

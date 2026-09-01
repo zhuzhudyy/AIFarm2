@@ -241,7 +241,11 @@ namespace AIFarm.Presentation
                         !request.IsParticipant(speakerId) ||
                         !TryParseEnum(line.Mood, out NpcMood mood) ||
                         !IsBoundedText(line.Emoji, 1, 8) ||
-                        !IsBoundedText(line.Text, 1, 300))
+                        !IsBoundedText(line.Text, 1, 300) ||
+                        !IsAllowedSharedKnowledge(
+                            request,
+                            speakerId,
+                            line.SharedKnowledgeId))
                     {
                         return InvalidResponse(
                             "Every conversation line must belong to a participant and include valid presentation data.");
@@ -251,7 +255,8 @@ namespace AIFarm.Presentation
                         speakerId,
                         mood,
                         line.Emoji.Trim(),
-                        line.Text.Trim()));
+                        line.Text.Trim(),
+                        line.SharedKnowledgeId));
                 }
 
                 script = new ConversationScriptSpec(
@@ -269,12 +274,55 @@ namespace AIFarm.Presentation
             return ActionResult.Success("Remote ConversationScriptSpec validated.");
         }
 
+        private static bool IsAllowedSharedKnowledge(
+            ConversationScriptRequest request,
+            ResidentId speakerId,
+            string sharedKnowledgeId)
+        {
+            string normalized = (sharedKnowledgeId ?? string.Empty).Trim();
+            if (normalized.Length == 0)
+            {
+                return true;
+            }
+
+            foreach (ResidentContext context in request.Participants)
+            {
+                if (context.ResidentId != speakerId)
+                {
+                    continue;
+                }
+
+                foreach (ResidentMemorySnapshot memory in context.RelevantMemories)
+                {
+                    if (memory.IsShareable && memory.KnowledgeId == normalized)
+                    {
+                        return true;
+                    }
+                }
+
+                return false;
+            }
+
+            return false;
+        }
+
         public static string BoundText(string value, int maximumLength)
         {
             string normalized = (value ?? string.Empty).Trim();
             return normalized.Length <= maximumLength
                 ? normalized
                 : normalized.Substring(0, maximumLength);
+        }
+
+        private static string[] CopyStrings(IReadOnlyList<string> values)
+        {
+            var result = new string[values?.Count ?? 0];
+            for (int index = 0; index < result.Length; index++)
+            {
+                result[index] = values[index];
+            }
+
+            return result;
         }
 
         private static bool TryDeserialize<T>(string json, out T value)
@@ -761,7 +809,19 @@ namespace AIFarm.Presentation
                     {
                         owner_resident_id = memory.OwnerResidentId.Value,
                         text = memory.Text,
-                        importance = memory.Importance
+                        importance = memory.Importance,
+                        knowledge_id = string.IsNullOrEmpty(memory.KnowledgeId)
+                            ? null
+                            : memory.KnowledgeId,
+                        root_fact_id = string.IsNullOrEmpty(memory.RootFactId)
+                            ? null
+                            : memory.RootFactId,
+                        tags = CopyStrings(memory.Tags),
+                        is_shareable = memory.IsShareable,
+                        immediate_source_resident_id =
+                            memory.ImmediateSourceResidentId.HasValue
+                                ? memory.ImmediateSourceResidentId.Value.Value
+                                : null
                     };
                 }
 
@@ -849,6 +909,21 @@ namespace AIFarm.Presentation
 
             [SerializeField]
             internal int importance;
+
+            [SerializeField]
+            internal string knowledge_id;
+
+            [SerializeField]
+            internal string root_fact_id;
+
+            [SerializeField]
+            internal string[] tags;
+
+            [SerializeField]
+            internal bool is_shareable;
+
+            [SerializeField]
+            internal string immediate_source_resident_id;
         }
 
         [Serializable]
@@ -1018,6 +1093,9 @@ namespace AIFarm.Presentation
             [SerializeField]
             private string text;
 
+            [SerializeField]
+            private string shared_knowledge_id;
+
             public string SpeakerId => speaker_id;
 
             public string Mood => mood;
@@ -1025,6 +1103,8 @@ namespace AIFarm.Presentation
             public string Emoji => emoji;
 
             public string Text => text;
+
+            public string SharedKnowledgeId => shared_knowledge_id;
         }
     }
 }

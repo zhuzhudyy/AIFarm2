@@ -76,6 +76,10 @@ def _resident_context(
     display_name: str,
     memory_text: str,
     relationship_target: str | None = None,
+    *,
+    knowledge_id: str | None = None,
+    root_fact_id: str | None = None,
+    is_shareable: bool = False,
 ) -> ResidentContext:
     relationships = []
     if relationship_target is not None:
@@ -103,6 +107,10 @@ def _resident_context(
                 owner_resident_id=resident_id,
                 text=memory_text,
                 importance=7,
+                knowledge_id=knowledge_id,
+                root_fact_id=root_fact_id,
+                tags=["harvest"] if knowledge_id is not None else [],
+                is_shareable=is_shareable,
             )
         ],
     )
@@ -509,12 +517,14 @@ def test_unknown_conversation_speaker_falls_back_to_mock(
                 mood=NpcMood.HAPPY,
                 emoji="💬",
                 text="这句话来自不存在的参与者。",
+                shared_knowledge_id=None,
             ),
             ConversationLineSpec(
                 speaker_id="resident-002",
                 mood=NpcMood.FOCUSED,
                 emoji="🙂",
                 text="这句话本身合法。",
+                shared_knowledge_id=None,
             ),
         ],
         outcome=ConversationOutcome.NEUTRAL,
@@ -527,6 +537,70 @@ def test_unknown_conversation_speaker_falls_back_to_mock(
 
     assert result.provider == "mock"
     assert {line.speaker_id for line in result.lines} <= set(request.participant_ids)
+    assert "fallback_reason=ProviderResponseError" in caplog.text
+
+
+def test_conversation_rejects_knowledge_not_owned_by_the_line_speaker(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    request = ConversationScriptRequest(
+        resident_id="resident-001",
+        participant_ids=["resident-001", "resident-002"],
+        participants=[
+            _resident_context(
+                "resident-001",
+                "芽芽",
+                "芽芽收获了胡萝卜。",
+                "resident-002",
+                knowledge_id="resident-001:memory-1",
+                root_fact_id="fact-carrot-harvest",
+                is_shareable=True,
+            ),
+            _resident_context(
+                "resident-002",
+                "阿木",
+                "阿木检查了水井。",
+                "resident-001",
+                knowledge_id="resident-002:memory-1",
+                root_fact_id="fact-well-check",
+                is_shareable=True,
+            ),
+        ],
+        topic="交换近况",
+        max_lines=2,
+    )
+    invalid_script = ConversationScriptSpec(
+        resident_id=request.resident_id,
+        lines=[
+            ConversationLineSpec(
+                speaker_id="resident-001",
+                mood=NpcMood.HAPPY,
+                emoji="💬",
+                text="我不能引用阿木的私有知识。",
+                shared_knowledge_id="resident-002:memory-1",
+            ),
+            ConversationLineSpec(
+                speaker_id="resident-002",
+                mood=NpcMood.FOCUSED,
+                emoji="🙂",
+                text="这句没有传播事实。",
+                shared_knowledge_id=None,
+            ),
+        ],
+        outcome=ConversationOutcome.NEUTRAL,
+        provider="openai",
+    )
+    provider, _ = _provider(_completed_response(invalid_script, "response-bad-fact"))
+
+    with caplog.at_level(logging.INFO, logger="uvicorn.error"):
+        result = provider.generate_conversation_script(request)
+
+    assert result.provider == "mock"
+    assert all(
+        line.shared_knowledge_id != "resident-002:memory-1"
+        for line in result.lines
+        if line.speaker_id == "resident-001"
+    )
     assert "fallback_reason=ProviderResponseError" in caplog.text
 
 
@@ -576,6 +650,7 @@ def test_conversation_over_six_lines_fails_validation_and_falls_back() -> None:
                 "mood": "Happy",
                 "emoji": "💬",
                 "text": f"第 {index + 1} 句话。",
+                "shared_knowledge_id": None,
             }
             for index in range(7)
         ],

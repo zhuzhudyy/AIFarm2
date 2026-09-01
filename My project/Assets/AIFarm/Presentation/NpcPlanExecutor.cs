@@ -377,7 +377,11 @@ namespace AIFarm.Presentation
                 actionContext.Clock.ElapsedGameSeconds,
                 WorldEventKind.ActionStarted,
                 $"开始动作：{currentAction.DisplayName}。",
-                currentAction.TargetPlotNumber);
+                currentAction.TargetPlotNumber,
+                WorldEventVisibility.Private,
+                actionContext.ResidentId,
+                new[] { actionContext.ResidentId },
+                tags: BuildActionTags(currentAction));
             ActionStarted?.Invoke(currentAction);
 
             if (!currentAction.TargetPlotNumber.HasValue)
@@ -450,7 +454,11 @@ namespace AIFarm.Presentation
                 actionContext.Clock.ElapsedGameSeconds,
                 WorldEventKind.ActionCompleted,
                 $"完成动作：{completedAction.DisplayName}。",
-                completedAction.TargetPlotNumber);
+                completedAction.TargetPlotNumber,
+                WorldEventVisibility.Private,
+                actionContext.ResidentId,
+                new[] { actionContext.ResidentId },
+                tags: BuildActionTags(completedAction));
             lastResult = completion;
             lastFailureReason = string.Empty;
             currentAction = null;
@@ -478,10 +486,39 @@ namespace AIFarm.Presentation
                 actionContext.Clock.ElapsedGameSeconds,
                 WorldEventKind.ActionFailed,
                 $"动作失败：{actionName}；{failure.Message}",
-                currentAction?.TargetPlotNumber);
+                currentAction?.TargetPlotNumber,
+                WorldEventVisibility.Private,
+                actionContext.ResidentId,
+                new[] { actionContext.ResidentId },
+                tags: BuildActionTags(currentAction));
             ActionFailed?.Invoke(currentAction, failure);
             Debug.LogWarning($"NPC action '{actionName}' failed: {failure.Message}", this);
             return failure;
+        }
+
+        private static string[] BuildActionTags(INpcAction action)
+        {
+            var tags = new List<string> { "farm-action" };
+            if (action == null)
+            {
+                return tags.ToArray();
+            }
+
+            string actionTag = action.GetType().Name
+                .Replace("Action", string.Empty)
+                .ToLowerInvariant();
+            if (!string.IsNullOrWhiteSpace(actionTag))
+            {
+                tags.Add(actionTag);
+            }
+
+            if (action is HarvestAction)
+            {
+                tags.Add("harvest");
+                tags.Add("carrot");
+            }
+
+            return tags.ToArray();
         }
 
         private void SetStatus(NpcExecutionStatus nextStatus)

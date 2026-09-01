@@ -146,23 +146,61 @@ namespace AIFarm.Ai
 
     public sealed class ResidentMemorySnapshot
     {
+        private readonly ReadOnlyCollection<string> tags;
+
         public ResidentMemorySnapshot(
             ResidentId ownerResidentId,
             string text,
-            int importance)
+            int importance,
+            string knowledgeId = null,
+            string rootFactId = null,
+            IEnumerable<string> memoryTags = null,
+            bool isShareable = false,
+            ResidentId? immediateSourceResidentId = null)
         {
             string normalized = (text ?? string.Empty).Trim();
+            string normalizedKnowledgeId = (knowledgeId ?? string.Empty).Trim();
+            string normalizedRootFactId = (rootFactId ?? string.Empty).Trim();
             if (!ownerResidentId.IsValid || normalized.Length < 1 ||
                 normalized.Length > 500 || importance < MemoryEntry.MinimumImportance ||
-                importance > MemoryEntry.MaximumImportance)
+                importance > MemoryEntry.MaximumImportance ||
+                normalizedKnowledgeId.Length > MemoryEntry.MaximumIdentifierLength ||
+                normalizedRootFactId.Length > MemoryEntry.MaximumIdentifierLength ||
+                (isShareable && (normalizedKnowledgeId.Length == 0 ||
+                    normalizedRootFactId.Length == 0)) ||
+                (immediateSourceResidentId.HasValue &&
+                    (!immediateSourceResidentId.Value.IsValid ||
+                        immediateSourceResidentId.Value == ownerResidentId)))
             {
                 throw new ArgumentException(
-                    "A memory snapshot requires its owner, bounded text, and importance.");
+                    "A memory snapshot requires bounded owner-specific content and provenance.");
+            }
+
+            var normalizedTags = new List<string>();
+            var uniqueTags = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (string memoryTag in memoryTags ?? Array.Empty<string>())
+            {
+                string tag = (memoryTag ?? string.Empty).Trim();
+                if (tag.Length < 1 || tag.Length > MemoryEntry.MaximumTagLength ||
+                    !uniqueTags.Add(tag) ||
+                    normalizedTags.Count >= MemoryEntry.MaximumTagCount)
+                {
+                    throw new ArgumentException(
+                        "Memory snapshot tags must be unique and bounded.",
+                        nameof(memoryTags));
+                }
+
+                normalizedTags.Add(tag);
             }
 
             OwnerResidentId = ownerResidentId;
             Text = normalized;
             Importance = importance;
+            KnowledgeId = normalizedKnowledgeId;
+            RootFactId = normalizedRootFactId;
+            tags = new ReadOnlyCollection<string>(normalizedTags);
+            IsShareable = isShareable;
+            ImmediateSourceResidentId = immediateSourceResidentId;
         }
 
         public ResidentId OwnerResidentId { get; }
@@ -170,6 +208,16 @@ namespace AIFarm.Ai
         public string Text { get; }
 
         public int Importance { get; }
+
+        public string KnowledgeId { get; }
+
+        public string RootFactId { get; }
+
+        public IReadOnlyList<string> Tags => tags;
+
+        public bool IsShareable { get; }
+
+        public ResidentId? ImmediateSourceResidentId { get; }
     }
 
     public sealed class ResidentContext
@@ -369,22 +417,26 @@ namespace AIFarm.Ai
             ResidentId speakerId,
             NpcMood mood,
             string emoji,
-            string text)
+            string text,
+            string sharedKnowledgeId = null)
         {
             string normalizedEmoji = (emoji ?? string.Empty).Trim();
             string normalizedText = (text ?? string.Empty).Trim();
+            string normalizedKnowledgeId = (sharedKnowledgeId ?? string.Empty).Trim();
             if (!speakerId.IsValid || !Enum.IsDefined(typeof(NpcMood), mood) ||
                 normalizedEmoji.Length < 1 || normalizedEmoji.Length > 8 ||
-                normalizedText.Length < 1 || normalizedText.Length > 300)
+                normalizedText.Length < 1 || normalizedText.Length > 300 ||
+                normalizedKnowledgeId.Length > 160)
             {
                 throw new ArgumentException(
-                    "A conversation line requires a speaker, mood, emoji, and bounded text.");
+                    "A conversation line requires a speaker, mood, emoji, bounded text, and an optional bounded knowledge ID.");
             }
 
             SpeakerId = speakerId;
             Mood = mood;
             Emoji = normalizedEmoji;
             Text = normalizedText;
+            SharedKnowledgeId = normalizedKnowledgeId;
         }
 
         public ResidentId SpeakerId { get; }
@@ -394,6 +446,8 @@ namespace AIFarm.Ai
         public string Emoji { get; }
 
         public string Text { get; }
+
+        public string SharedKnowledgeId { get; }
     }
 
     public sealed class ConversationScriptSpec

@@ -12,15 +12,18 @@ namespace AIFarm.Social
 
         private readonly ResidentRegistry residentRegistry;
         private readonly SocialGraph socialGraph;
+        private readonly ConversationSummaryService summaryService;
         private readonly HashSet<ConversationId> recordedTranscripts =
             new HashSet<ConversationId>();
 
         public ConversationOutcomeApplier(
             ResidentRegistry registry,
-            SocialGraph graph)
+            SocialGraph graph,
+            ConversationSummaryService conversationSummaries = null)
         {
             residentRegistry = registry ?? throw new ArgumentNullException(nameof(registry));
             socialGraph = graph ?? throw new ArgumentNullException(nameof(graph));
+            summaryService = conversationSummaries ?? new ConversationSummaryService(registry);
         }
 
         public ActionResult Apply(
@@ -112,6 +115,19 @@ namespace AIFarm.Social
                     "A played transcript requires actual utterances and valid completion state.");
             }
 
+            if (includeOutcome)
+            {
+                ActionResult summarized = summaryService.RecordCompletedConversation(
+                    session,
+                    gameSeconds);
+                if (summarized.Succeeded)
+                {
+                    recordedTranscripts.Add(session.ConversationId);
+                }
+
+                return summarized;
+            }
+
             ActionResult firstDefinitionResult = residentRegistry.TryGetDefinition(
                 session.FirstResidentId,
                 out ResidentDefinition firstDefinition);
@@ -138,25 +154,39 @@ namespace AIFarm.Social
                 session,
                 firstDefinition,
                 secondDefinition,
-                includeOutcome);
+                includeOutcome: false);
             string secondMemory = CreateMemoryText(
                 session,
                 secondDefinition,
                 firstDefinition,
-                includeOutcome);
+                includeOutcome: false);
             ActionResult firstStored = firstRuntime.Memories.AddObservation(
                 session.FirstResidentId,
                 gameSeconds,
                 firstMemory,
                 6,
-                WorldEventKind.ConversationCompleted,
+                WorldEventKind.ConversationInterrupted,
+                MemorySourceKind.Conversation,
+                sourceEventId: session.ConversationId.Value,
+                rootFactId: null,
+                parentKnowledgeId: null,
+                immediateSourceResidentId: session.SecondResidentId,
+                tags: new[] { "conversation-fragment" },
+                isShareable: false,
                 out MemoryEntry _);
             ActionResult secondStored = secondRuntime.Memories.AddObservation(
                 session.SecondResidentId,
                 gameSeconds,
                 secondMemory,
                 6,
-                WorldEventKind.ConversationCompleted,
+                WorldEventKind.ConversationInterrupted,
+                MemorySourceKind.Conversation,
+                sourceEventId: session.ConversationId.Value,
+                rootFactId: null,
+                parentKnowledgeId: null,
+                immediateSourceResidentId: session.FirstResidentId,
+                tags: new[] { "conversation-fragment" },
+                isShareable: false,
                 out MemoryEntry _);
             ActionResult stored = firstStored.Failed ? firstStored : secondStored;
             if (stored.Succeeded)

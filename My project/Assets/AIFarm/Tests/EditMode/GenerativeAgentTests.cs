@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Linq;
 using AIFarm.Core;
 using AIFarm.Npc;
@@ -151,6 +152,221 @@ namespace AIFarm.Tests.EditMode
             Assert.That(state.CompletedCycleCount, Is.EqualTo(2));
             Assert.That(state.RecentReflections, Has.Count.EqualTo(2));
             Assert.That(state.Memories.GetRecentReflections(3), Has.Count.EqualTo(2));
+        }
+
+        [Test]
+        public void ReflectionPolicy_AllowsOnlyMajorGoalAndDayEndTriggers()
+        {
+            Assert.That(
+                ReflectionService.IsEligibleTrigger(WorldEventKind.GoalCompleted),
+                Is.True);
+            Assert.That(
+                ReflectionService.IsEligibleTrigger(WorldEventKind.DayEnded),
+                Is.True);
+            Assert.That(
+                ReflectionService.IsEligibleTrigger(WorldEventKind.ActionCompleted),
+                Is.False);
+            Assert.That(
+                ReflectionService.IsEligibleTrigger(WorldEventKind.ConversationCompleted),
+                Is.False);
+        }
+
+        [Test]
+        public void DayEndReflection_RecordsExactlyOneOwnerScopedLocalFallbackPerResident()
+        {
+            var registry = new ResidentRegistry();
+            foreach (ResidentDefinition definition in ResidentDefinition.TownResidents)
+            {
+                var runtime = new ResidentRuntimeState(definition);
+                Assert.That(registry.Register(definition, runtime).Succeeded, Is.True);
+            }
+
+            var eventLog = new WorldEventLog(16);
+            var coordinator = new ResidentReflectionCoordinator(registry, 86399d);
+
+            Assert.That(
+                coordinator.TickDayBoundaries(86399.5d, eventLog, out int before).Succeeded,
+                Is.True);
+            Assert.That(before, Is.Zero);
+            Assert.That(
+                coordinator.TickDayBoundaries(86400d, eventLog, out int reflected).Succeeded,
+                Is.True);
+            Assert.That(reflected, Is.EqualTo(4));
+            Assert.That(eventLog.Entries, Has.Count.EqualTo(1));
+            Assert.That(eventLog.Entries[0].Kind, Is.EqualTo(WorldEventKind.DayEnded));
+
+            foreach (ResidentId residentId in ResidentIds.TownResidents)
+            {
+                Assert.That(
+                    registry.TryGetRuntimeState(
+                        residentId,
+                        out ResidentRuntimeState runtime).Succeeded,
+                    Is.True);
+                Assert.That(
+                    runtime.Memories.GetRecentReflections(
+                        residentId,
+                        3,
+                        out IReadOnlyList<MemoryEntry> reflections).Succeeded,
+                    Is.True);
+                Assert.That(reflections, Has.Count.EqualTo(1));
+                Assert.That(reflections[0].OwnerResidentId, Is.EqualTo(residentId));
+                Assert.That(reflections[0].SourceKind, Is.EqualTo(MemorySourceKind.Reflection));
+                Assert.That(
+                    reflections[0].SourceEventKind,
+                    Is.EqualTo(WorldEventKind.DayEnded));
+                Assert.That(reflections[0].Tags, Does.Contain("day-end").And.Contain("day-1"));
+                Assert.That(reflections[0].IsShareable, Is.False);
+            }
+
+            Assert.That(
+                coordinator.TickDayBoundaries(86401d, eventLog, out int repeated).Succeeded,
+                Is.True);
+            Assert.That(repeated, Is.Zero);
+        }
+
+        [Test]
+        public void DayEndReflection_SynchronizeAfterTimeReset_AllowsTheNewDayOne()
+        {
+            var registry = new ResidentRegistry();
+            foreach (ResidentDefinition definition in ResidentDefinition.TownResidents)
+            {
+                Assert.That(
+                    registry.Register(
+                        definition,
+                        new ResidentRuntimeState(definition)).Succeeded,
+                    Is.True);
+            }
+
+            var eventLog = new WorldEventLog(16);
+            var coordinator = new ResidentReflectionCoordinator(registry, 0d);
+            Assert.That(
+                coordinator.TickDayBoundaries(
+                    ResidentReflectionCoordinator.GameSecondsPerDay,
+                    eventLog,
+                    out int firstRun).Succeeded,
+                Is.True);
+            Assert.That(firstRun, Is.EqualTo(4));
+
+            foreach (ResidentDefinition definition in ResidentDefinition.TownResidents)
+            {
+                Assert.That(
+                    registry.ReplaceRuntimeState(
+                        definition.ResidentId,
+                        new ResidentRuntimeState(definition)).Succeeded,
+                    Is.True);
+            }
+
+            coordinator.Synchronize(0d);
+            Assert.That(
+                coordinator.TickDayBoundaries(
+                    ResidentReflectionCoordinator.GameSecondsPerDay,
+                    eventLog,
+                    out int secondRun).Succeeded,
+                Is.True);
+            Assert.That(secondRun, Is.EqualTo(4));
+            foreach (ResidentId residentId in ResidentIds.TownResidents)
+            {
+                Assert.That(
+                    registry.TryGetRuntimeState(
+                        residentId,
+                        out ResidentRuntimeState runtime).Succeeded,
+                    Is.True);
+                Assert.That(
+                    runtime.Memories.GetRecentReflections(
+                        residentId,
+                        3,
+                        out IReadOnlyList<MemoryEntry> reflections).Succeeded,
+                    Is.True);
+                Assert.That(reflections, Has.Count.EqualTo(1));
+            }
+        }
+
+        [Test]
+        public void DayEndReflection_UsesOnlyCompletedDayFacts_AndNeverReflectsOnReflection()
+        {
+            var runtime = new ResidentRuntimeState(ResidentDefinition.Yaya);
+            var service = new ReflectionService(runtime);
+            Assert.That(
+                runtime.Memories.AddObservation(
+                    runtime.ResidentId,
+                    100d,
+                    "第一天的重要事件。",
+                    9,
+                    WorldEventKind.GoalCompleted,
+                    out _).Succeeded,
+                Is.True);
+            Assert.That(
+                service.CreateAndStoreLocalDayEndReflection(
+                    1,
+                    ResidentReflectionCoordinator.GameSecondsPerDay,
+                    out MemoryEntry firstReflection).Succeeded,
+                Is.True);
+            Assert.That(firstReflection.Text, Does.Contain("第一天的重要事件"));
+            Assert.That(
+                runtime.Memories.AddObservation(
+                    runtime.ResidentId,
+                    ResidentReflectionCoordinator.GameSecondsPerDay + 100d,
+                    "第二天的新事件。",
+                    8,
+                    WorldEventKind.CropMatured,
+                    out _).Succeeded,
+                Is.True);
+
+            Assert.That(
+                service.CreateAndStoreLocalDayEndReflection(
+                    2,
+                    ResidentReflectionCoordinator.GameSecondsPerDay * 2d,
+                    out MemoryEntry secondReflection).Succeeded,
+                Is.True);
+
+            Assert.That(secondReflection.Text, Does.Contain("第二天的新事件"));
+            Assert.That(secondReflection.Text, Does.Not.Contain("第一天的重要事件"));
+            Assert.That(secondReflection.ParentKnowledgeId, Is.Empty);
+            Assert.That(secondReflection.IsShareable, Is.False);
+        }
+
+        [Test]
+        public void DayEndReflection_DirectClockRollbackResetsResidentGuards()
+        {
+            var registry = new ResidentRegistry();
+            foreach (ResidentDefinition definition in ResidentDefinition.TownResidents)
+            {
+                Assert.That(
+                    registry.Register(
+                        definition,
+                        new ResidentRuntimeState(definition)).Succeeded,
+                    Is.True);
+            }
+
+            var eventLog = new WorldEventLog(16);
+            var coordinator = new ResidentReflectionCoordinator(registry, 0d);
+            Assert.That(
+                coordinator.TickDayBoundaries(
+                    ResidentReflectionCoordinator.GameSecondsPerDay * 2d,
+                    eventLog,
+                    out int initial).Succeeded,
+                Is.True);
+            Assert.That(initial, Is.EqualTo(8));
+            foreach (ResidentDefinition definition in ResidentDefinition.TownResidents)
+            {
+                Assert.That(
+                    registry.ReplaceRuntimeState(
+                        definition.ResidentId,
+                        new ResidentRuntimeState(definition)).Succeeded,
+                    Is.True);
+            }
+
+            Assert.That(
+                coordinator.TickDayBoundaries(0d, eventLog, out int rollback).Succeeded,
+                Is.True);
+            Assert.That(rollback, Is.Zero);
+            Assert.That(
+                coordinator.TickDayBoundaries(
+                    ResidentReflectionCoordinator.GameSecondsPerDay,
+                    eventLog,
+                    out int rerun).Succeeded,
+                Is.True);
+            Assert.That(rerun, Is.EqualTo(4));
         }
     }
 }

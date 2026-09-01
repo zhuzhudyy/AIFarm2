@@ -1399,6 +1399,40 @@ namespace AIFarm.Editor
                 22,
                 FontStyle.Bold);
             SetTopRow(memoryTitle.rectTransform, -12f, 34f);
+
+            GameObject residentSelector = CreateUiObject(
+                "ResidentSelector",
+                memoryPanel.transform);
+            SetTopRow(residentSelector.GetComponent<RectTransform>(), -48f, 38f);
+            Button yayaResidentButton = CreateControlButton(
+                "YayaButton",
+                "芽芽",
+                residentSelector.transform,
+                font,
+                out _);
+            SetControlRect(yayaResidentButton.GetComponent<RectTransform>(), 0f, 116f);
+            Button amuResidentButton = CreateControlButton(
+                "AmuButton",
+                "阿木",
+                residentSelector.transform,
+                font,
+                out _);
+            SetControlRect(amuResidentButton.GetComponent<RectTransform>(), 126f, 116f);
+            Button xiaosuiResidentButton = CreateControlButton(
+                "XiaosuiButton",
+                "小穗",
+                residentSelector.transform,
+                font,
+                out _);
+            SetControlRect(xiaosuiResidentButton.GetComponent<RectTransform>(), 252f, 116f);
+            Button momoResidentButton = CreateControlButton(
+                "MomoButton",
+                "墨墨",
+                residentSelector.transform,
+                font,
+                out _);
+            SetControlRect(momoResidentButton.GetComponent<RectTransform>(), 378f, 116f);
+
             Text personaText = CreateText(
                 "PersonaText",
                 memoryPanel.transform,
@@ -1406,7 +1440,7 @@ namespace AIFarm.Editor
                 font,
                 16,
                 FontStyle.Italic);
-            SetTopRow(personaText.rectTransform, -48f, 40f);
+            SetTopRow(personaText.rectTransform, -92f, 40f);
             Text memoriesTitle = CreateText(
                 "MemoriesTitleText",
                 memoryPanel.transform,
@@ -1414,7 +1448,7 @@ namespace AIFarm.Editor
                 font,
                 18,
                 FontStyle.Bold);
-            SetTopRow(memoriesTitle.rectTransform, -94f, 28f);
+            SetTopRow(memoriesTitle.rectTransform, -138f, 28f);
             Text recentMemoriesText = CreateText(
                 "RecentMemoriesText",
                 memoryPanel.transform,
@@ -1422,7 +1456,7 @@ namespace AIFarm.Editor
                 font,
                 15,
                 FontStyle.Normal);
-            SetTopRow(recentMemoriesText.rectTransform, -126f, 238f);
+            SetTopRow(recentMemoriesText.rectTransform, -170f, 188f);
             recentMemoriesText.alignment = TextAnchor.UpperLeft;
             Text reflectionsTitle = CreateText(
                 "ReflectionsTitleText",
@@ -1557,7 +1591,13 @@ namespace AIFarm.Editor
                 aiModeText,
                 recentMemoriesText,
                 recentReflectionsText,
-                apiSettingsButton);
+                apiSettingsButton,
+                memoryTitle,
+                personaText,
+                yayaResidentButton,
+                amuResidentButton,
+                xiaosuiResidentButton,
+                momoResidentButton);
 
             SaveGameController saveController = canvasObject.AddComponent<SaveGameController>();
             EnsureSucceeded(saveController.Configure(

@@ -504,14 +504,17 @@ namespace AIFarm.Presentation
                 RecordEvent(
                     WorldEventKind.GoalCompleted,
                     "九块目标土地已经全部收获，任务完成。");
-                string reflectionContext = reflectionService.BuildReflectionContext(
-                    ActiveGoal.Summary);
-                TriggerReflection(
-                    NpcReflectionOutcome.Completed,
-                    reflectionContext,
-                    NpcExpressionTrigger.GoalCompleted,
-                    activeCycleNumber,
-                    interrupt: true);
+                if (ReflectionService.IsEligibleTrigger(WorldEventKind.GoalCompleted))
+                {
+                    string reflectionContext = reflectionService.BuildReflectionContext(
+                        ActiveGoal.Summary);
+                    TriggerReflection(
+                        NpcReflectionOutcome.Completed,
+                        reflectionContext,
+                        NpcExpressionTrigger.GoalCompleted,
+                        activeCycleNumber,
+                        interrupt: true);
+                }
                 return ActionResult.Success("端到端种田目标已完成。");
             }
 
@@ -927,7 +930,26 @@ namespace AIFarm.Presentation
                 actionContext.Clock.ElapsedGameSeconds,
                 kind,
                 message,
-                plotNumber);
+                plotNumber,
+                WorldEventVisibility.Private,
+                ResidentId,
+                new[] { ResidentId },
+                tags: BuildEventTags(kind));
+        }
+
+        private static string[] BuildEventTags(WorldEventKind kind)
+        {
+            switch (kind)
+            {
+                case WorldEventKind.GoalCompleted:
+                    return new[] { "farm-goal", "harvest", "carrot", "major-event" };
+                case WorldEventKind.CommandAccepted:
+                    return new[] { "player-input", "farm-goal" };
+                case WorldEventKind.ActionFailed:
+                    return new[] { "farm-action", "failure", "major-event" };
+                default:
+                    return new[] { "farm-plan" };
+            }
         }
 
         private void HandleWorldEventRecorded(WorldEventEntry worldEvent)

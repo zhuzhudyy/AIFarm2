@@ -150,6 +150,158 @@ namespace AIFarm.Tests.PlayMode
             Assert.That(modeLabel.text, Is.EqualTo("AI: LOCAL"));
         }
 
+        [UnityTest]
+        public IEnumerator ResidentMemorySelector_IsOwnerScopedAndNeverRetainsPreviousPrivateText()
+        {
+            bootstrapObject = new GameObject("HudResidentMemoryBootstrap");
+            bootstrapObject.SetActive(false);
+            inventoryConfig = ScriptableObject.CreateInstance<DemoInventoryConfig>();
+            inventoryConfig.Configure(9, 9, 9, 0);
+            sceneConfig = ScriptableObject.CreateInstance<DemoSceneConfig>();
+            sceneConfig.Configure(
+                inventoryConfig,
+                day: 1,
+                hour: 8,
+                scale: 20f,
+                size: 2f,
+                spacing: 0.35f);
+
+            GameBootstrap bootstrap = bootstrapObject.AddComponent<GameBootstrap>();
+            bootstrap.Configure(sceneConfig);
+            Assert.That(bootstrap.Initialize().Succeeded, Is.True);
+            Assert.That(
+                bootstrap.ResidentRegistry.TryGetRuntimeState(
+                    ResidentIds.Yaya,
+                    out ResidentRuntimeState yaya).Succeeded,
+                Is.True);
+            Assert.That(
+                bootstrap.ResidentRegistry.TryGetRuntimeState(
+                    ResidentIds.Amu,
+                    out ResidentRuntimeState amu).Succeeded,
+                Is.True);
+            Assert.That(
+                yaya.Memories.AddObservation(
+                    ResidentIds.Yaya,
+                    1d,
+                    "YAYA-PRIVATE-MARKER",
+                    8,
+                    WorldEventKind.System,
+                    out _).Succeeded,
+                Is.True);
+            Assert.That(
+                amu.Memories.AddObservation(
+                    ResidentIds.Amu,
+                    2d,
+                    "AMU-PRIVATE-MARKER",
+                    8,
+                    WorldEventKind.System,
+                    out _).Succeeded,
+                Is.True);
+            Assert.That(
+                yaya.Memories.AddReflection(
+                    ResidentIds.Yaya,
+                    3d,
+                    "YAYA-REFLECTION-MARKER",
+                    out _).Succeeded,
+                Is.True);
+            Assert.That(
+                amu.Memories.AddReflection(
+                    ResidentIds.Amu,
+                    4d,
+                    "AMU-REFLECTION-MARKER",
+                    out _).Succeeded,
+                Is.True);
+
+            hudObject = new GameObject("HudResidentMemory");
+            DemoHud hud = hudObject.AddComponent<DemoHud>();
+            Text goalLabel = CreateText("GoalLabel");
+            Text actionLabel = CreateText("ActionLabel");
+            Text expressionLabel = CreateText("ExpressionLabel");
+            Text reasonLabel = CreateText("ReasonLabel");
+            Text eventsLabel = CreateText("EventsLabel");
+            Text moodLabel = CreateText("MoodLabel");
+            Text emojiLabel = CreateText("EmojiLabel");
+            Text memoryTitle = CreateText("MemoryTitle");
+            Text personaLabel = CreateText("PersonaLabel");
+            Text memoriesLabel = CreateText("MemoriesLabel");
+            Text reflectionsLabel = CreateText("ReflectionsLabel");
+            Button submitButton = CreateButton("SubmitButton");
+            Button yayaButton = CreateButton("YayaButton");
+            Button amuButton = CreateButton("AmuButton");
+            Button xiaosuiButton = CreateButton("XiaosuiButton");
+            Button momoButton = CreateButton("MomoButton");
+            var inputObject = new GameObject("CommandInput", typeof(RectTransform));
+            inputObject.transform.SetParent(hudObject.transform, false);
+            InputField commandInput = inputObject.AddComponent<InputField>();
+            hud.Configure(
+                gameBootstrap: bootstrap,
+                timeLabel: null,
+                inventoryLabel: null,
+                goalLabel: goalLabel,
+                actionLabel: actionLabel,
+                input: commandInput,
+                button: submitButton,
+                expressionLabel: expressionLabel,
+                actionReasonLabel: reasonLabel,
+                eventsLabel: eventsLabel,
+                moodLabel: moodLabel,
+                emojiLabel: emojiLabel,
+                memoriesLabel: memoriesLabel,
+                reflectionsLabel: reflectionsLabel,
+                memoryTitleLabel: memoryTitle,
+                personaLabel: personaLabel,
+                yayaSelectionControl: yayaButton,
+                amuSelectionControl: amuButton,
+                xiaosuiSelectionControl: xiaosuiButton,
+                momoSelectionControl: momoButton);
+
+            yield return null;
+
+            Assert.That(hud.SelectedResidentId, Is.EqualTo(ResidentIds.Yaya));
+            Assert.That(memoryTitle.text, Does.StartWith("芽芽"));
+            Assert.That(memoriesLabel.text, Does.Contain("YAYA-PRIVATE-MARKER"));
+            Assert.That(memoriesLabel.text, Does.Not.Contain("AMU-PRIVATE-MARKER"));
+            Assert.That(reflectionsLabel.text, Does.Contain("YAYA-REFLECTION-MARKER"));
+            Assert.That(reflectionsLabel.text, Does.Not.Contain("AMU-REFLECTION-MARKER"));
+
+            amuButton.onClick.Invoke();
+            Assert.That(hud.SelectedResidentId, Is.EqualTo(ResidentIds.Amu));
+            Assert.That(memoryTitle.text, Does.StartWith("阿木"));
+            Assert.That(personaLabel.text, Does.Contain("小镇木工"));
+            Assert.That(memoriesLabel.text, Does.Contain("AMU-PRIVATE-MARKER"));
+            Assert.That(memoriesLabel.text, Does.Not.Contain("YAYA-PRIVATE-MARKER"));
+            Assert.That(reflectionsLabel.text, Does.Contain("AMU-REFLECTION-MARKER"));
+            Assert.That(reflectionsLabel.text, Does.Not.Contain("YAYA-REFLECTION-MARKER"));
+            Assert.That(submitButton.interactable, Is.False);
+            Assert.That(commandInput.interactable, Is.False);
+
+            xiaosuiButton.onClick.Invoke();
+            Assert.That(hud.SelectedResidentId, Is.EqualTo(ResidentIds.Xiaosui));
+            Assert.That(memoryTitle.text, Does.StartWith("小穗"));
+            Assert.That(memoriesLabel.text, Does.Not.Contain("AMU-PRIVATE-MARKER"));
+            Assert.That(memoriesLabel.text, Does.Not.Contain("YAYA-PRIVATE-MARKER"));
+            Assert.That(reflectionsLabel.text, Does.Not.Contain("AMU-REFLECTION-MARKER"));
+            Assert.That(reflectionsLabel.text, Does.Not.Contain("YAYA-REFLECTION-MARKER"));
+
+            momoButton.onClick.Invoke();
+            Assert.That(hud.SelectedResidentId, Is.EqualTo(ResidentIds.Momo));
+            Assert.That(memoryTitle.text, Does.StartWith("墨墨"));
+            Assert.That(memoriesLabel.text, Does.Not.Contain("AMU-PRIVATE-MARKER"));
+            Assert.That(memoriesLabel.text, Does.Not.Contain("YAYA-PRIVATE-MARKER"));
+            Assert.That(reflectionsLabel.text, Does.Not.Contain("AMU-REFLECTION-MARKER"));
+            Assert.That(reflectionsLabel.text, Does.Not.Contain("YAYA-REFLECTION-MARKER"));
+
+            ActionResult missing = hud.SelectResident(new ResidentId("resident-999"));
+            Assert.That(missing.Failed, Is.True);
+            yield return null;
+            Assert.That(memoryTitle.text, Is.Empty);
+            Assert.That(personaLabel.text, Is.Empty);
+            Assert.That(memoriesLabel.text, Is.Empty);
+            Assert.That(reflectionsLabel.text, Is.Empty);
+            Assert.That(goalLabel.text, Is.Empty);
+            Assert.That(eventsLabel.text, Is.Empty);
+        }
+
         private Button CreateButton(string name)
         {
             var buttonObject = new GameObject(name, typeof(RectTransform));

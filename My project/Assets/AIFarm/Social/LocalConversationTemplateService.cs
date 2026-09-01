@@ -44,14 +44,18 @@ namespace AIFarm.Social
             ConversationSession session,
             ResidentDefinition firstResident,
             ResidentDefinition secondResident,
-            out ConversationScriptSpec script)
+            out ConversationScriptSpec script,
+            MemoryEntry firstSharedKnowledge = null,
+            MemoryEntry secondSharedKnowledge = null)
         {
             script = null;
             if (session == null || session.State != ConversationState.Active ||
                 session.HasPreparedScript || session.DeliveredSentenceCount != 0 ||
                 firstResident == null || secondResident == null ||
                 firstResident.ResidentId != session.FirstResidentId ||
-                secondResident.ResidentId != session.SecondResidentId)
+                secondResident.ResidentId != session.SecondResidentId ||
+                !IsValidSharedKnowledge(firstResident, firstSharedKnowledge) ||
+                !IsValidSharedKnowledge(secondResident, secondSharedKnowledge))
             {
                 return ActionResult.Failure(
                     ActionFailureReason.InvalidArgument,
@@ -67,11 +71,19 @@ namespace AIFarm.Social
                 ResidentDefinition listener = index % 2 == 0
                     ? secondResident
                     : firstResident;
+                MemoryEntry sharedKnowledge = index == 0
+                    ? firstSharedKnowledge
+                    : index == 1
+                        ? secondSharedKnowledge
+                        : null;
                 lines.Add(new ConversationLineSpec(
                     speaker.ResidentId,
                     SelectMood(index),
                     SelectEmoji(index),
-                    CreateLineText(index, speaker, listener)));
+                    sharedKnowledge == null
+                        ? CreateLineText(index, speaker, listener)
+                        : CreateKnowledgeSharingText(speaker, listener, sharedKnowledge),
+                    sharedKnowledge?.KnowledgeId));
             }
 
             script = new ConversationScriptSpec(
@@ -80,6 +92,29 @@ namespace AIFarm.Social
                 SelectOutcome(session),
                 "local");
             return ActionResult.Success("A deterministic local ConversationScriptSpec was created.");
+        }
+
+        private static bool IsValidSharedKnowledge(
+            ResidentDefinition speaker,
+            MemoryEntry knowledge)
+        {
+            return knowledge == null ||
+                (knowledge.OwnerResidentId == speaker.ResidentId &&
+                    knowledge.IsShareable &&
+                    !string.IsNullOrWhiteSpace(knowledge.KnowledgeId));
+        }
+
+        private static string CreateKnowledgeSharingText(
+            ResidentDefinition speaker,
+            ResidentDefinition listener,
+            MemoryEntry knowledge)
+        {
+            string prefix = $"{listener.DisplayName}，我是{speaker.DisplayName}。我想告诉你：";
+            int availableTextLength = Math.Max(1, 300 - prefix.Length);
+            string factText = knowledge.Text.Length <= availableTextLength
+                ? knowledge.Text
+                : knowledge.Text.Substring(0, availableTextLength);
+            return prefix + factText;
         }
 
         private static string CreateLineText(

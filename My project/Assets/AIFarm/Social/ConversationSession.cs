@@ -97,6 +97,7 @@ namespace AIFarm.Social
             NpcMood mood,
             string emoji,
             string text,
+            string sharedKnowledgeId,
             double playedAtGameSeconds)
         {
             UtteranceId = utteranceId;
@@ -105,6 +106,7 @@ namespace AIFarm.Social
             Mood = mood;
             Emoji = emoji;
             Text = text;
+            SharedKnowledgeId = sharedKnowledgeId;
             PlayedAtGameSeconds = playedAtGameSeconds;
         }
 
@@ -120,6 +122,8 @@ namespace AIFarm.Social
 
         public string Text { get; }
 
+        public string SharedKnowledgeId { get; }
+
         public double PlayedAtGameSeconds { get; }
     }
 
@@ -133,6 +137,7 @@ namespace AIFarm.Social
             new List<ConversationUtterance>(MaximumSentenceCount);
         private readonly ReadOnlyCollection<ConversationUtterance> readOnlyUtterances;
         private ReadOnlyCollection<ConversationLineSpec> preparedLines;
+        private ReadOnlyCollection<MemoryEntry> preparedKnowledgeSnapshots;
 
         internal ConversationSession(
             ConversationId conversationId,
@@ -237,9 +242,12 @@ namespace AIFarm.Social
             return ActionResult.Success("Conversation activated.");
         }
 
-        internal ActionResult SetPreparedScript(ConversationScriptSpec script)
+        internal ActionResult SetPreparedScript(
+            ConversationScriptSpec script,
+            IEnumerable<MemoryEntry> knowledgeSnapshots)
         {
             if (State != ConversationState.Active || script == null ||
+                knowledgeSnapshots == null ||
                 HasPreparedScript || DeliveredSentenceCount != 0 ||
                 !IsParticipant(script.ResidentId) ||
                 script.Lines.Count < MinimumSentenceCount ||
@@ -252,6 +260,28 @@ namespace AIFarm.Social
             }
 
             var validatedLines = new List<ConversationLineSpec>(script.Lines.Count);
+            var validatedKnowledge = new List<MemoryEntry>();
+            var knowledgeKeys = new HashSet<string>(StringComparer.Ordinal);
+            foreach (MemoryEntry knowledge in knowledgeSnapshots)
+            {
+                if (knowledge == null || !IsParticipant(knowledge.OwnerResidentId) ||
+                    !knowledge.IsShareable ||
+                    string.IsNullOrWhiteSpace(knowledge.KnowledgeId))
+                {
+                    return ActionResult.Failure(
+                        ActionFailureReason.InvalidResponse,
+                        "Prepared knowledge snapshots must be shareable participant memories.");
+                }
+
+                string key = CreateKnowledgeKey(
+                    knowledge.OwnerResidentId,
+                    knowledge.KnowledgeId);
+                if (knowledgeKeys.Add(key))
+                {
+                    validatedKnowledge.Add(knowledge);
+                }
+            }
+
             foreach (ConversationLineSpec line in script.Lines)
             {
                 if (line == null || !IsParticipant(line.SpeakerId))
@@ -261,16 +291,58 @@ namespace AIFarm.Social
                         "Every prepared speaker must belong to this conversation.");
                 }
 
+                if (!string.IsNullOrWhiteSpace(line.SharedKnowledgeId) &&
+                    !knowledgeKeys.Contains(
+                        CreateKnowledgeKey(
+                            line.SpeakerId,
+                            line.SharedKnowledgeId)))
+                {
+                    return ActionResult.Failure(
+                        ActionFailureReason.InvalidResponse,
+                        "Every prepared knowledge reference requires an immutable owner snapshot.");
+                }
+
                 validatedLines.Add(line);
             }
 
             preparedLines = new ReadOnlyCollection<ConversationLineSpec>(validatedLines);
+            preparedKnowledgeSnapshots =
+                new ReadOnlyCollection<MemoryEntry>(validatedKnowledge);
             PreparedOutcome = script.Outcome;
             ScriptProvider = script.Provider;
             TargetSentenceCount = preparedLines.Count;
             TurnOwnerResidentId = preparedLines[0].SpeakerId;
             ConversationVersion++;
             return ActionResult.Success("Conversation script prepared for Unity playback.");
+        }
+
+        internal bool TryGetPreparedKnowledgeSnapshot(
+            ResidentId speakerResidentId,
+            string knowledgeId,
+            out MemoryEntry knowledge)
+        {
+            knowledge = null;
+            string normalized = (knowledgeId ?? string.Empty).Trim();
+            if (!speakerResidentId.IsValid || normalized.Length == 0 ||
+                preparedKnowledgeSnapshots == null)
+            {
+                return false;
+            }
+
+            foreach (MemoryEntry candidate in preparedKnowledgeSnapshots)
+            {
+                if (candidate.OwnerResidentId == speakerResidentId &&
+                    string.Equals(
+                        candidate.KnowledgeId,
+                        normalized,
+                        StringComparison.Ordinal))
+                {
+                    knowledge = candidate;
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         internal bool TryGetNextPreparedLine(out ConversationLineSpec line)
@@ -291,6 +363,7 @@ namespace AIFarm.Social
             NpcMood mood,
             string emoji,
             string text,
+            string sharedKnowledgeId,
             double playedAtGameSeconds,
             out ConversationUtterance utterance)
         {
@@ -304,9 +377,11 @@ namespace AIFarm.Social
 
             string normalized = (text ?? string.Empty).Trim();
             string normalizedEmoji = (emoji ?? string.Empty).Trim();
+            string normalizedKnowledgeId = (sharedKnowledgeId ?? string.Empty).Trim();
             if (!Enum.IsDefined(typeof(NpcMood), mood) ||
                 normalizedEmoji.Length < 1 || normalizedEmoji.Length > 8 ||
                 normalized.Length == 0 || normalized.Length > 300 ||
+                normalizedKnowledgeId.Length > 160 ||
                 !IsFiniteNonNegative(playedAtGameSeconds))
             {
                 return ActionResult.Failure(
@@ -325,7 +400,8 @@ namespace AIFarm.Social
             {
                 ConversationLineSpec expected = preparedLines[utterances.Count];
                 if (expected.SpeakerId != speakerResidentId || expected.Mood != mood ||
-                    expected.Emoji != normalizedEmoji || expected.Text != normalized)
+                    expected.Emoji != normalizedEmoji || expected.Text != normalized ||
+                    expected.SharedKnowledgeId != normalizedKnowledgeId)
                 {
                     return ActionResult.Failure(
                         ActionFailureReason.InvalidResponse,
@@ -347,6 +423,7 @@ namespace AIFarm.Social
                 mood,
                 normalizedEmoji,
                 normalized,
+                normalizedKnowledgeId,
                 playedAtGameSeconds);
             utterances.Add(utterance);
             TurnOwnerResidentId = HasPreparedScript && utterances.Count < preparedLines.Count
@@ -415,6 +492,13 @@ namespace AIFarm.Social
         private static bool IsFinitePositive(double value)
         {
             return !double.IsNaN(value) && !double.IsInfinity(value) && value > 0d;
+        }
+
+        private static string CreateKnowledgeKey(
+            ResidentId ownerResidentId,
+            string knowledgeId)
+        {
+            return ownerResidentId.Value + "\n" + (knowledgeId ?? string.Empty).Trim();
         }
     }
 }

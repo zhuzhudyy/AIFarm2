@@ -582,8 +582,9 @@ namespace AIFarm.Presentation
                 return runtimeResult.Failed ? runtimeResult : relationshipResult;
             }
 
-            ActionResult memoryResult = runtime.Memories.GetRecent(
+            ActionResult memoryResult = runtime.Memories.Query(
                 resident.ResidentId,
+                Array.Empty<string>(),
                 6,
                 out IReadOnlyList<MemoryEntry> recentMemories);
             if (memoryResult.Failed)
@@ -598,7 +599,14 @@ namespace AIFarm.Presentation
                 memories.Add(new ResidentMemorySnapshot(
                     resident.ResidentId,
                     memory.Text,
-                    memory.Importance));
+                    memory.Importance,
+                    memory.KnowledgeId,
+                    memory.RootFactId,
+                    memory.Tags,
+                    memory.IsShareable,
+                    memory.ImmediateSourceResidentId.IsValid
+                        ? (ResidentId?)memory.ImmediateSourceResidentId
+                        : null));
             }
 
             string currentState =

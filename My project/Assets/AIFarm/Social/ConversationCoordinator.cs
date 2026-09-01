@@ -225,7 +225,16 @@ namespace AIFarm.Social
                     "Conversation script owner does not match the session request owner.");
             }
 
-            return record.Session.SetPreparedScript(script);
+            ActionResult knowledgeValidation = ValidateSharedKnowledge(
+                record.Session,
+                script,
+                out IReadOnlyList<MemoryEntry> knowledgeSnapshots);
+            if (knowledgeValidation.Failed)
+            {
+                return knowledgeValidation;
+            }
+
+            return record.Session.SetPreparedScript(script, knowledgeSnapshots);
         }
 
         public ActionResult PrepareLocalFallbackScript(ConversationId conversationId)
@@ -246,16 +255,44 @@ namespace AIFarm.Social
             ActionResult secondResolved = residentRegistry.TryGetDefinition(
                 record.Session.SecondResidentId,
                 out ResidentDefinition secondResident);
-            if (firstResolved.Failed || secondResolved.Failed)
+            ActionResult firstRuntimeResolved = residentRegistry.TryGetRuntimeState(
+                record.Session.FirstResidentId,
+                out ResidentRuntimeState firstRuntime);
+            ActionResult secondRuntimeResolved = residentRegistry.TryGetRuntimeState(
+                record.Session.SecondResidentId,
+                out ResidentRuntimeState secondRuntime);
+            if (firstResolved.Failed || secondResolved.Failed ||
+                firstRuntimeResolved.Failed || secondRuntimeResolved.Failed)
             {
-                return firstResolved.Failed ? firstResolved : secondResolved;
+                return FirstFailure(
+                    firstResolved,
+                    secondResolved,
+                    firstRuntimeResolved,
+                    secondRuntimeResolved);
+            }
+
+            ActionResult firstKnowledgeSelected = TrySelectShareableKnowledge(
+                firstRuntime,
+                secondRuntime,
+                out MemoryEntry firstSharedKnowledge);
+            ActionResult secondKnowledgeSelected = TrySelectShareableKnowledge(
+                secondRuntime,
+                firstRuntime,
+                out MemoryEntry secondSharedKnowledge);
+            if (firstKnowledgeSelected.Failed || secondKnowledgeSelected.Failed)
+            {
+                return firstKnowledgeSelected.Failed
+                    ? firstKnowledgeSelected
+                    : secondKnowledgeSelected;
             }
 
             ActionResult created = templateService.CreateScript(
                 record.Session,
                 firstResident,
                 secondResident,
-                out ConversationScriptSpec script);
+                out ConversationScriptSpec script,
+                firstSharedKnowledge,
+                secondSharedKnowledge);
             return created.Failed
                 ? created
                 : SetConversationScript(conversationId, script);
@@ -309,6 +346,7 @@ namespace AIFarm.Social
             NpcMood mood;
             string emoji;
             string line;
+            string sharedKnowledgeId;
             if (record.Session.TryGetNextPreparedLine(
                     out ConversationLineSpec preparedLine))
             {
@@ -316,6 +354,7 @@ namespace AIFarm.Social
                 mood = preparedLine.Mood;
                 emoji = preparedLine.Emoji;
                 line = preparedLine.Text;
+                sharedKnowledgeId = preparedLine.SharedKnowledgeId;
             }
             else if (record.Session.HasPreparedScript)
             {
@@ -360,6 +399,7 @@ namespace AIFarm.Social
 
                 mood = NpcMood.Focused;
                 emoji = "💬";
+                sharedKnowledgeId = string.Empty;
             }
 
             ActionResult delivered = record.Session.AddUtterance(
@@ -367,6 +407,7 @@ namespace AIFarm.Social
                 mood,
                 emoji,
                 line,
+                sharedKnowledgeId,
                 gameSeconds,
                 out utterance);
             if (delivered.Failed)
@@ -503,6 +544,110 @@ namespace AIFarm.Social
                 secondOwner == record.SecondReservation.ResidentId;
         }
 
+        private ActionResult ValidateSharedKnowledge(
+            ConversationSession session,
+            ConversationScriptSpec script,
+            out IReadOnlyList<MemoryEntry> knowledgeSnapshots)
+        {
+            var captured = new List<MemoryEntry>();
+            var capturedKeys = new HashSet<string>(StringComparer.Ordinal);
+            knowledgeSnapshots = captured;
+            foreach (ConversationLineSpec line in script.Lines)
+            {
+                if (line == null || !session.IsParticipant(line.SpeakerId))
+                {
+                    return ActionResult.Failure(
+                        ActionFailureReason.InvalidResponse,
+                        "Every prepared speaker must belong to this conversation.");
+                }
+
+                if (string.IsNullOrEmpty(line.SharedKnowledgeId))
+                {
+                    continue;
+                }
+
+                ActionResult runtimeResolved = residentRegistry.TryGetRuntimeState(
+                    line.SpeakerId,
+                    out ResidentRuntimeState runtime);
+                if (runtimeResolved.Failed)
+                {
+                    return ActionResult.Failure(
+                        ActionFailureReason.InvalidResponse,
+                        "A prepared knowledge reference has no resident runtime owner.");
+                }
+
+                ActionResult knowledgeResolved = runtime.Memories.TryGetKnowledge(
+                    line.SpeakerId,
+                    line.SharedKnowledgeId,
+                    out MemoryEntry knowledge);
+                if (knowledgeResolved.Failed || knowledge == null ||
+                    knowledge.OwnerResidentId != line.SpeakerId ||
+                    !knowledge.IsShareable)
+                {
+                    return ActionResult.Failure(
+                        ActionFailureReason.InvalidResponse,
+                        "A prepared knowledge reference must identify shareable memory owned by its speaker.");
+                }
+
+                string key = line.SpeakerId.Value + "\n" + knowledge.KnowledgeId;
+                if (capturedKeys.Add(key))
+                {
+                    captured.Add(knowledge);
+                }
+            }
+
+            knowledgeSnapshots = captured;
+            return ActionResult.Success("Prepared knowledge references are resident-owned and shareable.");
+        }
+
+        private static ActionResult TrySelectShareableKnowledge(
+            ResidentRuntimeState speaker,
+            ResidentRuntimeState listener,
+            out MemoryEntry selected)
+        {
+            selected = null;
+            ActionResult queried = speaker.Memories.Query(
+                speaker.ResidentId,
+                Array.Empty<string>(),
+                MemoryStore.DefaultCapacity,
+                out IReadOnlyList<MemoryEntry> candidates);
+            if (queried.Failed)
+            {
+                return queried;
+            }
+
+            foreach (MemoryEntry candidate in candidates)
+            {
+                if (candidate == null || !candidate.IsShareable ||
+                    candidate.OwnerResidentId != speaker.ResidentId)
+                {
+                    continue;
+                }
+
+                string rootFactId = string.IsNullOrWhiteSpace(candidate.RootFactId)
+                    ? candidate.KnowledgeId
+                    : candidate.RootFactId;
+                ActionResult checkedKnowledge = listener.Memories.ContainsRootFact(
+                    listener.ResidentId,
+                    rootFactId,
+                    out bool listenerAlreadyKnows);
+                if (checkedKnowledge.Failed)
+                {
+                    return checkedKnowledge;
+                }
+
+                if (!listenerAlreadyKnows)
+                {
+                    selected = candidate;
+                    break;
+                }
+            }
+
+            return ActionResult.Success(selected == null
+                ? "No new shareable fact was available for this listener."
+                : "The highest-ranked new shareable fact was selected.");
+        }
+
         private void EndAndRelease(
             ActiveConversationRecord record,
             ConversationState terminalState,
@@ -555,6 +700,19 @@ namespace AIFarm.Social
             string pointTemporary = firstPoint;
             firstPoint = secondPoint;
             secondPoint = pointTemporary;
+        }
+
+        private static ActionResult FirstFailure(params ActionResult[] results)
+        {
+            foreach (ActionResult result in results)
+            {
+                if (result.Failed)
+                {
+                    return result;
+                }
+            }
+
+            return ActionResult.Success();
         }
 
         private static bool IsFiniteNonNegative(double value)

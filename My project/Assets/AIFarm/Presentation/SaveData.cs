@@ -9,7 +9,8 @@ namespace AIFarm.Presentation
     public sealed class SaveData
     {
         public const int LegacySingleResidentVersion = 1;
-        public const int CurrentVersion = 2;
+        public const int LegacyMultiResidentVersion = 2;
+        public const int CurrentVersion = 3;
 
         public int version = CurrentVersion;
         public string savedAtUtc = string.Empty;
@@ -82,11 +83,27 @@ namespace AIFarm.Presentation
                         : ActionResult.Success("Current save data read.");
                 }
 
+                if (header.version == SaveData.LegacyMultiResidentVersion)
+                {
+                    data = JsonUtility.FromJson<SaveData>(json);
+                    if (data == null)
+                    {
+                        return InvalidSave("Version 2 save JSON could not be read.");
+                    }
+
+                    data.version = SaveData.CurrentVersion;
+                    NormalizeLegacyMemoryOwners(data.residents);
+                    migratedLegacySave = true;
+                    return ActionResult.Success(
+                        "Version 2 multi-resident save migrated to the provenance-aware format.");
+                }
+
                 if (header.version != SaveData.LegacySingleResidentVersion)
                 {
                     return InvalidSave(
                         $"Unsupported save version {header.version}; expected " +
-                        $"{SaveData.LegacySingleResidentVersion} or {SaveData.CurrentVersion}.");
+                        $"{SaveData.LegacySingleResidentVersion}, " +
+                        $"{SaveData.LegacyMultiResidentVersion}, or {SaveData.CurrentVersion}.");
                 }
 
                 LegacySaveDataV1 legacy = JsonUtility.FromJson<LegacySaveDataV1>(json);
@@ -119,6 +136,7 @@ namespace AIFarm.Presentation
                 if (memory != null)
                 {
                     memory.ownerResidentId = ResidentIds.YayaValue;
+                    NormalizeLegacyMemory(memory);
                 }
             }
 
@@ -146,6 +164,73 @@ namespace AIFarm.Presentation
                     }
                 }
             };
+        }
+
+        private static void NormalizeLegacyMemoryOwners(ResidentSaveData[] residents)
+        {
+            if (residents == null)
+            {
+                return;
+            }
+
+            foreach (ResidentSaveData resident in residents)
+            {
+                if (resident == null || resident.recentMemories == null)
+                {
+                    continue;
+                }
+
+                foreach (MemorySaveData memory in resident.recentMemories)
+                {
+                    if (memory == null)
+                    {
+                        continue;
+                    }
+
+                    if (string.IsNullOrWhiteSpace(memory.ownerResidentId))
+                    {
+                        memory.ownerResidentId = resident.residentId;
+                    }
+
+                    NormalizeLegacyMemory(memory);
+                }
+            }
+        }
+
+        private static void NormalizeLegacyMemory(MemorySaveData memory)
+        {
+            bool isReflection = memory.kind == (int)MemoryEntryKind.Reflection;
+            if (memory.kind == (int)MemoryEntryKind.ConversationSummary)
+            {
+                // V2 summaries did not contain a verifiable immediate source. Keep
+                // their text as a private imported observation, never as a fact.
+                memory.kind = (int)MemoryEntryKind.Observation;
+            }
+
+            memory.hasSourceEventKind = false;
+            memory.sourceEventKind = 0;
+            memory.sourceKind = isReflection
+                ? (int)MemorySourceKind.Reflection
+                : (int)MemorySourceKind.LegacyImported;
+            memory.sourceEventId = string.Empty;
+            memory.knowledgeId = CreateLegacyKnowledgeId(
+                memory.ownerResidentId,
+                memory.sequence);
+            memory.rootFactId = memory.knowledgeId;
+            memory.parentKnowledgeId = string.Empty;
+            memory.immediateSourceResidentId = string.Empty;
+            memory.tags = isReflection
+                ? new[] { "reflection", "legacy-imported" }
+                : new[] { "legacy-imported" };
+            memory.isShareable = false;
+        }
+
+        private static string CreateLegacyKnowledgeId(string ownerResidentId, long sequence)
+        {
+            string owner = string.IsNullOrWhiteSpace(ownerResidentId)
+                ? ResidentIds.YayaValue
+                : ownerResidentId.Trim();
+            return $"knowledge:{owner}:{sequence:D12}";
         }
 
         private static ActionResult InvalidSave(string message)
@@ -265,6 +350,14 @@ namespace AIFarm.Presentation
         public int importance;
         public bool hasSourceEventKind;
         public int sourceEventKind;
+        public int sourceKind;
+        public string sourceEventId = string.Empty;
+        public string knowledgeId = string.Empty;
+        public string rootFactId = string.Empty;
+        public string parentKnowledgeId = string.Empty;
+        public string immediateSourceResidentId = string.Empty;
+        public string[] tags = Array.Empty<string>();
+        public bool isShareable;
     }
 
     [Serializable]

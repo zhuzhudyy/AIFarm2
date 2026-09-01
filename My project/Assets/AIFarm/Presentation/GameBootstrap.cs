@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using AIFarm.Core;
 using AIFarm.Farming;
 using AIFarm.Inventory;
@@ -12,6 +13,10 @@ namespace AIFarm.Presentation
     [DisallowMultipleComponent]
     public sealed class GameBootstrap : MonoBehaviour
     {
+        private readonly Dictionary<ResidentId, ObservationService>
+            backgroundObservationServices =
+                new Dictionary<ResidentId, ObservationService>();
+
         [SerializeField]
         private DemoSceneConfig sceneConfig;
 
@@ -32,6 +37,8 @@ namespace AIFarm.Presentation
         public ResidentRegistry ResidentRegistry { get; private set; }
 
         public AiRequestCoordinator AiRequests { get; private set; }
+
+        public ResidentReflectionCoordinator ResidentReflections { get; private set; }
 
         public ActionResult? LastSimulationResult { get; private set; }
 
@@ -82,6 +89,7 @@ namespace AIFarm.Presentation
             Mode = sceneConfig.CreateDemoMode();
             Events = new WorldEventLog();
             Simulation = new FarmSimulation(Field, Clock, Mode, Events);
+            StartBackgroundObservationProjection();
             IAiGatewayClient sharedGateway = sceneConfig.AiGatewayMode == AiGatewayMode.Local
                 ? (IAiGatewayClient)new LocalAiGatewayClient()
                 : new RemoteAiGatewayClient(
@@ -91,7 +99,10 @@ namespace AIFarm.Presentation
                 sharedGateway,
                 sceneConfig.MaximumConcurrentAiRequests,
                 new LocalAiGatewayClient());
-            Events.Record(
+            ResidentReflections = new ResidentReflectionCoordinator(
+                ResidentRegistry,
+                Clock.ElapsedGameSeconds);
+            Events.RecordPublicTownEvent(
                 Clock.ElapsedGameSeconds,
                 WorldEventKind.System,
                 "离线演示已启动；本地规划与表达服务可用。");
@@ -151,8 +162,10 @@ namespace AIFarm.Presentation
                 return simulationResult;
             }
 
+            ResidentReflections?.Synchronize(Clock.ElapsedGameSeconds);
+
             Events.Clear();
-            Events.Record(
+            Events.RecordPublicTownEvent(
                 Clock.ElapsedGameSeconds,
                 WorldEventKind.System,
                 "已创建新 Demo；本地规划与表达服务可用。");
@@ -162,7 +175,56 @@ namespace AIFarm.Presentation
 
         private void OnDestroy()
         {
+            if (Events != null)
+            {
+                Events.EntryRecorded -= HandleBackgroundWorldEventRecorded;
+            }
+
             AiRequests?.Shutdown();
+        }
+
+        private void StartBackgroundObservationProjection()
+        {
+            backgroundObservationServices.Clear();
+            foreach (ResidentId residentId in ResidentRegistry.ResidentIds)
+            {
+                // The active farming resident is projected by ReplanController.
+                if (residentId != ResidentIds.Yaya)
+                {
+                    backgroundObservationServices.Add(
+                        residentId,
+                        new ObservationService(residentId));
+                }
+            }
+
+            Events.EntryRecorded += HandleBackgroundWorldEventRecorded;
+        }
+
+        private void HandleBackgroundWorldEventRecorded(WorldEventEntry worldEvent)
+        {
+            foreach (KeyValuePair<ResidentId, ObservationService> pair in
+                backgroundObservationServices)
+            {
+                ActionResult runtimeResolved = ResidentRegistry.TryGetRuntimeState(
+                    pair.Key,
+                    out ResidentRuntimeState runtimeState);
+                if (runtimeResolved.Failed || runtimeState == null)
+                {
+                    continue;
+                }
+
+                ActionResult observed = pair.Value.Observe(
+                    worldEvent,
+                    runtimeState.Memories,
+                    out _);
+                if (observed.Failed)
+                {
+                    Debug.LogWarning(
+                        $"Background memory projection failed for {pair.Key}: " +
+                        observed.Message,
+                        this);
+                }
+            }
         }
 
         private void Awake()
@@ -187,6 +249,21 @@ namespace AIFarm.Presentation
             if (result.Failed)
             {
                 Debug.LogError($"Farm simulation stopped: {result.Message}", this);
+                return;
+            }
+
+            if (ResidentReflections != null)
+            {
+                ActionResult reflected = ResidentReflections.TickDayBoundaries(
+                    Clock.ElapsedGameSeconds,
+                    Events,
+                    out _);
+                if (reflected.Failed)
+                {
+                    Debug.LogWarning(
+                        $"Daily resident reflection recovered safely: {reflected.Message}",
+                        this);
+                }
             }
         }
     }

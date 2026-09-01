@@ -271,8 +271,8 @@ namespace AIFarm.Tests.EditMode
             ConversationScriptRequest request = CreateConversationRequest();
             const string response =
                 "{\"resident_id\":\"resident-001\",\"lines\":[" +
-                "{\"speaker_id\":\"resident-001\",\"mood\":\"Happy\",\"emoji\":\"🙂\",\"text\":\"阿木，早上好。\"}," +
-                "{\"speaker_id\":\"resident-002\",\"mood\":\"Focused\",\"emoji\":\"✓\",\"text\":\"芽芽，水井已经检查好了。\"}]," +
+                "{\"speaker_id\":\"resident-001\",\"mood\":\"Happy\",\"emoji\":\"🙂\",\"text\":\"阿木，早上好。\",\"shared_knowledge_id\":\"knowledge:resident-001:0001\"}," +
+                "{\"speaker_id\":\"resident-002\",\"mood\":\"Focused\",\"emoji\":\"✓\",\"text\":\"芽芽，水井已经检查好了。\",\"shared_knowledge_id\":null}]," +
                 "\"outcome\":\"Helpful\",\"provider\":\"openai\"}";
             var transport = new FakeTransport(AiGatewayHttpResult.Success(200, response));
             var client = new RemoteAiGatewayClient(
@@ -290,6 +290,9 @@ namespace AIFarm.Tests.EditMode
             Assert.That(result.Value.Outcome, Is.EqualTo(ConversationOutcome.Helpful));
             Assert.That(result.Value.Lines[0].Mood, Is.EqualTo(NpcMood.Happy));
             Assert.That(result.Value.Lines[0].Emoji, Is.EqualTo("🙂"));
+            Assert.That(
+                result.Value.Lines[0].SharedKnowledgeId,
+                Is.EqualTo("knowledge:resident-001:0001"));
             Assert.That(transport.LastUrl, Does.EndWith("/v1/conversation-script"));
             Assert.That(transport.LastJson, Does.Contain("\"current_state\""));
             Assert.That(transport.LastJson, Does.Contain("YAYA-PRIVATE"));
@@ -323,6 +326,32 @@ namespace AIFarm.Tests.EditMode
             Assert.That(client.LastRemoteFailure, Does.Contain("participant"));
         }
 
+        [Test]
+        public void RemoteClient_ConversationScriptRejectsKnowledgeOwnedByAnotherSpeaker()
+        {
+            ConversationScriptRequest request = CreateConversationRequest();
+            const string response =
+                "{\"resident_id\":\"resident-001\",\"lines\":[" +
+                "{\"speaker_id\":\"resident-001\",\"mood\":\"Happy\",\"emoji\":\"!\",\"text\":\"冒用阿木的记忆。\",\"shared_knowledge_id\":\"knowledge:resident-002:0001\"}," +
+                "{\"speaker_id\":\"resident-002\",\"mood\":\"Focused\",\"emoji\":\"?\",\"text\":\"这句不传播信息。\",\"shared_knowledge_id\":null}]," +
+                "\"outcome\":\"Neutral\",\"provider\":\"openai\"}";
+            var client = new RemoteAiGatewayClient(
+                "https://gateway.example",
+                requestTimeoutSeconds: 5,
+                gatewayTransport: new FakeTransport(
+                    AiGatewayHttpResult.Success(200, response)));
+            AiGatewayResult<ConversationScriptSpec> result = null;
+
+            RunCoroutine(client.GenerateConversationScript(
+                request,
+                value => result = value));
+
+            Assert.That(result, Is.Not.Null);
+            Assert.That(result.Failed, Is.True);
+            Assert.That(result.Source, Is.EqualTo(AiGatewayMode.Local));
+            Assert.That(client.LastRemoteFailure, Does.Contain("participant"));
+        }
+
         private static ConversationScriptRequest CreateConversationRequest()
         {
             var yaya = new ResidentContext(
@@ -335,7 +364,15 @@ namespace AIFarm.Tests.EditMode
                 },
                 new[]
                 {
-                    new ResidentMemorySnapshot(ResidentIds.Yaya, "YAYA-PRIVATE", 7)
+                    new ResidentMemorySnapshot(ResidentIds.Yaya, "YAYA-PRIVATE", 7),
+                    new ResidentMemorySnapshot(
+                        ResidentIds.Yaya,
+                        "YAYA-SHAREABLE",
+                        6,
+                        "knowledge:resident-001:0001",
+                        "fact-yaya-private",
+                        new[] { "yaya-memory" },
+                        isShareable: true)
                 });
             var amu = new ResidentContext(
                 ResidentIds.Amu,
@@ -347,7 +384,15 @@ namespace AIFarm.Tests.EditMode
                 },
                 new[]
                 {
-                    new ResidentMemorySnapshot(ResidentIds.Amu, "AMU-PRIVATE", 6)
+                    new ResidentMemorySnapshot(ResidentIds.Amu, "AMU-PRIVATE", 6),
+                    new ResidentMemorySnapshot(
+                        ResidentIds.Amu,
+                        "AMU-SHAREABLE",
+                        5,
+                        "knowledge:resident-002:0001",
+                        "fact-amu-private",
+                        new[] { "amu-memory" },
+                        isShareable: true)
                 });
             return new ConversationScriptRequest(
                 ResidentIds.Yaya,

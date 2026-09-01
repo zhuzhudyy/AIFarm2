@@ -53,7 +53,10 @@ namespace AIFarm.Npc
                     return observed;
                 }
 
-                capturedCount++;
+                if (entry.IsVisibleTo(OwnerResidentId))
+                {
+                    capturedCount++;
+                }
             }
 
             return ActionResult.Success($"Captured {capturedCount} new observations.");
@@ -77,6 +80,12 @@ namespace AIFarm.Npc
                 return ActionResult.Success("World event was already observed.");
             }
 
+            if (!worldEvent.IsVisibleTo(OwnerResidentId))
+            {
+                LastObservedWorldEventSequence = worldEvent.Sequence;
+                return ActionResult.Success("World event is not visible to this resident.");
+            }
+
             ActionResult translated = TryDescribe(
                 worldEvent,
                 out string observation,
@@ -86,11 +95,24 @@ namespace AIFarm.Npc
                 return translated;
             }
 
+            MemorySourceKind sourceKind = SourceKindFor(worldEvent);
+            ResidentId immediateSource = sourceKind == MemorySourceKind.Conversation
+                ? ResolveConversationSource(worldEvent)
+                : default;
             ActionResult stored = memoryStore.AddObservation(
                 worldEvent.GameSeconds,
                 observation,
                 importance,
                 worldEvent.Kind,
+                sourceKind,
+                worldEvent.EventId,
+                worldEvent.FactId,
+                parentKnowledgeId: null,
+                immediateSource,
+                BuildTags(worldEvent),
+                // A generic conversation event has no source knowledge id, so it may
+                // be remembered but cannot safely be propagated as a sourced fact.
+                isShareable: sourceKind != MemorySourceKind.Conversation,
                 out memory);
             if (stored.Succeeded)
             {
@@ -146,6 +168,15 @@ namespace AIFarm.Npc
                 case WorldEventKind.GoalCompleted:
                     observation = "我完成了这一轮完整种植，九块地的胡萝卜都收好了。";
                     break;
+                case WorldEventKind.ConversationCompleted:
+                    observation = $"我记得这次谈话：{worldEvent.Message}";
+                    break;
+                case WorldEventKind.ConversationInterrupted:
+                    observation = $"我记得这段未完成的谈话：{worldEvent.Message}";
+                    break;
+                case WorldEventKind.DayEnded:
+                    observation = $"一天结束了：{worldEvent.Message}";
+                    break;
                 default:
                     return ActionResult.Failure(
                         ActionFailureReason.InvalidArgument,
@@ -169,7 +200,12 @@ namespace AIFarm.Npc
                     return 8;
                 case WorldEventKind.CropMatured:
                     return 7;
+                case WorldEventKind.DayEnded:
+                    return 7;
                 case WorldEventKind.CommandAccepted:
+                    return 6;
+                case WorldEventKind.ConversationCompleted:
+                case WorldEventKind.ConversationInterrupted:
                     return 6;
                 case WorldEventKind.ActionCompleted:
                     return 4;
@@ -238,6 +274,72 @@ namespace AIFarm.Npc
             return value.Length <= maximumLength
                 ? value
                 : value.Substring(0, maximumLength);
+        }
+
+        private MemorySourceKind SourceKindFor(WorldEventEntry worldEvent)
+        {
+            switch (worldEvent.Visibility)
+            {
+                case WorldEventVisibility.PublicTownEvent:
+                    return MemorySourceKind.PublicTownEvent;
+                case WorldEventVisibility.Conversation:
+                    return MemorySourceKind.Conversation;
+                case WorldEventVisibility.Private:
+                    return worldEvent.Kind == WorldEventKind.CommandAccepted
+                        ? MemorySourceKind.PlayerInput
+                        : MemorySourceKind.Perception;
+                case WorldEventVisibility.Perceivable:
+                default:
+                    return MemorySourceKind.Perception;
+            }
+        }
+
+        private ResidentId ResolveConversationSource(WorldEventEntry worldEvent)
+        {
+            if (worldEvent.ActorResidentId.HasValue &&
+                worldEvent.ActorResidentId.Value.IsValid &&
+                worldEvent.ActorResidentId.Value != OwnerResidentId)
+            {
+                return worldEvent.ActorResidentId.Value;
+            }
+
+            foreach (ResidentId participant in worldEvent.AudienceResidentIds)
+            {
+                if (participant != OwnerResidentId)
+                {
+                    return participant;
+                }
+            }
+
+            return default;
+        }
+
+        private static string[] BuildTags(WorldEventEntry worldEvent)
+        {
+            var tags = new System.Collections.Generic.List<string>();
+            if (worldEvent.Tags != null)
+            {
+                foreach (string tag in worldEvent.Tags)
+                {
+                    if (!tags.Contains(tag))
+                    {
+                        tags.Add(tag);
+                    }
+                }
+            }
+
+            string kindTag = worldEvent.Kind.ToString().ToLowerInvariant();
+            if (!tags.Contains(kindTag) && tags.Count < MemoryEntry.MaximumTagCount)
+            {
+                tags.Add(kindTag);
+            }
+
+            if (worldEvent.PlotNumber.HasValue && tags.Count < MemoryEntry.MaximumTagCount)
+            {
+                tags.Add($"plot-{worldEvent.PlotNumber.Value:00}");
+            }
+
+            return tags.ToArray();
         }
     }
 }

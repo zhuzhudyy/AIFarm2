@@ -416,6 +416,50 @@ def test_conversation_script_carries_two_isolated_participant_contexts(
     assert "阿木" in body["lines"][0]["text"]
 
 
+def test_mock_conversation_shares_only_the_speakers_allowlisted_knowledge(
+    client: TestClient,
+) -> None:
+    yaya = _resident_context_payload(
+        "resident-001",
+        "芽芽",
+        "芽芽完成了胡萝卜收获。",
+        "resident-003",
+    )
+    yaya["relevant_memories"][0].update(
+        {
+            "knowledge_id": "resident-001:memory-1",
+            "root_fact_id": "fact-carrot-harvest",
+            "tags": ["carrot", "harvest"],
+            "is_shareable": True,
+            "immediate_source_resident_id": None,
+        }
+    )
+    xiaosui = _resident_context_payload(
+        "resident-003",
+        "小穗",
+        "小穗在图书馆整理记录。",
+        "resident-001",
+    )
+
+    response = client.post(
+        "/v1/conversation-script",
+        json={
+            "resident_id": "resident-001",
+            "participant_ids": ["resident-001", "resident-003"],
+            "participants": [yaya, xiaosui],
+            "topic": "今天的收获",
+            "max_lines": 2,
+        },
+    )
+
+    assert response.status_code == 200
+    lines = response.json()["lines"]
+    assert lines[0]["speaker_id"] == "resident-001"
+    assert lines[0]["shared_knowledge_id"] == "resident-001:memory-1"
+    assert "胡萝卜收获" in lines[0]["text"]
+    assert lines[1]["shared_knowledge_id"] is None
+
+
 def test_resident_reflection_uses_only_the_owner_context(client: TestClient) -> None:
     response = client.post(
         "/v1/resident-reflection",

@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Generic;
 using AIFarm.Core;
+using AIFarm.Npc;
 using AIFarm.Time;
 
 namespace AIFarm.Farming
@@ -10,6 +12,7 @@ namespace AIFarm.Farming
         private readonly GameClock clock;
         private readonly DemoMode demoMode;
         private readonly WorldEventLog eventLog;
+        private readonly ResidentId[] farmObserverResidentIds;
         private readonly double[] waterElapsed = new double[FarmField.PlotCount];
         private readonly double[] weedElapsed = new double[FarmField.PlotCount];
         private readonly double[] growthElapsed = new double[FarmField.PlotCount];
@@ -19,12 +22,14 @@ namespace AIFarm.Farming
             FarmField field,
             GameClock clock,
             DemoMode demoMode,
-            WorldEventLog eventLog = null)
+            WorldEventLog eventLog = null,
+            IEnumerable<ResidentId> farmObservers = null)
         {
             this.field = field ?? throw new ArgumentNullException(nameof(field));
             this.clock = clock ?? throw new ArgumentNullException(nameof(clock));
             this.demoMode = demoMode ?? throw new ArgumentNullException(nameof(demoMode));
             this.eventLog = eventLog;
+            farmObserverResidentIds = NormalizeFarmObservers(farmObservers);
         }
 
         public int WaterDecayEventCount { get; private set; }
@@ -152,11 +157,13 @@ namespace AIFarm.Farming
             {
                 waterHasDecayed[index] = true;
                 WaterDecayEventCount++;
-                eventLog?.Record(
+                eventLog?.RecordPerceivable(
                     clock.ElapsedGameSeconds,
                     WorldEventKind.MoistureChanged,
                     $"{plot.PlotNumber:00} 号地水分下降到 {plot.WaterLevel}。",
-                    plot.PlotNumber);
+                    farmObserverResidentIds,
+                    plotNumber: plot.PlotNumber,
+                    tags: new[] { "farm", "moisture", $"plot-{plot.PlotNumber:00}" });
             }
 
             return result;
@@ -179,11 +186,13 @@ namespace AIFarm.Farming
             if (result.Succeeded)
             {
                 WeedEventCount++;
-                eventLog?.Record(
+                eventLog?.RecordPerceivable(
                     clock.ElapsedGameSeconds,
                     WorldEventKind.WeedsAppeared,
                     $"{plot.PlotNumber:00} 号地出现杂草。",
-                    plot.PlotNumber);
+                    farmObserverResidentIds,
+                    plotNumber: plot.PlotNumber,
+                    tags: new[] { "farm", "weeds", $"plot-{plot.PlotNumber:00}" });
             }
 
             return result;
@@ -210,11 +219,13 @@ namespace AIFarm.Farming
             ActionResult result = plot.AdvanceGrowth(amount);
             if (result.Succeeded && plot.State == PlotState.Mature)
             {
-                eventLog?.Record(
+                eventLog?.RecordPerceivable(
                     clock.ElapsedGameSeconds,
                     WorldEventKind.CropMatured,
                     $"{plot.PlotNumber:00} 号地的胡萝卜成熟了。",
-                    plot.PlotNumber);
+                    farmObserverResidentIds,
+                    plotNumber: plot.PlotNumber,
+                    tags: new[] { "farm", "carrot", "mature", $"plot-{plot.PlotNumber:00}" });
             }
 
             return result;
@@ -226,6 +237,37 @@ namespace AIFarm.Farming
             weedElapsed[index] = 0d;
             growthElapsed[index] = 0d;
             waterHasDecayed[index] = false;
+        }
+
+        private static ResidentId[] NormalizeFarmObservers(
+            IEnumerable<ResidentId> farmObservers)
+        {
+            var normalized = new List<ResidentId>();
+            var unique = new HashSet<ResidentId>();
+            if (farmObservers != null)
+            {
+                foreach (ResidentId observer in farmObservers)
+                {
+                    if (!observer.IsValid)
+                    {
+                        throw new ArgumentException(
+                            "Farm observers require valid ResidentIds.",
+                            nameof(farmObservers));
+                    }
+
+                    if (unique.Add(observer))
+                    {
+                        normalized.Add(observer);
+                    }
+                }
+            }
+
+            if (normalized.Count == 0)
+            {
+                normalized.Add(ResidentIds.Yaya);
+            }
+
+            return normalized.ToArray();
         }
 
         private static bool IsValidTimerArray(double[] values)

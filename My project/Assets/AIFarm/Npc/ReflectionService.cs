@@ -29,8 +29,7 @@ namespace AIFarm.Npc
                 $"当前：{Bound(immediateContext, 80)}",
                 MaximumExpressionContextLength);
 
-            IReadOnlyList<MemoryEntry> important =
-                runtimeState.Memories.GetImportantRecentObservations(2);
+            IReadOnlyList<MemoryEntry> important = QueryImportantMemories(2);
             foreach (MemoryEntry memory in important)
             {
                 AppendSegment(
@@ -62,8 +61,7 @@ namespace AIFarm.Npc
                     MaximumReflectionContextLength);
             }
 
-            IReadOnlyList<MemoryEntry> important =
-                runtimeState.Memories.GetImportantRecentObservations(2);
+            IReadOnlyList<MemoryEntry> important = QueryImportantMemories(2);
             foreach (MemoryEntry memory in important)
             {
                 AppendSegment(
@@ -115,6 +113,47 @@ namespace AIFarm.Npc
             return ActionResult.Success("Local generative-agent reflection created.");
         }
 
+        public ActionResult CreateAndStoreLocalDayEndReflection(
+            int completedDay,
+            double gameSeconds,
+            out MemoryEntry memory)
+        {
+            memory = null;
+            if (completedDay < 1 || double.IsNaN(gameSeconds) ||
+                double.IsInfinity(gameSeconds) || gameSeconds < 0d)
+            {
+                return ActionResult.Failure(
+                    ActionFailureReason.InvalidArgument,
+                    "A daily reflection requires a completed day and valid game time.");
+            }
+
+            double dayStart = Math.Max(
+                0d,
+                (completedDay - 1d) * ResidentReflectionCoordinator.GameSecondsPerDay);
+            IReadOnlyList<MemoryEntry> important = QueryImportantMemories(
+                2,
+                dayStart,
+                gameSeconds);
+            string detail = important.Count == 0
+                ? "今天没有发生需要特别记录的大事。"
+                : $"今天最值得记住的是：{Bound(important[0].Text, 120)}";
+            string text = Bound(
+                $"第 {completedDay} 天结束了。{detail} 明天继续按自己的日程生活。",
+                MemoryStore.MaximumTextLength);
+            return runtimeState.Memories.AddDayEndReflection(
+                runtimeState.ResidentId,
+                completedDay,
+                gameSeconds,
+                text,
+                out memory);
+        }
+
+        public static bool IsEligibleTrigger(WorldEventKind kind)
+        {
+            return kind == WorldEventKind.GoalCompleted ||
+                kind == WorldEventKind.DayEnded;
+        }
+
         private string CreateCompletedText()
         {
             if (runtimeState.LatestReflection != null)
@@ -125,8 +164,7 @@ namespace AIFarm.Npc
                     " 🥕";
             }
 
-            IReadOnlyList<MemoryEntry> important =
-                runtimeState.Memories.GetImportantRecentObservations(8);
+            IReadOnlyList<MemoryEntry> important = QueryImportantMemories(8);
             foreach (MemoryEntry memory in important)
             {
                 if (memory.SourceEventKind == WorldEventKind.WeedsAppeared)
@@ -146,6 +184,55 @@ namespace AIFarm.Npc
             }
 
             return "九块地整整齐齐收好啦！下轮也继续保持 🥕";
+        }
+
+        private IReadOnlyList<MemoryEntry> QueryImportantMemories(
+            int count,
+            double? afterGameSecondsExclusive = null,
+            double? beforeGameSecondsExclusive = null)
+        {
+            if (count <= 0)
+            {
+                return Array.Empty<MemoryEntry>();
+            }
+
+            var memories = new List<MemoryEntry>();
+            foreach (MemoryEntry memory in runtimeState.Memories.Entries)
+            {
+                if (memory == null ||
+                    memory.OwnerResidentId != runtimeState.ResidentId ||
+                    memory.Kind == MemoryEntryKind.Reflection ||
+                    memory.Importance < MemoryEntry.HighImportanceThreshold ||
+                    (afterGameSecondsExclusive.HasValue &&
+                        memory.GameSeconds <= afterGameSecondsExclusive.Value) ||
+                    (beforeGameSecondsExclusive.HasValue &&
+                        memory.GameSeconds >= beforeGameSecondsExclusive.Value))
+                {
+                    continue;
+                }
+
+                memories.Add(memory);
+            }
+
+            memories.Sort((left, right) =>
+            {
+                int importanceOrder = right.Importance.CompareTo(left.Importance);
+                if (importanceOrder != 0)
+                {
+                    return importanceOrder;
+                }
+
+                int recencyOrder = right.GameSeconds.CompareTo(left.GameSeconds);
+                return recencyOrder != 0
+                    ? recencyOrder
+                    : right.Sequence.CompareTo(left.Sequence);
+            });
+            if (memories.Count > count)
+            {
+                memories.RemoveRange(count, memories.Count - count);
+            }
+
+            return memories;
         }
 
         private static void AppendSegment(

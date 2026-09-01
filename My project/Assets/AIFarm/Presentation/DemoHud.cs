@@ -83,9 +83,28 @@ namespace AIFarm.Presentation
         private Text recentReflectionsText;
 
         [SerializeField]
+        private Text memoryTitleText;
+
+        [SerializeField]
+        private Text personaText;
+
+        [SerializeField]
+        private Button yayaResidentButton;
+
+        [SerializeField]
+        private Button amuResidentButton;
+
+        [SerializeField]
+        private Button xiaosuiResidentButton;
+
+        [SerializeField]
+        private Button momoResidentButton;
+
+        [SerializeField]
         private string selectedResidentIdValue = ResidentIds.YayaValue;
 
         private string idleSubmissionMessage = string.Empty;
+        private bool residentSelectionFailed;
         private readonly Dictionary<ResidentId, NpcPlanExecutor> executorsByResidentId =
             new Dictionary<ResidentId, NpcPlanExecutor>();
         private readonly Dictionary<ResidentId, ReplanController> replannersByResidentId =
@@ -124,7 +143,13 @@ namespace AIFarm.Presentation
             Text aiModeLabel = null,
             Text memoriesLabel = null,
             Text reflectionsLabel = null,
-            Button apiSettingsControl = null)
+            Button apiSettingsControl = null,
+            Text memoryTitleLabel = null,
+            Text personaLabel = null,
+            Button yayaSelectionControl = null,
+            Button amuSelectionControl = null,
+            Button xiaosuiSelectionControl = null,
+            Button momoSelectionControl = null)
         {
             bootstrap = gameBootstrap;
             timeText = timeLabel;
@@ -149,6 +174,12 @@ namespace AIFarm.Presentation
             recentMemoriesText = memoriesLabel;
             recentReflectionsText = reflectionsLabel;
             apiSettingsButton = apiSettingsControl;
+            memoryTitleText = memoryTitleLabel;
+            personaText = personaLabel;
+            yayaResidentButton = yayaSelectionControl;
+            amuResidentButton = amuSelectionControl;
+            xiaosuiResidentButton = xiaosuiSelectionControl;
+            momoResidentButton = momoSelectionControl;
             EnsureResidentBindings();
         }
 
@@ -181,9 +212,36 @@ namespace AIFarm.Presentation
 
         public ActionResult SelectResident(ResidentId residentId)
         {
+            ClearResidentScopedPresentation();
+            residentSelectionFailed = true;
+            SetAllSelectionControlsInteractable(true);
+            RefreshCommandAvailability();
             EnsureResidentBindings();
-            if (!residentId.IsValid ||
-                !executorsByResidentId.ContainsKey(residentId) ||
+            if (!residentId.IsValid)
+            {
+                return ActionResult.Failure(
+                    ActionFailureReason.InvalidArgument,
+                    $"ResidentId '{residentId}' is not available in this HUD.");
+            }
+
+            ResidentRegistry registry = bootstrap?.ResidentRegistry;
+            if (registry != null)
+            {
+                if (registry.TryGetDefinition(residentId, out _).Failed ||
+                    registry.TryGetRuntimeState(
+                        residentId,
+                        out ResidentRuntimeState runtimeState).Failed ||
+                    runtimeState == null ||
+                    runtimeState.ResidentId != residentId ||
+                    runtimeState.Memories == null ||
+                    runtimeState.Memories.OwnerResidentId != residentId)
+                {
+                    return ActionResult.Failure(
+                        ActionFailureReason.InvalidArgument,
+                        $"ResidentId '{residentId}' is not registered with an isolated runtime.");
+                }
+            }
+            else if (!executorsByResidentId.ContainsKey(residentId) ||
                 !replannersByResidentId.ContainsKey(residentId))
             {
                 return ActionResult.Failure(
@@ -191,16 +249,13 @@ namespace AIFarm.Presentation
                     $"ResidentId '{residentId}' is not available in this HUD.");
             }
 
-            if (bootstrap?.ResidentRegistry != null &&
-                bootstrap.ResidentRegistry.TryGetDefinition(residentId, out _).Failed)
-            {
-                return ActionResult.Failure(
-                    ActionFailureReason.InvalidArgument,
-                    $"ResidentId '{residentId}' is not registered in the active town.");
-            }
-
             selectedResidentIdValue = residentId.Value;
+            residentSelectionFailed = false;
+            idleSubmissionMessage = string.Empty;
+            RefreshSelectionControls();
+            RefreshCommandAvailability();
             RefreshFromExecutor();
+            RefreshWorldEvents();
             RefreshMemoriesAndReflections();
             return ActionResult.Success($"HUD selected resident '{residentId}'.");
         }
@@ -218,6 +273,10 @@ namespace AIFarm.Presentation
             speed5Button?.onClick.AddListener(HandleSpeed5);
             speed20Button?.onClick.AddListener(HandleSpeed20);
             apiSettingsButton?.onClick.AddListener(HandleApiSettings);
+            yayaResidentButton?.onClick.AddListener(HandleSelectYaya);
+            amuResidentButton?.onClick.AddListener(HandleSelectAmu);
+            xiaosuiResidentButton?.onClick.AddListener(HandleSelectXiaosui);
+            momoResidentButton?.onClick.AddListener(HandleSelectMomo);
             if (apiSettingsButton != null)
             {
                 apiSettingsButton.interactable = TryBuildLocalApiSettingsUrl(
@@ -229,6 +288,8 @@ namespace AIFarm.Presentation
             RefreshFromExecutor();
             RefreshWorldEvents();
             RefreshMemoriesAndReflections();
+            RefreshSelectionControls();
+            RefreshCommandAvailability();
         }
 
         private void Update()
@@ -251,6 +312,10 @@ namespace AIFarm.Presentation
             speed5Button?.onClick.RemoveListener(HandleSpeed5);
             speed20Button?.onClick.RemoveListener(HandleSpeed20);
             apiSettingsButton?.onClick.RemoveListener(HandleApiSettings);
+            yayaResidentButton?.onClick.RemoveListener(HandleSelectYaya);
+            amuResidentButton?.onClick.RemoveListener(HandleSelectAmu);
+            xiaosuiResidentButton?.onClick.RemoveListener(HandleSelectXiaosui);
+            momoResidentButton?.onClick.RemoveListener(HandleSelectMomo);
         }
 
         private void RefreshFromDomain()
@@ -368,7 +433,7 @@ namespace AIFarm.Presentation
             if (result.Succeeded)
             {
                 string state = bootstrap.Clock.IsPaused ? "暂停" : "继续";
-                bootstrap.Events.Record(
+                bootstrap.Events.RecordPublicTownEvent(
                     bootstrap.Clock.ElapsedGameSeconds,
                     WorldEventKind.TimeControlChanged,
                     $"游戏时间已{state}。");
@@ -396,7 +461,7 @@ namespace AIFarm.Presentation
             ActionResult result = bootstrap.Clock.SetTimeScale(timeScale);
             if (result.Succeeded)
             {
-                bootstrap.Events.Record(
+                bootstrap.Events.RecordPublicTownEvent(
                     bootstrap.Clock.ElapsedGameSeconds,
                     WorldEventKind.TimeControlChanged,
                     $"时间倍速调整为 {timeScale:0}x。");
@@ -478,7 +543,15 @@ namespace AIFarm.Presentation
 
         private void RefreshFromExecutor()
         {
+            if (residentSelectionFailed)
+            {
+                ClearResidentScopedPresentation();
+                RefreshCommandAvailability();
+                return;
+            }
+
             RefreshGoalAndExpression();
+            RefreshCommandAvailability();
             ReplanController selectedReplanner = SelectedReplanner;
             NpcPlanExecutor selectedExecutor = SelectedExecutor;
             if (actionText == null)
@@ -504,6 +577,8 @@ namespace AIFarm.Presentation
 
             if (selectedExecutor == null)
             {
+                actionText.text =
+                    $"Action: {SelectedResidentDisplayName}正按本地日程活动（无玩家指令执行器）";
                 return;
             }
 
@@ -554,6 +629,31 @@ namespace AIFarm.Presentation
 
             if (selectedReplanner == null)
             {
+                if (goalText != null)
+                {
+                    goalText.text = $"Goal: {SelectedResidentDisplayName}当前无玩家指定目标";
+                }
+
+                if (expressionText != null)
+                {
+                    expressionText.text = $"{SelectedResidentDisplayName}: 正在执行确定性小镇日程。";
+                }
+
+                if (actionReasonText != null)
+                {
+                    actionReasonText.text = "Reason: 由 Unity 本地日程驱动";
+                }
+
+                if (moodText != null)
+                {
+                    moodText.text = "Mood: Local";
+                }
+
+                if (emojiText != null)
+                {
+                    emojiText.text = "•";
+                }
+
                 return;
             }
 
@@ -593,17 +693,30 @@ namespace AIFarm.Presentation
                 return;
             }
 
-            WorldEventLog events = bootstrap?.Events ?? SelectedReplanner?.WorldEvents;
-            if (events == null || events.Entries.Count == 0)
+            worldEventsText.text = string.Empty;
+            if (residentSelectionFailed)
             {
-                worldEventsText.text = "No world events yet.";
+                return;
+            }
+
+            WorldEventLog events = bootstrap?.Events ?? SelectedReplanner?.WorldEvents;
+            if (events == null)
+            {
+                return;
+            }
+
+            IReadOnlyList<WorldEventEntry> visibleEntries =
+                events.GetVisibleEntries(SelectedResidentId);
+            if (visibleEntries == null || visibleEntries.Count == 0)
+            {
+                worldEventsText.text = "No visible world events yet.";
                 return;
             }
 
             var builder = new StringBuilder();
-            for (int index = events.Entries.Count - 1; index >= 0; index--)
+            for (int index = visibleEntries.Count - 1; index >= 0; index--)
             {
-                WorldEventEntry entry = events.Entries[index];
+                WorldEventEntry entry = visibleEntries[index];
                 builder.Append('[')
                     .Append(FormatEventTime(entry.GameSeconds))
                     .Append("] ")
@@ -619,11 +732,80 @@ namespace AIFarm.Presentation
 
         private void RefreshMemoriesAndReflections()
         {
-            ReplanController selectedReplanner = SelectedReplanner;
+            if (memoryTitleText != null)
+            {
+                memoryTitleText.text = string.Empty;
+            }
+
+            if (personaText != null)
+            {
+                personaText.text = string.Empty;
+            }
+
             if (recentMemoriesText != null)
             {
-                IReadOnlyList<MemoryEntry> memories = selectedReplanner?.RecentMemories;
-                if (memories == null || memories.Count == 0)
+                recentMemoriesText.text = string.Empty;
+            }
+
+            if (recentReflectionsText != null)
+            {
+                recentReflectionsText.text = string.Empty;
+            }
+
+            if (residentSelectionFailed)
+            {
+                return;
+            }
+
+            if (!TryResolveSelectedRuntime(
+                out ResidentDefinition definition,
+                out ResidentRuntimeState runtimeState))
+            {
+                return;
+            }
+
+            MemoryStore memoryStore = runtimeState.Memories;
+            ResidentId selectedResidentId = SelectedResidentId;
+            if (memoryStore == null ||
+                memoryStore.OwnerResidentId != selectedResidentId ||
+                memoryStore.GetRecent(
+                    selectedResidentId,
+                    memoryStore.Capacity,
+                    out IReadOnlyList<MemoryEntry> recentEntries).Failed)
+            {
+                return;
+            }
+
+            if (memoryTitleText != null)
+            {
+                memoryTitleText.text = $"{definition.DisplayName} // MEMORY & REFLECTION";
+            }
+
+            if (personaText != null)
+            {
+                NpcPersonaDefinition persona = definition.Persona;
+                personaText.text =
+                    $"{persona.Role}｜{string.Join("、", persona.PersonalityTraits)}｜" +
+                    $"偏好：{persona.Preference}｜不喜欢：{persona.Dislike}";
+            }
+
+            if (recentMemoriesText != null)
+            {
+                var memories = new List<MemoryEntry>(6);
+                foreach (MemoryEntry entry in recentEntries)
+                {
+                    if (entry.Kind != MemoryEntryKind.Reflection)
+                    {
+                        memories.Add(entry);
+                    }
+
+                    if (memories.Count == 6)
+                    {
+                        break;
+                    }
+                }
+
+                if (memories.Count == 0)
                 {
                     recentMemoriesText.text = $"{SelectedResidentDisplayName}还没有新的观察。";
                 }
@@ -645,10 +827,21 @@ namespace AIFarm.Presentation
 
             if (recentReflectionsText != null)
             {
-                MemoryStore memoryStore = selectedReplanner?.Memories;
-                IReadOnlyList<MemoryEntry> reflections =
-                    memoryStore?.GetRecentReflections(3);
-                if (reflections == null || reflections.Count == 0)
+                var reflections = new List<MemoryEntry>(3);
+                foreach (MemoryEntry entry in recentEntries)
+                {
+                    if (entry.Kind == MemoryEntryKind.Reflection)
+                    {
+                        reflections.Add(entry);
+                    }
+
+                    if (reflections.Count == 3)
+                    {
+                        break;
+                    }
+                }
+
+                if (reflections.Count == 0)
                 {
                     recentReflectionsText.text = "反思：完成一轮种植后生成。";
                 }
@@ -665,6 +858,141 @@ namespace AIFarm.Presentation
                     recentReflectionsText.text = builder.ToString().TrimEnd();
                 }
             }
+        }
+
+        private bool TryResolveSelectedRuntime(
+            out ResidentDefinition definition,
+            out ResidentRuntimeState runtimeState)
+        {
+            definition = null;
+            runtimeState = null;
+            ResidentRegistry registry = bootstrap?.ResidentRegistry;
+            ResidentId selectedResidentId = SelectedResidentId;
+            if (registry != null)
+            {
+                if (registry.TryGetDefinition(selectedResidentId, out definition).Failed ||
+                    registry.TryGetRuntimeState(selectedResidentId, out runtimeState).Failed)
+                {
+                    definition = null;
+                    runtimeState = null;
+                    return false;
+                }
+            }
+            else
+            {
+                ReplanController selectedReplanner = SelectedReplanner;
+                runtimeState = selectedReplanner?.RuntimeState;
+                definition = runtimeState?.Definition;
+            }
+
+            if (
+                definition == null ||
+                runtimeState == null ||
+                definition.ResidentId != selectedResidentId ||
+                runtimeState.ResidentId != selectedResidentId ||
+                runtimeState.Memories == null ||
+                runtimeState.Memories.OwnerResidentId != selectedResidentId)
+            {
+                definition = null;
+                runtimeState = null;
+                return false;
+            }
+
+            return true;
+        }
+
+        private void ClearResidentScopedPresentation()
+        {
+            idleSubmissionMessage = string.Empty;
+            Text[] residentScopedLabels =
+            {
+                goalText,
+                actionText,
+                expressionText,
+                actionReasonText,
+                worldEventsText,
+                moodText,
+                emojiText,
+                memoryTitleText,
+                personaText,
+                recentMemoriesText,
+                recentReflectionsText
+            };
+            foreach (Text label in residentScopedLabels)
+            {
+                if (label != null)
+                {
+                    label.text = string.Empty;
+                }
+            }
+        }
+
+        private void RefreshCommandAvailability()
+        {
+            bool canSubmitPlayerCommand = !residentSelectionFailed && SelectedExecutor != null;
+            if (submitButton != null)
+            {
+                submitButton.interactable = canSubmitPlayerCommand;
+            }
+
+            if (commandInput != null)
+            {
+                commandInput.interactable = canSubmitPlayerCommand;
+            }
+        }
+
+        private void RefreshSelectionControls()
+        {
+            SetSelectionControlState(yayaResidentButton, ResidentIds.Yaya);
+            SetSelectionControlState(amuResidentButton, ResidentIds.Amu);
+            SetSelectionControlState(xiaosuiResidentButton, ResidentIds.Xiaosui);
+            SetSelectionControlState(momoResidentButton, ResidentIds.Momo);
+        }
+
+        private void SetSelectionControlState(Button button, ResidentId residentId)
+        {
+            if (button != null)
+            {
+                button.interactable = residentId != SelectedResidentId;
+            }
+        }
+
+        private void SetAllSelectionControlsInteractable(bool interactable)
+        {
+            Button[] selectionControls =
+            {
+                yayaResidentButton,
+                amuResidentButton,
+                xiaosuiResidentButton,
+                momoResidentButton
+            };
+            foreach (Button button in selectionControls)
+            {
+                if (button != null)
+                {
+                    button.interactable = interactable;
+                }
+            }
+        }
+
+        private void HandleSelectYaya()
+        {
+            SelectResident(ResidentIds.Yaya);
+        }
+
+        private void HandleSelectAmu()
+        {
+            SelectResident(ResidentIds.Amu);
+        }
+
+        private void HandleSelectXiaosui()
+        {
+            SelectResident(ResidentIds.Xiaosui);
+        }
+
+        private void HandleSelectMomo()
+        {
+            SelectResident(ResidentIds.Momo);
         }
 
         private NpcPlanExecutor SelectedExecutor

@@ -66,6 +66,43 @@ namespace AIFarm.Tests.EditMode
         }
 
         [Test]
+        public void MemoryStore_RejectsEveryCrossOwnerWritePath()
+        {
+            var yaya = new MemoryStore(ResidentIds.Yaya);
+
+            Assert.That(
+                yaya.AddObservation(
+                    ResidentIds.Amu,
+                    1d,
+                    "阿木不能写入芽芽记忆。",
+                    5,
+                    AIFarm.Core.WorldEventKind.System,
+                    out _).Failed,
+                Is.True);
+            Assert.That(
+                yaya.AddConversationSummary(
+                    ResidentIds.Amu,
+                    2d,
+                    "阿木不能写入芽芽的对话摘要。",
+                    6,
+                    ResidentIds.Xiaosui,
+                    "fact-cross-owner",
+                    "knowledge:resident-003:0001",
+                    new[] { "cross-owner" },
+                    true,
+                    out _).Failed,
+                Is.True);
+            Assert.That(
+                yaya.AddReflection(
+                    ResidentIds.Amu,
+                    3d,
+                    "阿木不能写入芽芽反思。",
+                    out _).Failed,
+                Is.True);
+            Assert.That(yaya.Entries, Is.Empty);
+        }
+
+        [Test]
         public void ResidentRegistry_RejectsDuplicateResidentId()
         {
             var registry = new ResidentRegistry();
@@ -143,6 +180,52 @@ namespace AIFarm.Tests.EditMode
             Assert.That(
                 migratedData.residents[0].recentMemories[0].ownerResidentId,
                 Is.EqualTo(ResidentIds.YayaValue));
+        }
+
+        [Test]
+        public void LegacyMultiResidentSave_MigratesMemoriesToSafeUnshareableProvenance()
+        {
+            ResidentSaveData yaya = CreateResidentSaveData(
+                ResidentIds.YayaValue,
+                "芽芽",
+                "旧版芽芽记忆");
+            ResidentSaveData amu = CreateResidentSaveData(
+                ResidentIds.AmuValue,
+                "阿木",
+                "旧版阿木记忆");
+            yaya.recentMemories[0].ownerResidentId = string.Empty;
+            amu.recentMemories[0].ownerResidentId = string.Empty;
+            var legacy = new SaveData
+            {
+                version = SaveData.LegacyMultiResidentVersion,
+                residents = new[] { yaya, amu }
+            };
+
+            AIFarm.Core.ActionResult result = SaveDataMigration.TryDeserializeAndMigrate(
+                JsonUtility.ToJson(legacy),
+                out SaveData migratedData,
+                out bool migratedLegacySave);
+
+            Assert.That(result.Succeeded, Is.True, result.Message);
+            Assert.That(migratedLegacySave, Is.True);
+            Assert.That(migratedData.version, Is.EqualTo(SaveData.CurrentVersion));
+            Assert.That(
+                migratedData.residents[0].recentMemories[0].ownerResidentId,
+                Is.EqualTo(ResidentIds.YayaValue));
+            Assert.That(
+                migratedData.residents[1].recentMemories[0].ownerResidentId,
+                Is.EqualTo(ResidentIds.AmuValue));
+            foreach (ResidentSaveData resident in migratedData.residents)
+            {
+                MemorySaveData memory = resident.recentMemories[0];
+                Assert.That(
+                    memory.sourceKind,
+                    Is.EqualTo((int)MemorySourceKind.LegacyImported));
+                Assert.That(memory.isShareable, Is.False);
+                Assert.That(memory.knowledgeId, Is.Not.Empty);
+                Assert.That(memory.rootFactId, Is.EqualTo(memory.knowledgeId));
+                Assert.That(memory.tags, Does.Contain("legacy-imported"));
+            }
         }
 
         private static ResidentRuntimeState CreateRuntime(

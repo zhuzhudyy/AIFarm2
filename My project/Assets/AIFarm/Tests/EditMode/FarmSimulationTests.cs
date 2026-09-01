@@ -1,6 +1,7 @@
 using AIFarm.Core;
 using AIFarm.Farming;
 using AIFarm.Inventory;
+using AIFarm.Npc;
 using AIFarm.Time;
 using NUnit.Framework;
 using System.Linq;
@@ -56,6 +57,17 @@ namespace AIFarm.Tests.EditMode
             Assert.That(
                 events.Entries.Any(entry => entry.Kind == WorldEventKind.CropMatured),
                 Is.True);
+            Assert.That(
+                events.Entries.All(
+                    entry => entry.Visibility == WorldEventVisibility.Perceivable),
+                Is.True);
+            Assert.That(
+                events.GetVisibleEntries(ResidentIds.Yaya),
+                Has.Count.EqualTo(events.Entries.Count));
+            Assert.That(
+                events.GetVisibleEntries(ResidentIds.Xiaosui),
+                Is.Empty,
+                "Residents outside the farm must not learn environmental events globally.");
         }
 
         [Test]
