@@ -3,7 +3,8 @@
     "rootNamespace": "AIFarm.Presentation",
     "references": [
         "AIFarm.Domain",
-        "UnityEngine.UI"
+        "UnityEngine.UI",
+        "Unity.InputSystem"
     ],
     "includePlatforms": [],
     "excludePlatforms": [],

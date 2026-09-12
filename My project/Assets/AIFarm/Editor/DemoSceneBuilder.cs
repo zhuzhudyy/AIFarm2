@@ -260,7 +260,9 @@ namespace AIFarm.Editor
                 residentControllers,
                 GetHarvestDinnerAttendancePoints(arrivalPoints)));
             CreateUi(bootstrap, executor, replanController, executor.transform);
+            MeadowSceneUpgrade.Apply();
             NavMeshSurface navMeshSurface = CreateNavigation();
+            MeadowSceneUpgrade.ConfigureNavigation(navMeshSurface);
             navMeshSurface.BuildNavMesh();
 
             if (!EditorSceneManager.SaveScene(scene, ScenePath))

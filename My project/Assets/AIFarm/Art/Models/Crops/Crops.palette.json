@@ -1,0 +1,81 @@
+{
+  "materials": [
+    {
+      "name": "Art_Crop_CarrotOrange",
+      "color": [
+        0.92,
+        0.32,
+        0.075,
+        1
+      ],
+      "metallic": 0,
+      "smoothness": 0.24
+    },
+    {
+      "name": "Art_Crop_CarrotRidge",
+      "color": [
+        0.64,
+        0.2,
+        0.048,
+        1
+      ],
+      "metallic": 0,
+      "smoothness": 0.24
+    },
+    {
+      "name": "Art_Crop_CarrotLight",
+      "color": [
+        1.0,
+        0.49,
+        0.12,
+        1
+      ],
+      "metallic": 0,
+      "smoothness": 0.24
+    },
+    {
+      "name": "Art_Crop_LeafGreen",
+      "color": [
+        0.2,
+        0.44,
+        0.16,
+        1
+      ],
+      "metallic": 0,
+      "smoothness": 0.24
+    },
+    {
+      "name": "Art_Crop_LeafLight",
+      "color": [
+        0.41,
+        0.64,
+        0.22,
+        1
+      ],
+      "metallic": 0,
+      "smoothness": 0.24
+    },
+    {
+      "name": "Art_Crop_LeafVein",
+      "color": [
+        0.56,
+        0.71,
+        0.28,
+        1
+      ],
+      "metallic": 0,
+      "smoothness": 0.24
+    }
+  ],
+  "models": [
+    {
+      "name": "CarrotPlant",
+      "triangles": 7748,
+      "meshObjects": 2,
+      "heightAboveGround": 0.802,
+      "width": 0.519
+    }
+  ],
+  "source": "ArtSource/CarrotPlant.blend",
+  "generator": "Tools/Art/build_crop.py"
+}

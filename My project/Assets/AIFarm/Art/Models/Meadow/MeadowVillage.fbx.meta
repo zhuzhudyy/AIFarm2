@@ -1,0 +1,269 @@
+fileFormatVersion: 2
+guid: 3fc038d1cc861b14c9500bfc7a3acede
+ModelImporter:
+  serializedVersion: 24501
+  internalIDToNameTable: []
+  externalObjects:
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: Meadow_Bark
+    second: {fileID: 2100000, guid: 76aa552ff876d0648ae3cd1c12308acf, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: Meadow_Cream
+    second: {fileID: 2100000, guid: 7caec320ed82e154298b4f5c2edf3034, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: Meadow_Earth
+    second: {fileID: 2100000, guid: 211d63f2b391ea94da1b2543e42b928a, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: Meadow_EarthDark
+    second: {fileID: 2100000, guid: 2e395a4c22989fb4dbf8e0a804684a2b, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: Meadow_FlowerGold
+    second: {fileID: 2100000, guid: 2877f078ad28c734d994202107eed982, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: Meadow_FlowerPink
+    second: {fileID: 2100000, guid: 05fa6c6647bf02449a6a895d7d09d9d4, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: Meadow_FlowerWhite
+    second: {fileID: 2100000, guid: 1a6031732e4ca42428cc600f5489dbc5, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: Meadow_Fruit
+    second: {fileID: 2100000, guid: c091a107bf8ab4b4c9fb707638f474aa, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: Meadow_Glass
+    second: {fileID: 2100000, guid: 9d338b28d07c1764bbb83c7bc96e57b5, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: Meadow_Glow
+    second: {fileID: 2100000, guid: 87dfcd391f9078245b6ad6f0fcec4c45, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: Meadow_Grass
+    second: {fileID: 2100000, guid: a4900ef938a13c34a8a5ec38bbe6144c, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: Meadow_GrassDark
+    second: {fileID: 2100000, guid: d38d19d67af7222429fca5c2f489c8d1, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: Meadow_Leaf
+    second: {fileID: 2100000, guid: b5262cc4bac133d4fa42fba187e544ea, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: Meadow_LeafGold
+    second: {fileID: 2100000, guid: 6dbabb5d2c30fd74e9b5a6b015bef0cd, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: Meadow_LeafLight
+    second: {fileID: 2100000, guid: 58067e85625b95d4e853d3439b4ebc9b, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: Meadow_Metal
+    second: {fileID: 2100000, guid: 70880bc567ba52a41b266b2cbc661ab1, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: Meadow_Plaster
+    second: {fileID: 2100000, guid: 051809e5dc6502346bfa3c08d4368977, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: Meadow_Red
+    second: {fileID: 2100000, guid: 6c94b1a0b932fc840aaa5319f529d0e1, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: Meadow_RoofBlue
+    second: {fileID: 2100000, guid: bb544f785fc295148bdc1a1639a5c90e, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: Meadow_RoofGold
+    second: {fileID: 2100000, guid: af7f7cf7d0c20b64b93c62325892d917, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: Meadow_RoofLight
+    second: {fileID: 2100000, guid: b02d724974f878f4ba096ff9fc47e61e, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: Meadow_RoofRust
+    second: {fileID: 2100000, guid: ab6ad58a43624b94fb1586d1d3e40ec2, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: Meadow_RoofTeal
+    second: {fileID: 2100000, guid: b8c6efdb0a7e5cd4393bada9e51fb70f, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: Meadow_Sand
+    second: {fileID: 2100000, guid: fac4e3fb9765b9b4d8659ea1e2ed9c2a, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: Meadow_Stone
+    second: {fileID: 2100000, guid: b40fccdd0d156dd45973bd9324f15f37, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: Meadow_StoneLight
+    second: {fileID: 2100000, guid: f0e9954501c7f3248ab639242c39922d, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: Meadow_Water
+    second: {fileID: 2100000, guid: e1797247baa1e92468f27236c720a61e, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: Meadow_WaterLight
+    second: {fileID: 2100000, guid: e184e773ab2f8c240a10046fef173b7f, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: Meadow_Wood
+    second: {fileID: 2100000, guid: 7c7bd71f64843b74182dd55d3f7f160e, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: Meadow_WoodDark
+    second: {fileID: 2100000, guid: 4d406654d4d0af94cba9fbdc4262d915, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: Meadow_WoodLight
+    second: {fileID: 2100000, guid: af4ec9b878d9d0c49b2c29ddffadd3be, type: 2}
+  materials:
+    materialImportMode: 2
+    materialName: 0
+    materialSearch: 1
+    materialLocation: 1
+    searchTexturesGlobally: 0
+  animations:
+    legacyGenerateAnimations: 4
+    bakeSimulation: 0
+    resampleCurves: 1
+    optimizeGameObjects: 0
+    removeConstantScaleCurves: 0
+    motionNodeName: 
+    animationImportErrors: 
+    animationImportWarnings: 
+    animationRetargetingWarnings: 
+    animationDoRetargetingWarnings: 0
+    importAnimatedCustomProperties: 0
+    importConstraints: 0
+    animationCompression: 1
+    animationRotationError: 0.5
+    animationPositionError: 0.5
+    animationScaleError: 0.5
+    animationWrapMode: 0
+    extraExposedTransformPaths: []
+    extraUserProperties: []
+    clipAnimations: []
+    isReadable: 0
+  meshes:
+    lODScreenPercentages: []
+    globalScale: 1
+    meshCompression: 0
+    addColliders: 0
+    useSRGBMaterialColor: 1
+    sortHierarchyByName: 1
+    importPhysicalCameras: 1
+    importVisibility: 1
+    importBlendShapes: 1
+    importCameras: 0
+    importLights: 0
+    nodeNameCollisionStrategy: 1
+    fileIdsGeneration: 2
+    swapUVChannels: 0
+    generateSecondaryUV: 0
+    useFileUnits: 1
+    keepQuads: 0
+    weldVertices: 1
+    bakeAxisConversion: 0
+    preserveHierarchy: 0
+    skinWeightsMode: 0
+    maxBonesPerVertex: 4
+    minBoneWeight: 0.001
+    optimizeBones: 1
+    generateMeshLods: 0
+    meshLodGenerationFlags: 0
+    maximumMeshLod: -1
+    importUVs: -1
+    importVertexColors: 1
+    meshOptimizationFlags: -1
+    indexFormat: 0
+    secondaryUVAngleDistortion: 8
+    secondaryUVAreaDistortion: 15.000001
+    secondaryUVHardAngle: 88
+    secondaryUVMarginMethod: 1
+    secondaryUVMinLightmapResolution: 40
+    secondaryUVMinObjectScale: 1
+    secondaryUVPackMargin: 4
+    useFileScale: 1
+    strictVertexDataChecks: 0
+  tangentSpace:
+    normalSmoothAngle: 60
+    normalImportMode: 0
+    tangentImportMode: 3
+    normalCalculationMode: 4
+    legacyComputeAllNormalsFromSmoothingGroupsWhenMeshHasBlendShapes: 0
+    blendShapeNormalImportMode: 1
+    normalSmoothingSource: 0
+    calculateBlendshapeNormalsDeltaFromImportedNormals: 0
+  referencedClips: []
+  importAnimation: 0
+  humanDescription:
+    serializedVersion: 3
+    human: []
+    skeleton: []
+    armTwist: 0.5
+    foreArmTwist: 0.5
+    upperLegTwist: 0.5
+    legTwist: 0.5
+    armStretch: 0.05
+    legStretch: 0.05
+    feetSpacing: 0
+    globalScale: 1
+    rootMotionBoneName: 
+    hasTranslationDoF: 0
+    hasExtraRoot: 0
+    skeletonHasParents: 1
+  lastHumanDescriptionAvatarSource: {instanceID: 0}
+  autoGenerateAvatarMappingIfUnspecified: 1
+  animationType: 2
+  humanoidOversampling: 1
+  avatarSetup: 0
+  addHumanoidExtraRootOnlyWhenUsingAvatar: 1
+  importBlendShapeDeformPercent: 1
+  remapMaterialsIfMaterialImportModeIsNone: 0
+  additionalBone: 0
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
