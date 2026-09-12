@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="utf-8"?>
+<test-run id="2" testcasecount="3" result="Failed(Child)" total="3" passed="2" failed="1" inconclusive="0" skipped="0" asserts="0" engine-version="3.5.0.0" clr-version="4.0.30319.42000" start-time="2026-09-12 12:02:54Z" end-time="2026-09-12 12:04:00Z" duration="65.3614792">
+  <test-suite type="TestSuite" id="1054" name="My project" fullname="My project" runstate="Runnable" testcasecount="36" result="Failed" site="Child" start-time="2026-09-12 12:02:54Z" end-time="2026-09-12 12:04:00Z" duration="65.361479" total="3" passed="2" failed="1" inconclusive="0" skipped="0" asserts="0">
+    <properties>
+      <property name="platform" value="PlayMode" />
+    </properties>
+    <failure>
+      <message><![CDATA[One or more child tests had errors]]></message>
+    </failure>
+    <test-suite type="Assembly" id="1046" name="AIFarm.PlayModeTests.dll" fullname="C:/学习/研究生/Elys AI/面试模拟题/AIFarm/My project/Library/ScriptAssemblies/AIFarm.PlayModeTests.dll" runstate="Runnable" testcasecount="36" result="Failed" site="Child" start-time="2026-09-12 12:02:54Z" end-time="2026-09-12 12:04:00Z" duration="65.339040" total="3" passed="2" failed="1" inconclusive="0" skipped="0" asserts="0">
+      <properties>
+        <property name="_PID" value="41612" />
+        <property name="_APPDOMAIN" value="Unity Child Domain" />
+        <property name="platform" value="PlayMode" />
+        <property name="EditorOnly" value="False" />
+      </properties>
+      <failure>
+        <message><![CDATA[One or more child tests had errors]]></message>
+      </failure>
+      <test-suite type="TestSuite" id="1047" name="AIFarm" fullname="AIFarm" runstate="Runnable" testcasecount="36" result="Failed" site="Child" start-time="2026-09-12 12:02:55Z" end-time="2026-09-12 12:04:00Z" duration="65.321161" total="3" passed="2" failed="1" inconclusive="0" skipped="0" asserts="0">
+        <properties />
+        <failure>
+          <message><![CDATA[One or more child tests had errors]]></message>
+        </failure>
+        <test-suite type="TestSuite" id="1048" name="Tests" fullname="AIFarm.Tests" runstate="Runnable" testcasecount="36" result="Failed" site="Child" start-time="2026-09-12 12:02:55Z" end-time="2026-09-12 12:04:00Z" duration="65.315052" total="3" passed="2" failed="1" inconclusive="0" skipped="0" asserts="0">
+          <properties />
+          <failure>
+            <message><![CDATA[One or more child tests had errors]]></message>
+          </failure>
+          <test-suite type="TestSuite" id="1049" name="PlayMode" fullname="AIFarm.Tests.PlayMode" runstate="Runnable" testcasecount="36" result="Failed" site="Child" start-time="2026-09-12 12:02:55Z" end-time="2026-09-12 12:04:00Z" duration="65.308668" total="3" passed="2" failed="1" inconclusive="0" skipped="0" asserts="0">
+            <properties />
+            <failure>
+              <message><![CDATA[One or more child tests had errors]]></message>
+            </failure>
+            <test-suite type="TestFixture" id="1031" name="SustainableFarmScenePlayModeTests" fullname="AIFarm.Tests.PlayMode.SustainableFarmScenePlayModeTests" classname="AIFarm.Tests.PlayMode.SustainableFarmScenePlayModeTests" runstate="Runnable" testcasecount="1" result="Passed" start-time="2026-09-12 12:02:55Z" end-time="2026-09-12 12:03:57Z" duration="62.311678" total="1" passed="1" failed="0" inconclusive="0" skipped="0" asserts="0">
+              <properties />
+              <test-case id="1032" name="ActualTendFarm_ThreeNormalRounds_WithSaveReloadAndSharedResourceAccounting" fullname="AIFarm.Tests.PlayMode.SustainableFarmScenePlayModeTests.ActualTendFarm_ThreeNormalRounds_WithSaveReloadAndSharedResourceAccounting" methodname="ActualTendFarm_ThreeNormalRounds_WithSaveReloadAndSharedResourceAccounting" classname="AIFarm.Tests.PlayMode.SustainableFarmScenePlayModeTests" runstate="Runnable" seed="831246327" result="Passed" start-time="2026-09-12 12:02:55Z" end-time="2026-09-12 12:03:57Z" duration="62.298925" asserts="0">
+                <properties>
+                  <property name="_JOINTYPE" value="UnityCombinatorial" />
+                  <property name="retryIteration" value="0" />
+                  <property name="repeatIteration" value="0" />
+                </properties>
+                <output><![CDATA[Conversation script ready residentId=resident-001 participants=resident-001,resident-003 provider=local lines=4
+Conversation script ready residentId=resident-001 participants=resident-001,resident-003 provider=local lines=4
+Town social flow recovered from: The resident cannot leave the current priority activity for conversation.
+Town social flow recovered from: The resident cannot leave the current priority activity for conversation.
+]]></output>
+              </test-case>
+            </test-suite>
+            <test-suite type="TestFixture" id="1037" name="TownLifeIntegrationPlayModeTests" fullname="AIFarm.Tests.PlayMode.TownLifeIntegrationPlayModeTests" classname="AIFarm.Tests.PlayMode.TownLifeIntegrationPlayModeTests" runstate="Runnable" testcasecount="8" result="Failed" site="Child" start-time="2026-09-12 12:03:57Z" end-time="2026-09-12 12:04:00Z" duration="2.989590" total="2" passed="1" failed="1" inconclusive="0" skipped="0" asserts="0">
+              <properties />
+              <failure>
+                <message><![CDATA[One or more child tests had errors]]></message>
+              </failure>
+              <test-case id="1045" name="PlayerPauseDoesNotConsumeEitherNavigationDeadline" fullname="AIFarm.Tests.PlayMode.TownLifeIntegrationPlayModeTests.PlayerPauseDoesNotConsumeEitherNavigationDeadline" methodname="PlayerPauseDoesNotConsumeEitherNavigationDeadline" classname="AIFarm.Tests.PlayMode.TownLifeIntegrationPlayModeTests" runstate="Runnable" seed="1681483364" result="Passed" start-time="2026-09-12 12:03:57Z" end-time="2026-09-12 12:03:57Z" duration="0.581194" asserts="0">
+                <properties>
+                  <property name="_JOINTYPE" value="UnityCombinatorial" />
+                  <property name="retryIteration" value="0" />
+                  <property name="repeatIteration" value="0" />
+                </properties>
+              </test-case>
+              <test-case id="1044" name="ResidentLeavingAfterConversationArrivalReleasesBothParticipantsImmediately" fullname="AIFarm.Tests.PlayMode.TownLifeIntegrationPlayModeTests.ResidentLeavingAfterConversationArrivalReleasesBothParticipantsImmediately" methodname="ResidentLeavingAfterConversationArrivalReleasesBothParticipantsImmediately" classname="AIFarm.Tests.PlayMode.TownLifeIntegrationPlayModeTests" runstate="Runnable" seed="740877651" result="Failed" start-time="2026-09-12 12:03:57Z" end-time="2026-09-12 12:04:00Z" duration="2.404662" asserts="0">
+                <properties>
+                  <property name="_JOINTYPE" value="UnityCombinatorial" />
+                  <property name="retryIteration" value="0" />
+                  <property name="repeatIteration" value="0" />
+                </properties>
+                <failure>
+                  <message><![CDATA[  Conversation must have actually arrived before testing departure. State=Cancelled EndReason=NavigationFailed Error=NavMesh produced no path to 'social-plaza-anchor-01-seat-01'.
+  Expected: True
+  But was:  False
+]]></message>
+                  <stack-trace><![CDATA[at AIFarm.Tests.PlayMode.TownLifeIntegrationPlayModeTests+<ResidentLeavingAfterConversationArrivalReleasesBothParticipantsImmediately>d__8.MoveNext () [0x00253] in C:\学习\研究生\Elys AI\面试模拟题\AIFarm\My project\Assets\AIFarm\Tests\PlayMode\TownLifeIntegrationPlayModeTests.cs:252
+at UnityEngine.TestTools.TestEnumerator+<Execute>d__7.MoveNext () [0x0003a] in .\Library\PackageCache\com.unity.test-framework@1405238725ab\UnityEngine.TestRunner\NUnitExtensions\Attributes\TestEnumerator.cs:44
+]]></stack-trace>
+                </failure>
+                <output><![CDATA[Conversation script ready residentId=resident-001 participants=resident-001,resident-002 provider=local lines=4
+Conversation script ready residentId=resident-001 participants=resident-001,resident-002 provider=local lines=4
+Saving results to: C:\学习\研究生\Elys AI\面试模拟题\AIFarm\Docs\Verification\Unity-PlayMode-20260912-120254-953.xml
+Saving results to: C:\学习\研究生\Elys AI\面试模拟题\AIFarm\Docs\Verification\Unity-PlayMode-20260912-120254-953.xml
+]]></output>
+              </test-case>
+            </test-suite>
+          </test-suite>
+        </test-suite>
+      </test-suite>
+    </test-suite>
+  </test-suite>
+</test-run>

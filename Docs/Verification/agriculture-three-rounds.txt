@@ -1,0 +1,15 @@
+PASS: Actual DemoScene / TownLife / NpcPlanExecutor / SaveGameService
+Test acceleration: manually advanced the production GameClock; Warp used only for real NavMesh arrival points.
+This is not a six-day real-time soak test. No crop, seed, fertilizer or food settlement was fabricated.
+Initial seeds/water/fertilizer: 9/9/9
+Completed cycles: 3
+Harvest actions: 27
+Produced carrots: 27
+Consumed carrots: 7
+Warehouse carrots: 20
+Warehouse seeds: 9
+Sow/water/fertilize/weed actions: 27/108/27/27
+Fertilizer produced from compost: 27
+Second-round growing crop save/load: True
+Elapsed game seconds: 815610
+Stopped: no active player task or executor action; all nine task claims released.

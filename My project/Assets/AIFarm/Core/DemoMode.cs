@@ -5,10 +5,10 @@ namespace AIFarm.Core
     public sealed class DemoMode
     {
         public DemoMode(
-            double recommendedTimeScale = 20d,
-            double waterDecayGameSeconds = 10d,
-            double weedDelayGameSeconds = 15d,
-            double maturityGameSeconds = 30d,
+            double recommendedTimeScale = 1d,
+            double waterDecayGameSeconds = 28800d,
+            double weedDelayGameSeconds = 14400d,
+            double maturityGameSeconds = 172800d,
             float sowActionSeconds = 0.2f,
             float fertilizeActionSeconds = 0.22f,
             float waterActionSeconds = 0.2f,

@@ -1,0 +1,42 @@
+CONTROLLED HTTP fixture, not real commercial model.
+在线 v3 http://127.0.0.1:8012/v1/chat/completions
+resident-002 remote=2 行为：自主生活 → 
+任务：自主生活；轮次：0
+精力 97 / 饥饿 32 / 社交 38
+决策：
+最近决策：第 1 日 13:39；真实模型
+执行来源：本地规则
+下次计划：0.0s；请求：False
+会话：
+阻塞：无
+resident-004 remote=5 行为：自主生活 → 地块 4
+任务：自主生活；轮次：0
+精力 75 / 饥饿 32 / 社交 19
+决策：受控模型选择当前可执行的活动。
+最近决策：第 1 日 16:02；真实模型
+执行来源：真实模型
+下次计划：6.2s；请求：False
+会话：
+阻塞：无
+resident-003 remote=3 行为：自主生活 → 
+任务：自主生活；轮次：0
+精力 90 / 饥饿 32 / 社交 38
+决策：采到 1 个水果，已存入公共仓库。
+最近决策：第 1 日 14:12；真实模型
+执行来源：本地规则
+下次计划：1.6s；请求：False
+会话：
+阻塞：无
+resident-001 remote=4 行为：自主生活 → 地块 3
+任务：自主生活；轮次：0
+精力 76 / 饥饿 32 / 社交 19
+决策：受控模型选择当前可执行的活动。
+最近决策：第 1 日 15:08；真实模型
+执行来源：真实模型
+下次计划：0.5s；请求：False
+会话：
+阻塞：无
+conversation-000001 阿木 [受控模型对话] 我是阿木。刚才在忙schedule=Suspended;activity=;location=;farmBusy=False;hasGoal=False。我们聊聊在的日常交流。
+conversation-000001 小穗 [受控模型对话] 我是小穗。刚才在忙schedule=Suspended;activity=;location=;farmBusy=False;hasGoal=False。我们聊聊在的日常交流。
+conversation-000002 芽芽 [受控模型对话] 我是芽芽。刚才在忙schedule=Suspended;activity=;location=;farmBusy=False;hasGoal=False。我们聊聊在的日常交流。
+conversation-000002 墨墨 [受控模型对话] 我是墨墨。刚才在忙schedule=Suspended;activity=;location=;farmBusy=False;hasGoal=False。我们聊聊在的日常交流。

@@ -15,10 +15,23 @@ MonoBehaviour:
   inventoryConfig: {fileID: 11400000, guid: fa4f1db64ad3bd14f9b13a9058512c26, type: 2}
   startDay: 1
   startHour: 8
-  timeScale: 20
-  waterDecayGameSeconds: 10
-  weedDelayGameSeconds: 15
-  maturityGameSeconds: 30
+  timeScale: 1
+  realSecondsPerDay: 720
+  fastGrowthDemo: 0
+  seedsReturnedPerCrop: 1
+  cropYield: 1
+  activityRules:
+    fishingGameSeconds: 1200
+    pickingGameSeconds: 360
+    supplyGameSeconds: 240
+    fruitRegrowthGameSeconds: 86400
+    fruitsPerTree: 3
+    fishPerCatch: 1
+    waterCarryCapacity: 18
+    fertilizerCarryCapacity: 9
+  waterDecayGameSeconds: 28800
+  weedDelayGameSeconds: 14400
+  maturityGameSeconds: 172800
   farmActionSeconds: 0.2
   waitActionSeconds: 0.2
   expressionCooldownSeconds: 12
@@ -27,5 +40,5 @@ MonoBehaviour:
   plotSpacing: 0.35
   aiGatewayMode: 1
   aiGatewayBaseUrl: http://127.0.0.1:8000
-  aiRequestTimeoutSeconds: 3
+  aiRequestTimeoutSeconds: 30
   maximumConcurrentAiRequests: 2

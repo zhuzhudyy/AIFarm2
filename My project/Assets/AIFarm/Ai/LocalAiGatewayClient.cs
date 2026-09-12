@@ -6,7 +6,7 @@ using AIFarm.Npc;
 
 namespace AIFarm.Ai
 {
-    public sealed class LocalAiGatewayClient : IAiGatewayClient
+    public sealed class LocalAiGatewayClient : IAiGatewayClient, IResidentTaskGateway
     {
         private readonly LocalIntentInterpreter intentInterpreter = new LocalIntentInterpreter();
         private readonly LocalTemplateExpressionService expressionService =
@@ -17,6 +17,15 @@ namespace AIFarm.Ai
         public AiGatewayMode ConfiguredMode => AiGatewayMode.Local;
 
         public AiGatewayMode ActiveMode => AiGatewayMode.Local;
+
+        public IEnumerator InterpretResidentTask(ResidentId owner, string command, string[] targets,
+            string[] residents, Action<AiGatewayResult<ResidentTaskSpec>> completed)
+        {
+            ActionResult parsed = LocalResidentTaskParser.TryParse(owner, command, out ResidentTaskSpec task);
+            completed(parsed.Succeeded ? AiGatewayResult<ResidentTaskSpec>.Success(owner, task, AiGatewayMode.Local) :
+                AiGatewayResult<ResidentTaskSpec>.Failure(owner, parsed, AiGatewayMode.Local));
+            yield break;
+        }
 
         public IEnumerator InterpretCommand(
             string command,

@@ -32,9 +32,9 @@ namespace AIFarm.Presentation
             return new AiGatewayHttpResult(true, statusCode, body, string.Empty);
         }
 
-        public static AiGatewayHttpResult Failure(long statusCode, string error)
+        public static AiGatewayHttpResult Failure(long statusCode, string error, string body = "")
         {
-            return new AiGatewayHttpResult(false, statusCode, string.Empty, error);
+            return new AiGatewayHttpResult(false, statusCode, body, error);
         }
     }
 
@@ -69,6 +69,7 @@ namespace AIFarm.Presentation
                 request.timeout = timeoutSeconds;
                 request.SetRequestHeader("Content-Type", "application/json; charset=utf-8");
                 request.SetRequestHeader("Accept", "application/json");
+                request.SetRequestHeader("X-AIFarm-Client", "unity");
 
                 UnityWebRequestAsyncOperation operation = request.SendWebRequest();
                 while (!operation.isDone)
@@ -94,7 +95,10 @@ namespace AIFarm.Presentation
                             : string.IsNullOrWhiteSpace(transportError)
                                 ? request.result.ToString()
                                 : transportError;
-                    completed(AiGatewayHttpResult.Failure(request.responseCode, error));
+                    string diagnostic = request.downloadHandler?.text ?? string.Empty;
+                    if (diagnostic.Length > 1600) diagnostic = diagnostic.Substring(0, 1600);
+                    if (!string.IsNullOrWhiteSpace(diagnostic)) error += "；" + diagnostic;
+                    completed(AiGatewayHttpResult.Failure(request.responseCode, error, diagnostic));
                     yield break;
                 }
 

@@ -719,9 +719,11 @@ def test_environment_selection_uses_configured_model_and_never_exposes_key(
 
     assert isinstance(gateway, OpenAIProvider)
     assert gateway.model == TEST_MODEL
-    assert captured_client_options["api_key"] == TEST_API_KEY
-    assert captured_client_options["base_url"] == providers.DEEPSEEK_BASE_URL
-    assert captured_client_options["max_retries"] == 0
+    assert captured_client_options == {}  # Generic HTTP adapter does not force the Responses SDK.
+    assert gateway._adapter.headers()["Authorization"] == "Bearer " + TEST_API_KEY
+    assert gateway.endpoint == providers.DEEPSEEK_BASE_URL + "/v1/chat/completions"
+    assert gateway.protocol == "chat_completions"
+    assert gateway._adapter.output_mode == "text"
     assert TEST_API_KEY not in repr(gateway)
 
     with TestClient(create_app(gateway)) as client:
@@ -731,7 +733,7 @@ def test_environment_selection_uses_configured_model_and_never_exposes_key(
     assert response.json() == {
         "status": "ok",
         "provider": "openai",
-        "api_key_required": True,
+        "api_key_required": False,
         "api_key_configured": True,
     }
     assert TEST_API_KEY not in response.text

@@ -189,7 +189,7 @@ namespace AIFarm.Presentation
             if (conversationText != null)
             {
                 conversationText.text = $"{boundedEmoji} {boundedText}\n[{mood}]";
-                conversationText.gameObject.SetActive(true);
+                conversationText.gameObject.SetActive(false);
             }
 
             if (statusIcon != null && definitionAsset != null)

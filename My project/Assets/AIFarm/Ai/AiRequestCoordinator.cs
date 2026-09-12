@@ -24,7 +24,7 @@ namespace AIFarm.Ai
         }
     }
 
-    public sealed class AiRequestCoordinator : IAiGatewayClient
+    public sealed class AiRequestCoordinator : IAiGatewayClient, IResidentTaskGateway
     {
         public const int DefaultMaximumConcurrentRequests = 2;
 
@@ -67,7 +67,7 @@ namespace AIFarm.Ai
             }
         }
 
-        private readonly IAiGatewayClient sharedClient;
+        private IAiGatewayClient sharedClient;
         private readonly IAiGatewayClient localFallback;
         private readonly List<RequestTicket> pending = new List<RequestTicket>();
         private readonly HashSet<RequestTicket> activeTickets =
@@ -133,6 +133,23 @@ namespace AIFarm.Ai
         }
 
         public bool IsShutdown => isShutdown;
+
+        public void ReplaceClient(IAiGatewayClient client)
+        {
+            if (client == null) throw new ArgumentNullException(nameof(client));
+            CancelAllForAuthoritativeReset();
+            sharedClient = client;
+            isShutdown = false;
+            activeMode = client.ActiveMode;
+        }
+
+        public IEnumerator InterpretResidentTask(ResidentId owner, string command, string[] targets,
+            string[] residents, Action<AiGatewayResult<ResidentTaskSpec>> completed)
+        {
+            return Coordinate<ResidentTaskSpec>(new[] { owner }, AiRequestPriority.High, null,
+                (client, callback) => ((client as IResidentTaskGateway) ??
+                    (IResidentTaskGateway)localFallback).InterpretResidentTask(owner, command, targets, residents, callback), completed);
+        }
 
         public void Shutdown()
         {

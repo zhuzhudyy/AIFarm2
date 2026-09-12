@@ -1,0 +1,7 @@
+Unity 6000.5.10f1
+Result: Succeeded
+Output: C:/学习/研究生/Elys AI/面试模拟题/AIFarm/Builds/Windows/AIFarmTown.exe
+Bytes: 188720731
+Duration: 00:00:21.4775795
+Errors: 0
+Warnings: 52

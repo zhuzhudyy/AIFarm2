@@ -5,6 +5,9 @@ namespace AIFarm.Inventory
         CarrotSeed = 0,
         Water,
         Fertilizer,
-        Carrot
+        Carrot,
+        Fish,
+        Fruit,
+        Compost
     }
 }

@@ -23,6 +23,8 @@ namespace AIFarm.Presentation
         private NpcPlanExecutor farmingExecutor;
 
         private bool scheduleSuspendedForFarming;
+        private bool scheduleSuspendedForLife;
+        private TownLifeController lifeController;
         private bool scheduleSuspendedForConversation;
         private bool scheduleSuspendedForTownEvent;
         private TownEventState townEventState = TownEventState.Scheduled;
@@ -39,11 +41,33 @@ namespace AIFarm.Presentation
 
         public bool IsFarmingBusy => farmingExecutor != null && farmingExecutor.IsBusy;
 
+        public bool IsLifeBusy => lifeController != null && lifeController.IsBusy;
+
         public bool IsConversationSuspended => scheduleSuspendedForConversation;
 
         public bool IsTownEventSuspended => scheduleSuspendedForTownEvent;
 
         public TownResidentNavigator Navigator => navigator;
+
+        public void AttachLifeController(TownLifeController life, NpcPlanExecutor residentExecutor)
+        {
+            lifeController = life;
+            farmingExecutor = residentExecutor;
+        }
+
+        public void SuspendForLifeAction()
+        {
+            if (scheduleSuspendedForLife) return;
+            Runtime?.Suspend();
+            scheduleSuspendedForLife = true;
+        }
+
+        public void ResumeAfterLifeAction()
+        {
+            if (!scheduleSuspendedForLife) return;
+            scheduleSuspendedForLife = false;
+            if (!scheduleSuspendedForConversation && !scheduleSuspendedForTownEvent) Runtime?.Resume();
+        }
 
         public ResidentActivityKind? CurrentActivity => Runtime?.ActiveEntry == null
             ? (ResidentActivityKind?)null
@@ -133,6 +157,11 @@ namespace AIFarm.Presentation
                 return ActionResult.Success("Town schedule paused for an active conversation.");
             }
 
+            if (scheduleSuspendedForLife)
+            {
+                return ActionResult.Success("Resident is executing a life activity.");
+            }
+
             if (farmingExecutor != null && farmingExecutor.IsBusy)
             {
                 if (!scheduleSuspendedForFarming)
@@ -169,10 +198,11 @@ namespace AIFarm.Presentation
                     "The resident schedule must be initialized before conversation.");
             }
 
-            if (scheduleSuspendedForConversation || scheduleSuspendedForTownEvent ||
+            if (scheduleSuspendedForConversation || scheduleSuspendedForTownEvent || scheduleSuspendedForLife ||
+                (lifeController != null && !lifeController.IsAvailableForConversation) ||
                 scheduleSuspendedForFarming ||
                 IsFarmingBusy || Runtime.ActiveEntry == null ||
-                Runtime.ActiveEntry.Activity == ResidentActivityKind.Home)
+                (lifeController == null && Runtime.ActiveEntry.Activity == ResidentActivityKind.Home))
             {
                 return ActionResult.Failure(
                     ActionFailureReason.InvalidState,
@@ -236,7 +266,8 @@ namespace AIFarm.Presentation
         {
             return IsInitialized && navigator != null && residentView != null &&
                 !scheduleSuspendedForConversation && !scheduleSuspendedForTownEvent &&
-                !scheduleSuspendedForFarming && !IsFarmingBusy &&
+                !scheduleSuspendedForFarming && !scheduleSuspendedForLife && !IsFarmingBusy &&
+                (lifeController == null || !lifeController.HasPlayerTask) &&
                 Runtime.ActiveEntry != null &&
                 Runtime.ActiveEntry.Activity != ResidentActivityKind.Home;
         }
@@ -348,6 +379,7 @@ namespace AIFarm.Presentation
             }
 
             scheduleSuspendedForFarming = false;
+            scheduleSuspendedForLife = false;
             scheduleSuspendedForConversation = false;
             scheduleSuspendedForTownEvent = false;
             townEventState = TownEventState.Scheduled;

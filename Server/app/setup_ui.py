@@ -95,18 +95,27 @@ def render_setup_page(csrf_token: str, script_nonce: str) -> str:
         <form id="settings-form">
           <label for="provider">运行模式</label>
           <select id="provider" name="provider">
-            <option value="openai">DeepSeek（OpenAI 兼容）</option>
+            <option value="openai">上游模型服务</option>
             <option value="mock">完全离线 Mock</option>
           </select>
 
-          <label for="model">模型 ID</label>
-          <input id="model" name="model" value="deepseek-v4-flash" maxlength="128" spellcheck="false">
-          <p class="hint">当前网关固定连接 DeepSeek，不允许从 UI 改写服务端点。</p>
+          <label for="base-url">上游模型 Base URL / Endpoint</label>
+          <input id="base-url" name="base-url" maxlength="2048" spellcheck="false" placeholder="填写模型服务根地址、版本地址或完整请求端点">
+          <p class="hint">这是 Python 请求的模型服务地址，可以是公网、自建服务或本机地址。浏览器当前地址是本地 Python 网关。</p>
+          <label for="protocol">高级：请求协议</label>
+          <select id="protocol"><option value="chat_completions">OpenAI-compatible Chat Completions（默认）</option><option value="responses">OpenAI Responses</option><option value="anthropic">Anthropic Messages</option><option value="gemini">Gemini 原生 generateContent</option></select>
+          <label for="output-mode">高级：结构化输出能力</label>
+          <select id="output-mode"><option value="text">普通文本 JSON 约定（通用）</option><option value="json">JSON 模式</option><option value="schema">原生 JSON Schema（支持时）</option></select>
+          <label for="model">模型名称 Model</label>
+          <input id="model" name="model" value="deepseek-v4-flash" maxlength="256" spellcheck="false">
+          <p class="hint">自由填写服务支持的模型名称或别名；不会根据名称猜测协议，也不依赖 /models 列表。</p>
 
           <label for="api-key">API Key</label>
           <input id="api-key" name="api-key" type="password" maxlength="512"
                  autocomplete="new-password" spellcheck="false" placeholder="留空可沿用当前已配置密钥">
-          <p class="hint">密钥不会回显。保存成功后输入框会立即清空。</p>
+          <p class="hint">已保存的密钥不会回显。留空仅在地址及协议相同时沿用；测试失败保留输入。</p>
+          <button id="show-key" type="button">显示 / 隐藏 Key</button>
+          <label class="remember"><input id="no-auth" type="checkbox"><span>此服务无需鉴权（清除当前 Key）</span></label>
 
           <label class="remember">
             <input id="persist" type="checkbox" checked>
@@ -114,8 +123,8 @@ def render_setup_page(csrf_token: str, script_nonce: str) -> str:
           </label>
 
           <div class="actions">
-            <button class="primary" type="submit">保存并启用</button>
-            <button id="probe" type="button">测试连接</button>
+            <button class="primary" type="submit">测试并应用</button>
+            <button id="probe" type="button">测试连接 / 重新连接</button>
             <button id="offline" type="button">切换离线</button>
             <button id="clear" class="danger" type="button">清除本地配置</button>
           </div>
@@ -128,6 +137,8 @@ def render_setup_page(csrf_token: str, script_nonce: str) -> str:
         <dl>
           <div class="status-row"><dt>Provider</dt><dd id="status-provider" class="pill">读取中</dd></div>
           <div class="status-row"><dt>共享模型</dt><dd id="status-model">—</dd></div>
+          <div class="status-row"><dt>上游推理状态 / 配置版本</dt><dd id="status-upstream">—</dd></div>
+          <div class="status-row"><dt>最终请求地址（无密钥）</dt><dd id="status-endpoint">—</dd></div>
           <div class="status-row"><dt>API Key</dt><dd id="status-key">—</dd></div>
           <div class="status-row"><dt>配置来源</dt><dd id="status-source">—</dd></div>
           <div><dt>本地持久化</dt><dd id="status-persisted">—</dd></div>
@@ -143,6 +154,9 @@ def render_setup_page(csrf_token: str, script_nonce: str) -> str:
     const providerInput = document.getElementById("provider");
     const modelInput = document.getElementById("model");
     const keyInput = document.getElementById("api-key");
+    const baseUrlInput = document.getElementById("base-url");
+    const protocolInput = document.getElementById("protocol");
+    const outputModeInput = document.getElementById("output-mode");
     const persistInput = document.getElementById("persist");
     const notice = document.getElementById("notice");
     const buttons = Array.from(document.querySelectorAll("button"));
@@ -153,13 +167,18 @@ def render_setup_page(csrf_token: str, script_nonce: str) -> str:
       return ({ environment: "进程环境变量", local_config: "本地用户配置", runtime: "当前运行时", injected: "测试注入" })[source] || source;
     }
     function renderStatus(status) {
-      document.getElementById("status-provider").textContent = status.provider === "openai" ? "DeepSeek" : "Offline Mock";
+      document.getElementById("status-provider").textContent = status.provider === "openai" ? status.protocol : "本地规则（未连接真实模型）";
       document.getElementById("status-model").textContent = status.model || "—";
       document.getElementById("status-key").textContent = status.api_key_configured ? "已配置（已隐藏）" : "未配置";
       document.getElementById("status-source").textContent = sourceLabel(status.source);
       document.getElementById("status-persisted").textContent = status.persisted ? "是" : "否";
+      document.getElementById("status-upstream").textContent = `${({unconfigured:"未配置", connecting:"连接中 / 待验证", online:"在线", degraded:"降级", error:"错误"})[status.upstream_status]} / v${status.config_version}`;
+      document.getElementById("status-endpoint").textContent = status.endpoint || "—";
       providerInput.value = status.provider;
       if (status.model) modelInput.value = status.model;
+      if (status.base_url) baseUrlInput.value = status.base_url;
+      protocolInput.value = status.protocol || "chat_completions";
+      outputModeInput.value = status.output_mode || "text";
     }
     async function request(path, options = {}) {
       const response = await fetch(path, { cache: "no-store", ...options });
@@ -179,7 +198,10 @@ def render_setup_page(csrf_token: str, script_nonce: str) -> str:
       const body = {
         provider,
         model: modelInput.value.trim() || "deepseek-v4-flash",
-        api_key: keyInput.value.trim() || null,
+        api_key: document.getElementById("no-auth").checked ? "" : (keyInput.value.trim() || null),
+        base_url: baseUrlInput.value.trim(),
+        protocol: protocolInput.value,
+        output_mode: outputModeInput.value,
         persist: persistInput.checked
       };
       const status = await request("/v1/gateway-config", {
@@ -187,23 +209,28 @@ def render_setup_page(csrf_token: str, script_nonce: str) -> str:
         headers: { "Content-Type": "application/json", "X-AIFarm-CSRF": csrfToken },
         body: JSON.stringify(body)
       });
-      keyInput.value = "";
       renderStatus(status);
       return status;
     }
+    async function probe() {
+      const result = await request("/v1/gateway-config/probe", {method:"POST",headers:{"X-AIFarm-CSRF":csrfToken}});
+      renderStatus(await request("/v1/gateway-config"));
+      const details = (result.checks || []).map(check => `${check.name}: ${check.ok ? "通过" : check.code}`).join("；");
+      show(`${result.message} ${details} ${result.endpoint || ""}`, result.ok ? "success" : "error");
+      if(result.ok) keyInput.value = "";
+      return result;
+    }
+    document.getElementById("show-key").addEventListener("click", () => {keyInput.type = keyInput.type === "password" ? "text" : "password";});
     form.addEventListener("submit", async event => {
       event.preventDefault(); setBusy(true);
-      try { await configure(providerInput.value); show("配置已生效，四名居民共用这一 Provider 与模型。", "success"); }
+      try { await configure(providerInput.value); await probe(); }
       catch (error) { show(error.message, "error"); }
       finally { setBusy(false); }
     });
     document.getElementById("probe").addEventListener("click", async () => {
-      setBusy(true); show("正在测试鉴权和模型可用性…");
+      setBusy(true); show("正在执行文本、居民决策、居民对话三项实际推理…");
       try {
-        const result = await request("/v1/gateway-config/probe", {
-          method: "POST", headers: { "X-AIFarm-CSRF": csrfToken }
-        });
-        show(result.message, result.ok ? "success" : "error");
+        await probe();
       } catch (error) { show(error.message, "error"); }
       finally { setBusy(false); }
     });

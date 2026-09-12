@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Reflection;
 using System.Text.RegularExpressions;
 using AIFarm.Ai;
+using AIFarm.Activities;
 using AIFarm.Core;
 using AIFarm.Farming;
 using AIFarm.Inventory;
@@ -103,6 +104,69 @@ namespace AIFarm.Tests.EditMode
             {
                 UnityEngine.Object.DestroyImmediate(inventoryConfig);
             }
+        }
+
+        [Test]
+        public void SaveLoad_PreservesFishFruitCompostAndExhaustedTree_WithoutDuplicatingHarvest()
+        {
+            TownActivityResources activities = bootstrap.Activities;
+            string tree = TownActivityResources.OrchardIds[0];
+            for (int index = 0; index < activities.Rules.fruitsPerTree; index++)
+            {
+                Assert.That(activities.TryReserve(tree, ResidentIds.Yaya).Succeeded, Is.True);
+                Assert.That(bootstrap.Simulation.Advance(activities.Rules.pickingGameSeconds /
+                    (bootstrap.Clock.GameSecondsPerRealSecond * bootstrap.Clock.TimeScale)).Succeeded, Is.True);
+                Assert.That(activities.TryPickFruit(tree, ResidentIds.Yaya).Succeeded, Is.True);
+            }
+            Assert.That(activities.TryReserve(TownActivityResources.FishingOneId, ResidentIds.Amu).Succeeded, Is.True);
+            Assert.That(bootstrap.Simulation.Advance(activities.Rules.fishingGameSeconds /
+                (bootstrap.Clock.GameSecondsPerRealSecond * bootstrap.Clock.TimeScale)).Succeeded, Is.True);
+            Assert.That(activities.TryFish(TownActivityResources.FishingOneId, ResidentIds.Amu).Succeeded, Is.True);
+            FarmPlot plot = bootstrap.Field.GetPlot(1);
+            Assert.That(plot.Sow(bootstrap.Inventory).Succeeded, Is.True);
+            Assert.That(plot.Water(bootstrap.Inventory).Succeeded, Is.True);
+            Assert.That(plot.Fertilize(bootstrap.Inventory).Succeeded, Is.True);
+            Assert.That(plot.IntroduceWeeds().Succeeded, Is.True);
+            Assert.That(plot.Weed(bootstrap.Inventory).Succeeded, Is.True);
+            Assert.That(plot.AdvanceGrowth(23).Succeeded, Is.True);
+            double remaining = activities.GetRegrowthRemaining(tree);
+            Assert.That(service.Save().Succeeded, Is.True);
+            Assert.That(bootstrap.Inventory.RestoreCounts(0, 0, 0, 0).Succeeded, Is.True);
+            activities.Reset();
+            Assert.That(service.Load().Succeeded, Is.True);
+            Assert.That(bootstrap.Inventory.GetCount(InventoryItem.Fish), Is.EqualTo(1));
+            Assert.That(bootstrap.Inventory.GetCount(InventoryItem.Fruit), Is.EqualTo(3));
+            Assert.That(bootstrap.Inventory.GetCount(InventoryItem.Compost), Is.EqualTo(1));
+            Assert.That(activities.GetFruitRemaining(tree), Is.Zero);
+            Assert.That(activities.GetRegrowthRemaining(tree), Is.EqualTo(remaining));
+            Assert.That(plot.GrowthProgress, Is.EqualTo(23));
+            Assert.That(plot.Harvest(bootstrap.Inventory).Failed, Is.True);
+            Assert.That(activities.TryFish(TownActivityResources.FishingOneId, ResidentIds.Amu).Failed, Is.True);
+        }
+
+        [TestCase(-1)]
+        [TestCase(3)]
+        [TestCase(4)]
+        public void Load_InvalidQuantityActivityProgressIsRejectedBeforeLiveMutation(int completed)
+        {
+            Assert.That(service.Save().Succeeded, Is.True);
+            SaveData data = JsonUtility.FromJson<SaveData>(storage.Json);
+            ResidentTaskSpec task = ResidentTaskSpec.Create(ResidentIds.Yaya, "Fish");
+            task.quantity = 3;
+            data.lifeTasks = new[] { new ResidentTaskSnapshot { residentId = ResidentIds.Yaya.Value,
+                hasTask = true, task = task, completedActivityCount = completed } };
+            storage.Json = JsonUtility.ToJson(data, true);
+            Assert.That(bootstrap.Field.GetPlot(1).Sow(bootstrap.Inventory).Succeeded, Is.True);
+            long revisionBeforeLoad = bootstrap.AuthoritativeStateRevision;
+            int seedsBeforeLoad = bootstrap.Inventory.GetCount(InventoryItem.CarrotSeed);
+
+            ActionResult result = service.Load();
+
+            Assert.That(result.Failed, Is.True);
+            Assert.That(result.Message, Does.Contain("activity progress"));
+            Assert.That(bootstrap.AuthoritativeStateRevision, Is.EqualTo(revisionBeforeLoad));
+            Assert.That(bootstrap.Field.GetPlot(1).State, Is.EqualTo(PlotState.Growing));
+            Assert.That(bootstrap.Inventory.GetCount(InventoryItem.CarrotSeed), Is.EqualTo(seedsBeforeLoad));
         }
 
         [Test]

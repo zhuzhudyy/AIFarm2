@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<test-run id="2" testcasecount="1" result="Passed" total="1" passed="1" failed="0" inconclusive="0" skipped="0" asserts="0" engine-version="3.5.0.0" clr-version="4.0.30319.42000" start-time="2026-09-12 12:18:46Z" end-time="2026-09-12 12:18:51Z" duration="5.6374129">
+  <test-suite type="TestSuite" id="1053" name="My project" fullname="My project" runstate="Runnable" testcasecount="36" result="Passed" start-time="2026-09-12 12:18:46Z" end-time="2026-09-12 12:18:51Z" duration="5.637413" total="1" passed="1" failed="0" inconclusive="0" skipped="0" asserts="0">
+    <properties>
+      <property name="platform" value="PlayMode" />
+    </properties>
+    <test-suite type="Assembly" id="1046" name="AIFarm.PlayModeTests.dll" fullname="C:/学习/研究生/Elys AI/面试模拟题/AIFarm/My project/Library/ScriptAssemblies/AIFarm.PlayModeTests.dll" runstate="Runnable" testcasecount="36" result="Passed" start-time="2026-09-12 12:18:46Z" end-time="2026-09-12 12:18:51Z" duration="5.627660" total="1" passed="1" failed="0" inconclusive="0" skipped="0" asserts="0">
+      <properties>
+        <property name="_PID" value="41612" />
+        <property name="_APPDOMAIN" value="Unity Child Domain" />
+        <property name="platform" value="PlayMode" />
+        <property name="EditorOnly" value="False" />
+      </properties>
+      <test-suite type="TestSuite" id="1047" name="AIFarm" fullname="AIFarm" runstate="Runnable" testcasecount="36" result="Passed" start-time="2026-09-12 12:18:46Z" end-time="2026-09-12 12:18:51Z" duration="5.626370" total="1" passed="1" failed="0" inconclusive="0" skipped="0" asserts="0">
+        <properties />
+        <test-suite type="TestSuite" id="1048" name="Tests" fullname="AIFarm.Tests" runstate="Runnable" testcasecount="36" result="Passed" start-time="2026-09-12 12:18:46Z" end-time="2026-09-12 12:18:51Z" duration="5.625215" total="1" passed="1" failed="0" inconclusive="0" skipped="0" asserts="0">
+          <properties />
+          <test-suite type="TestSuite" id="1049" name="PlayMode" fullname="AIFarm.Tests.PlayMode" runstate="Runnable" testcasecount="36" result="Passed" start-time="2026-09-12 12:18:46Z" end-time="2026-09-12 12:18:51Z" duration="5.624169" total="1" passed="1" failed="0" inconclusive="0" skipped="0" asserts="0">
+            <properties />
+            <test-suite type="TestFixture" id="1037" name="TownLifeIntegrationPlayModeTests" fullname="AIFarm.Tests.PlayMode.TownLifeIntegrationPlayModeTests" classname="AIFarm.Tests.PlayMode.TownLifeIntegrationPlayModeTests" runstate="Runnable" testcasecount="8" result="Passed" start-time="2026-09-12 12:18:46Z" end-time="2026-09-12 12:18:51Z" duration="5.622639" total="1" passed="1" failed="0" inconclusive="0" skipped="0" asserts="0">
+              <properties />
+              <test-case id="1044" name="ResidentLeavingAfterConversationArrivalReleasesBothParticipantsImmediately" fullname="AIFarm.Tests.PlayMode.TownLifeIntegrationPlayModeTests.ResidentLeavingAfterConversationArrivalReleasesBothParticipantsImmediately" methodname="ResidentLeavingAfterConversationArrivalReleasesBothParticipantsImmediately" classname="AIFarm.Tests.PlayMode.TownLifeIntegrationPlayModeTests" runstate="Runnable" seed="1259592645" result="Passed" start-time="2026-09-12 12:18:46Z" end-time="2026-09-12 12:18:51Z" duration="5.610410" asserts="0">
+                <properties>
+                  <property name="_JOINTYPE" value="UnityCombinatorial" />
+                  <property name="retryIteration" value="0" />
+                  <property name="repeatIteration" value="0" />
+                </properties>
+                <output><![CDATA[Conversation script ready residentId=resident-001 participants=resident-001,resident-002 provider=local lines=4
+Saving results to: C:\学习\研究生\Elys AI\面试模拟题\AIFarm\Docs\Verification\Unity-PlayMode-20260912-121845-999.xml
+]]></output>
+              </test-case>
+            </test-suite>
+          </test-suite>
+        </test-suite>
+      </test-suite>
+    </test-suite>
+  </test-suite>
+</test-run>

@@ -352,6 +352,14 @@ namespace AIFarm.Presentation
 
         public ActionResult SubmitCommand(string command)
         {
+            if (bootstrap != null && bootstrap.IsInitialized && bootstrap.LifeControllers.Count > 0)
+            {
+                ResidentId owner = SelectedResidentId;
+                ActionResult submitted = bootstrap.SubmitResidentCommand(owner, command);
+                if (submitted.Succeeded) CompleteSuccessfulSubmission();
+                else SetSubmissionFailure(submitted);
+                return submitted;
+            }
             ReplanController selectedReplanner = SelectedReplanner;
             NpcPlanExecutor selectedExecutor = SelectedExecutor;
             if (selectedReplanner != null)
@@ -492,6 +500,12 @@ namespace AIFarm.Presentation
 
         public ActionResult OpenApiSettings()
         {
+            ApiGatewaySetupPanel panel = GetComponent<ApiGatewaySetupPanel>();
+            if (panel != null)
+            {
+                panel.Show();
+                return ActionResult.Success("游戏内模型设置已展开。");
+            }
             if (!TryBuildLocalApiSettingsUrl(
                 bootstrap?.SceneConfig?.AiGatewayBaseUrl,
                 out string settingsUrl))
@@ -556,6 +570,15 @@ namespace AIFarm.Presentation
             NpcPlanExecutor selectedExecutor = SelectedExecutor;
             if (actionText == null)
             {
+                return;
+            }
+
+            if (bootstrap != null && bootstrap.LifeControllers.TryGetValue(SelectedResidentId, out TownLifeController life))
+            {
+                actionText.text = $"{SelectedResidentDisplayName}：{life.CurrentAction}";
+                if (goalText != null) goalText.text = "任务：" + life.TaskState;
+                if (expressionText != null) expressionText.text = "决策来源：" + life.ExecutionSource;
+                if (actionReasonText != null) actionReasonText.text = string.IsNullOrEmpty(life.LastError) ? life.TaskState : life.LastError;
                 return;
             }
 
@@ -624,7 +647,8 @@ namespace AIFarm.Presentation
                 AiGatewayMode mode = selectedReplanner != null
                     ? selectedReplanner.CurrentAiMode
                     : bootstrap?.SceneConfig?.AiGatewayMode ?? AiGatewayMode.Local;
-                aiModeText.text = $"AI: {mode.ToString().ToUpperInvariant()}";
+                GatewayConnectionController gateway = FindFirstObjectByType<GatewayConnectionController>();
+                aiModeText.text = gateway == null ? "AI：未配置" : "AI：" + gateway.StateLabel;
             }
 
             if (selectedReplanner == null)
@@ -929,7 +953,8 @@ namespace AIFarm.Presentation
 
         private void RefreshCommandAvailability()
         {
-            bool canSubmitPlayerCommand = !residentSelectionFailed && SelectedExecutor != null;
+            bool canSubmitPlayerCommand = !residentSelectionFailed && (SelectedExecutor != null ||
+                (bootstrap != null && bootstrap.LifeControllers.ContainsKey(SelectedResidentId)));
             if (submitButton != null)
             {
                 submitButton.interactable = canSubmitPlayerCommand;

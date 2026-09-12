@@ -86,8 +86,7 @@ ModelIdText = Annotated[
     StringConstraints(
         strip_whitespace=True,
         min_length=1,
-        max_length=128,
-        pattern=r"^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
+        max_length=256,
     ),
 ]
 GatewayInstanceIdText = Annotated[
@@ -155,9 +154,21 @@ ExpressionTriggerValue = Literal[
 ]
 ReflectionOutcomeValue = Literal["InProgress", "Completed", "Failed"]
 ProviderName = Literal["mock", "openai"]
+ProtocolName = Literal["chat_completions", "responses", "anthropic", "gemini"]
 
 
-class FarmGoalSpec(StrictSchema):
+class ExecutionSpec(StrictSchema):
+    """Gateway-owned metadata; the upstream is never trusted to populate it."""
+
+    config_version: StrictInt = 0
+    request_id: str = ""
+    model: str = ""
+    execution_source: Literal["remote", "local", "fallback"] = "local"
+    error_code: str = ""
+    error_message: str = ""
+
+
+class FarmGoalSpec(ExecutionSpec):
     goal_id: Literal["full_field_carrot_lifecycle"]
     crop: Literal["carrot"]
     target_plot_numbers: list[StrictInt]
@@ -177,7 +188,7 @@ class FarmGoalSpec(StrictSchema):
         return value
 
 
-class UtteranceSpec(StrictSchema):
+class UtteranceSpec(ExecutionSpec):
     trigger: NpcExpressionTrigger
     mood: NpcMood
     emoji: EmojiText
@@ -185,7 +196,7 @@ class UtteranceSpec(StrictSchema):
     provider: ProviderName
 
 
-class ReflectionSpec(StrictSchema):
+class ReflectionSpec(ExecutionSpec):
     goal_id: Literal["full_field_carrot_lifecycle"]
     outcome: ReflectionOutcome
     mood: NpcMood
@@ -304,7 +315,7 @@ class ResidentDecisionRequest(StrictSchema):
         return self
 
 
-class ResidentDecisionSpec(StrictSchema):
+class ResidentDecisionSpec(ExecutionSpec):
     resident_id: ResidentIdText
     intent: IntentText
     target_resident_id: ResidentIdText | None
@@ -363,7 +374,7 @@ class ConversationScriptRequest(StrictSchema):
         return self
 
 
-class ConversationScriptSpec(StrictSchema):
+class ConversationScriptSpec(ExecutionSpec):
     resident_id: ResidentIdText
     lines: Annotated[
         list[ConversationLineSpec],
@@ -386,7 +397,7 @@ class ResidentReflectionRequest(StrictSchema):
         return self
 
 
-class ResidentReflectionSpec(StrictSchema):
+class ResidentReflectionSpec(ExecutionSpec):
     resident_id: ResidentIdText
     outcome: ReflectionOutcome
     mood: NpcMood
@@ -398,6 +409,48 @@ class ResidentReflectionSpec(StrictSchema):
 class InterpretCommandRequest(StrictSchema):
     resident_id: ResidentIdText
     command: CommandText
+
+
+TaskType = Literal[
+    "Move", "Sow", "Water", "Fertilize", "Weed", "Harvest", "TendFarm",
+    "Fish", "PickFruit", "Chat", "Stop",
+]
+
+
+class ResidentTaskRequest(InterpretCommandRequest):
+    allowed_target_ids: list[LabelText] = Field(default_factory=list)
+    allowed_target_resident_ids: list[ResidentIdText] = Field(default_factory=list)
+
+
+class ResidentTaskSpec(ExecutionSpec):
+    resident_id: ResidentIdText
+    task_id: str
+    task_type: TaskType
+    target_id: str = ""
+    target_resident_id: ResidentIdText | None = None
+    target_plot_numbers: list[Annotated[StrictInt, Field(ge=1, le=9)]] = Field(default_factory=list)
+    crop: Literal["carrot"] = "carrot"
+    repeat: StrictBool = False
+    quantity: Annotated[StrictInt, Field(ge=1, le=99)] = 1
+    summary: ShortText
+    provider: ProviderName
+
+    @field_validator("target_plot_numbers")
+    @classmethod
+    def unique_plots(cls, value: list[int]) -> list[int]:
+        if len(set(value)) != len(value):
+            raise ValueError("target_plot_numbers must be unique")
+        return value
+
+    @model_validator(mode="after")
+    def require_supported_task_parameters(self) -> Self:
+        if self.task_type == "Chat" and (self.repeat or self.quantity > 1):
+            raise ValueError("Chat supports one bounded conversation; repeat and quantity > 1 are unsupported")
+        if self.task_type in {"Sow", "Water", "Fertilize", "Weed", "Harvest", "TendFarm"} and self.quantity > 1:
+            raise ValueError("Farm tasks support one operation or repeat care, not quantity > 1")
+        if self.target_resident_id == self.resident_id:
+            raise ValueError("A conversation target must differ from the executing resident")
+        return self
 
 
 class GenerateUtteranceRequest(StrictSchema):
@@ -425,6 +478,9 @@ class GatewayConfigureRequest(StrictSchema):
     model: ModelIdText = "deepseek-v4-flash"
     api_key: ApiKeySecret | None = None
     persist: StrictBool = True
+    base_url: Annotated[StrictStr, StringConstraints(strip_whitespace=True, max_length=2048)] = "https://api.deepseek.com"
+    protocol: ProtocolName = "chat_completions"
+    output_mode: Literal["text", "json", "schema"] = "text"
 
 
 class GatewayConfigSpec(StrictSchema):
@@ -435,20 +491,29 @@ class GatewayConfigSpec(StrictSchema):
     persisted: StrictBool
     source: Literal["environment", "local_config", "runtime", "injected"]
     instance_id: GatewayInstanceIdText | None = None
+    base_url: str = ""
+    protocol: ProtocolName = "chat_completions"
+    output_mode: Literal["text", "json", "schema"] = "text"
+    endpoint: str = ""
+    config_version: StrictInt = 1
+    upstream_status: Literal["unconfigured", "connecting", "online", "degraded", "error"] = "unconfigured"
+    last_error_code: str = ""
+    last_error: str = ""
+
+
+class ProbeCheckSpec(StrictSchema):
+    name: Literal["text", "resident_decision", "conversation"]
+    ok: StrictBool
+    code: str
+    message: str
 
 
 class GatewayProbeSpec(StrictSchema):
     ok: StrictBool
     provider: ProviderName
     model: ModelIdText | None
-    code: Literal[
-        "ok",
-        "offline",
-        "authentication_failed",
-        "timeout",
-        "connection_failed",
-        "rate_limited",
-        "model_not_found",
-        "upstream_error",
-    ]
+    code: str
     message: ShortText
+    endpoint: str = ""
+    config_version: StrictInt = 1
+    checks: list[ProbeCheckSpec] = Field(default_factory=list)

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using AIFarm.Core;
+using AIFarm.Activities;
 using AIFarm.Npc;
 using UnityEngine;
 
@@ -12,7 +13,8 @@ namespace AIFarm.Presentation
         public const int LegacySingleResidentVersion = 1;
         public const int LegacyMultiResidentVersion = 2;
         public const int LegacyProvenanceVersion = 3;
-        public const int CurrentVersion = 4;
+        public const int LegacyRecoveryVersion = 4;
+        public const int CurrentVersion = 5;
 
         public int version = CurrentVersion;
         public string savedAtUtc = string.Empty;
@@ -22,6 +24,8 @@ namespace AIFarm.Presentation
         public SimulationSaveData simulation = new SimulationSaveData();
         public ResidentSaveData[] residents = Array.Empty<ResidentSaveData>();
         public RelationshipSaveData[] relationships = Array.Empty<RelationshipSaveData>();
+        public ActivityResourceSnapshot[] activities = Array.Empty<ActivityResourceSnapshot>();
+        public ResidentTaskSnapshot[] lifeTasks = Array.Empty<ResidentTaskSnapshot>();
     }
 
     [Serializable]
@@ -87,7 +91,8 @@ namespace AIFarm.Presentation
                 }
 
                 if (header.version == SaveData.LegacyMultiResidentVersion ||
-                    header.version == SaveData.LegacyProvenanceVersion)
+                    header.version == SaveData.LegacyProvenanceVersion ||
+                    header.version == SaveData.LegacyRecoveryVersion)
                 {
                     data = JsonUtility.FromJson<SaveData>(json);
                     if (data == null)
@@ -114,7 +119,7 @@ namespace AIFarm.Presentation
                         $"Unsupported save version {header.version}; expected " +
                         $"{SaveData.LegacySingleResidentVersion}, " +
                         $"{SaveData.LegacyMultiResidentVersion}, " +
-                        $"{SaveData.LegacyProvenanceVersion}, or {SaveData.CurrentVersion}.");
+                        $"{SaveData.LegacyProvenanceVersion}, {SaveData.LegacyRecoveryVersion}, or {SaveData.CurrentVersion}.");
                 }
 
                 LegacySaveDataV1 legacy = JsonUtility.FromJson<LegacySaveDataV1>(json);
@@ -404,6 +409,9 @@ namespace AIFarm.Presentation
         public int water;
         public int fertilizer;
         public int carrots;
+        public int fish;
+        public int fruit;
+        public int compost;
     }
 
     [Serializable]

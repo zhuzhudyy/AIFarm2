@@ -15,6 +15,53 @@ namespace AIFarm.Presentation
         public const int MaximumEventSummaryLength = 240;
         public const int MaximumResponseLength = 16 * 1024;
 
+        [Serializable]
+        private sealed class TaskRequestDto
+        {
+            public string resident_id;
+            public string command;
+            public string[] allowed_target_ids;
+            public string[] allowed_target_resident_ids;
+        }
+
+        [Serializable]
+        private sealed class ExecutionMetadata
+        {
+            public string provider;
+            public string error_message;
+            public string execution_source;
+        }
+
+        public static AiGatewayMode ResponseSource(string json)
+        {
+            if (!TryDeserialize(json, out ExecutionMetadata metadata)) return AiGatewayMode.Local;
+            return metadata.execution_source == "fallback" || metadata.execution_source == "local" ||
+                metadata.provider == "mock" || metadata.provider == "local" ||
+                metadata.provider == "fallback" ? AiGatewayMode.Local : AiGatewayMode.Remote;
+        }
+
+        public static string ResponseError(string json)
+        {
+            return TryDeserialize(json, out ExecutionMetadata metadata) ? metadata.error_message ?? "" : "";
+        }
+
+        public static string SerializeResidentTask(ResidentId owner, string command, string[] targets, string[] residents)
+        {
+            return JsonUtility.ToJson(new TaskRequestDto { resident_id = owner.Value, command = command,
+                allowed_target_ids = targets, allowed_target_resident_ids = residents });
+        }
+
+        public static ActionResult TryParseResidentTask(string json, ResidentId owner, out ResidentTaskSpec task)
+        {
+            task = null;
+            if (!HasExactTopLevelProperties(json, "resident_id", "task_id", "task_type", "target_id",
+                "target_resident_id", "target_plot_numbers", "crop", "repeat", "quantity", "summary", "provider"))
+                return InvalidResponse("居民任务包含缺失、重复或未经允许的字段。");
+            if (!TryDeserialize(json, out task)) return InvalidResponse("居民任务不是合法 JSON。");
+            if (task.error_code == "stale_configuration") return InvalidResponse("配置已更新，忽略旧配置的任务响应。");
+            return task.Validate(owner);
+        }
+
         public static string SerializeInterpretCommandRequest(string command)
         {
             return SerializeInterpretCommandRequest(ResidentIds.Yaya, command);
@@ -91,7 +138,7 @@ namespace AIFarm.Presentation
                 throw new ArgumentNullException(nameof(request));
             }
 
-            return JsonUtility.ToJson(ConversationScriptRequestDto.FromRequest(request));
+            return NormalizeNullableContextFields(JsonUtility.ToJson(ConversationScriptRequestDto.FromRequest(request)));
         }
 
         public static string SerializeResidentDecisionRequest(
@@ -102,7 +149,16 @@ namespace AIFarm.Presentation
                 throw new ArgumentNullException(nameof(request));
             }
 
-            return JsonUtility.ToJson(ResidentDecisionRequestDto.FromRequest(request));
+            return NormalizeNullableContextFields(JsonUtility.ToJson(ResidentDecisionRequestDto.FromRequest(request)));
+        }
+
+        private static string NormalizeNullableContextFields(string json)
+        {
+            // JsonUtility serializes null string fields as "". These three schema fields are
+            // optional identifiers, so missing provenance must be JSON null, not an invalid ID.
+            foreach (string property in new[] { "knowledge_id", "root_fact_id", "immediate_source_resident_id" })
+                json = json.Replace("\"" + property + "\":\"\"", "\"" + property + "\":null");
+            return json;
         }
 
         public static ActionResult TryParseFarmGoal(
@@ -443,6 +499,8 @@ namespace AIFarm.Presentation
             }
 
             var remaining = new HashSet<string>(expectedProperties, StringComparer.Ordinal);
+            var optional = new HashSet<string>(new[] { "config_version", "request_id", "model", "error_code", "error_message", "execution_source", "provider" }, StringComparer.Ordinal);
+            var seen = new HashSet<string>(StringComparer.Ordinal);
             int index = 0;
             SkipWhitespace(json, ref index);
             if (!Consume(json, ref index, '{'))
@@ -460,7 +518,7 @@ namespace AIFarm.Presentation
             while (index < json.Length)
             {
                 if (!TryReadPropertyName(json, ref index, out string propertyName) ||
-                    !remaining.Remove(propertyName))
+                    !seen.Add(propertyName) || (!remaining.Remove(propertyName) && !optional.Contains(propertyName)))
                 {
                     return false;
                 }
@@ -769,7 +827,8 @@ namespace AIFarm.Presentation
 
         private static bool IsProvider(string provider)
         {
-            return provider == "mock" || provider == "openai";
+            return provider == "mock" || provider == "local" || provider == "openai" ||
+                provider == "chat_completions" || provider == "responses" || provider == "anthropic" || provider == "gemini";
         }
 
         private static bool IsBoundedText(string value, int minimumLength, int maximumLength)

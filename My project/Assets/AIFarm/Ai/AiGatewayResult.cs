@@ -34,6 +34,14 @@ namespace AIFarm.Ai
 
         public AiGatewayMode Source { get; }
 
+        public string DiagnosticError { get; private set; } = string.Empty;
+
+        public AiGatewayResult<T> WithDiagnosticError(string error)
+        {
+            DiagnosticError = error ?? string.Empty;
+            return this;
+        }
+
         public bool Succeeded => Outcome.Succeeded && Value != null;
 
         public bool Failed => !Succeeded;

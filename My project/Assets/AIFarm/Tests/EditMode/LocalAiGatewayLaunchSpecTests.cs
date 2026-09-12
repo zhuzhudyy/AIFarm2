@@ -1,5 +1,8 @@
 using AIFarm.Core;
 using AIFarm.Presentation;
+using System;
+using System.Diagnostics;
+using System.Reflection;
 using NUnit.Framework;
 
 namespace AIFarm.Tests.EditMode
@@ -39,6 +42,17 @@ namespace AIFarm.Tests.EditMode
 
         [TestCase("")]
         [TestCase("   ")]
+        public void EmptyApiKey_AllowsUnauthenticatedLocalModel(string apiKey)
+        {
+            ActionResult result = LocalAiGatewayLaunchSpec.TryCreate(
+                apiKey, "local/model alias", "http://127.0.0.1:8000", "python", "Server",
+                out LocalAiGatewayLaunchSpec spec);
+
+            Assert.That(result.Succeeded, Is.True, result.Message);
+            Assert.That(spec.HasApiKey, Is.False);
+            Assert.That(spec.ModelId, Is.EqualTo("local/model alias"));
+        }
+
         [TestCase("line1\nline2")]
         [TestCase("tab\tkey")]
         public void InvalidApiKey_IsRejectedWithoutDisclosingIt(string apiKey)
@@ -79,10 +93,24 @@ namespace AIFarm.Tests.EditMode
         }
 
         [TestCase("")]
+        [TestCase("model\nname")]
+        [TestCase("model\tname")]
+        public void InvalidModelId_IsRejectedBeforeLaunch(string modelId)
+        {
+            ActionResult result = LocalAiGatewayLaunchSpec.TryCreate(
+                SecretMarker, modelId, "http://127.0.0.1:8000", "python", "Server",
+                out LocalAiGatewayLaunchSpec spec);
+
+            Assert.That(result.Failed, Is.True);
+            Assert.That(result.FailureReason, Is.EqualTo(ActionFailureReason.InvalidArgument));
+            Assert.That(result.Message, Does.Not.Contain(SecretMarker));
+            Assert.That(spec, Is.Null);
+        }
+
         [TestCase("bad model")]
         [TestCase("deepseek-v4-flash;calc.exe")]
         [TestCase("-starts-with-a-separator")]
-        public void InvalidModelId_IsRejectedBeforeLaunch(string modelId)
+        public void FreeModelAliases_AreAcceptedWithoutEnteringShellArguments(string modelId)
         {
             ActionResult result = LocalAiGatewayLaunchSpec.TryCreate(
                 SecretMarker,
@@ -92,10 +120,11 @@ namespace AIFarm.Tests.EditMode
                 "Server",
                 out LocalAiGatewayLaunchSpec spec);
 
-            Assert.That(result.Failed, Is.True);
-            Assert.That(result.FailureReason, Is.EqualTo(ActionFailureReason.InvalidArgument));
+            Assert.That(result.Succeeded, Is.True, result.Message);
+            Assert.That(spec.ModelId, Is.EqualTo(modelId));
+            Assert.That(spec.SafeArguments, Does.Not.Contain(modelId));
             Assert.That(result.Message, Does.Not.Contain(SecretMarker));
-            Assert.That(spec, Is.Null);
+            Assert.That(spec, Is.Not.Null);
         }
 
         [Test]
@@ -163,6 +192,29 @@ namespace AIFarm.Tests.EditMode
             Assert.That(spec.SafeArguments, Does.Not.Contain(pythonPath));
             Assert.That(spec.SafeArguments, Does.Not.Contain(serverPath));
             Assert.That(spec.SafeArguments, Does.Not.Contain(SecretMarker));
+        }
+
+        [Test]
+        public void OwnedTreeTermination_UsesOnlyExactPidAndHiddenBoundedHelper()
+        {
+            Type handleType = typeof(SystemLocalAiGatewayProcessLauncher).GetNestedType(
+                "SystemLocalAiGatewayProcessHandle", BindingFlags.NonPublic);
+            MethodInfo factory = handleType.GetMethod(
+                "CreateWindowsTreeTerminationStartInfo", BindingFlags.Static | BindingFlags.NonPublic);
+            var startInfo = (ProcessStartInfo)factory.Invoke(null, new object[] { 12345 });
+
+            Assert.That(startInfo.Arguments, Is.EqualTo("/PID 12345 /T /F"));
+            Assert.That(startInfo.FileName, Does.EndWith("taskkill.exe"));
+            Assert.That(startInfo.Arguments, Does.Not.Contain("/IM"));
+            Assert.That(startInfo.Arguments, Does.Not.Contain("python"));
+            Assert.That(startInfo.Arguments, Does.Not.Contain("8000"));
+            Assert.That(startInfo.UseShellExecute, Is.False);
+            Assert.That(startInfo.CreateNoWindow, Is.True);
+            Assert.That(startInfo.WindowStyle, Is.EqualTo(ProcessWindowStyle.Hidden));
+            Assert.That(startInfo.RedirectStandardOutput, Is.True);
+            Assert.That(startInfo.RedirectStandardError, Is.True);
+            Assert.That((int)handleType.GetField("TreeTerminationTimeoutMilliseconds",
+                BindingFlags.Static | BindingFlags.NonPublic).GetRawConstantValue(), Is.EqualTo(2000));
         }
     }
 }

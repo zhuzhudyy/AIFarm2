@@ -1,0 +1,1541 @@
+{
+    "version": 5,
+    "savedAtUtc": "2026-09-12T13:04:32.9212519Z",
+    "clock": {
+        "elapsedGameSeconds": 311640.0,
+        "timeScale": 1.0,
+        "isPaused": false
+    },
+    "plots": [
+        {
+            "plotNumber": 1,
+            "state": 1,
+            "hasCrop": true,
+            "crop": 0,
+            "waterLevel": 2,
+            "isFertilized": true,
+            "hasWeeds": false,
+            "hasBeenWeeded": false,
+            "growthProgress": 0
+        },
+        {
+            "plotNumber": 2,
+            "state": 1,
+            "hasCrop": true,
+            "crop": 0,
+            "waterLevel": 2,
+            "isFertilized": true,
+            "hasWeeds": false,
+            "hasBeenWeeded": false,
+            "growthProgress": 0
+        },
+        {
+            "plotNumber": 3,
+            "state": 1,
+            "hasCrop": true,
+            "crop": 0,
+            "waterLevel": 2,
+            "isFertilized": false,
+            "hasWeeds": false,
+            "hasBeenWeeded": false,
+            "growthProgress": 0
+        },
+        {
+            "plotNumber": 4,
+            "state": 0,
+            "hasCrop": false,
+            "crop": 0,
+            "waterLevel": 0,
+            "isFertilized": false,
+            "hasWeeds": false,
+            "hasBeenWeeded": false,
+            "growthProgress": 0
+        },
+        {
+            "plotNumber": 5,
+            "state": 0,
+            "hasCrop": false,
+            "crop": 0,
+            "waterLevel": 0,
+            "isFertilized": false,
+            "hasWeeds": false,
+            "hasBeenWeeded": false,
+            "growthProgress": 0
+        },
+        {
+            "plotNumber": 6,
+            "state": 0,
+            "hasCrop": false,
+            "crop": 0,
+            "waterLevel": 0,
+            "isFertilized": false,
+            "hasWeeds": false,
+            "hasBeenWeeded": false,
+            "growthProgress": 0
+        },
+        {
+            "plotNumber": 7,
+            "state": 0,
+            "hasCrop": false,
+            "crop": 0,
+            "waterLevel": 0,
+            "isFertilized": false,
+            "hasWeeds": false,
+            "hasBeenWeeded": false,
+            "growthProgress": 0
+        },
+        {
+            "plotNumber": 8,
+            "state": 0,
+            "hasCrop": false,
+            "crop": 0,
+            "waterLevel": 0,
+            "isFertilized": false,
+            "hasWeeds": false,
+            "hasBeenWeeded": false,
+            "growthProgress": 0
+        },
+        {
+            "plotNumber": 9,
+            "state": 1,
+            "hasCrop": true,
+            "crop": 0,
+            "waterLevel": 2,
+            "isFertilized": true,
+            "hasWeeds": false,
+            "hasBeenWeeded": true,
+            "growthProgress": 1
+        }
+    ],
+    "inventory": {
+        "carrotSeeds": 5,
+        "water": 5,
+        "fertilizer": 6,
+        "carrots": 9,
+        "fish": 0,
+        "fruit": 0,
+        "compost": 1
+    },
+    "simulation": {
+        "waterDecayEventCount": 54,
+        "weedEventCount": 10,
+        "waterElapsed": [
+            13860.0,
+            9030.0,
+            3720.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            19320.0
+        ],
+        "weedElapsed": [
+            11940.0,
+            7350.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            14400.0
+        ],
+        "growthElapsed": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            1740.0
+        ],
+        "waterHasDecayed": [
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false
+        ]
+    },
+    "residents": [
+        {
+            "residentId": "resident-001",
+            "displayName": "芽芽",
+            "npc": {
+                "hasSceneTransform": true,
+                "positionX": 0.8250000476837158,
+                "positionY": -0.019999980926513673,
+                "positionZ": -4.699999809265137,
+                "rotationX": 0.0,
+                "rotationY": 0.968559741973877,
+                "rotationZ": 0.0,
+                "rotationW": -0.24878112971782685,
+                "executorStatus": 3,
+                "replanStatus": 0,
+                "currentMood": 1,
+                "currentEmoji": "🌱",
+                "currentExpression": "种子准备好了，我开始播种。",
+                "currentGoalText": "Idle",
+                "currentDecisionReason": "",
+                "lastFailureReason": "",
+                "activeCycleNumber": 0,
+                "harvestedPlotNumbers": []
+            },
+            "hasFarmGoal": false,
+            "farmGoal": {
+                "goalId": "",
+                "crop": 0,
+                "targetPlotNumbers": [],
+                "requiresSowing": false,
+                "requiresWatering": false,
+                "requiresFertilizing": false,
+                "requiresWeeding": false,
+                "requiresHarvesting": false,
+                "summary": ""
+            },
+            "executor": {
+                "hasCurrentAction": false,
+                "currentAction": {
+                    "kind": "",
+                    "plotNumber": 0,
+                    "durationSeconds": 0.0
+                },
+                "remainingActions": []
+            },
+            "recentMemories": [
+                {
+                    "ownerResidentId": "resident-001",
+                    "sequence": 27,
+                    "gameSeconds": 45270.0,
+                    "kind": 0,
+                    "text": "我发现09 号地长出了杂草，得尽快清理。",
+                    "importance": 9,
+                    "hasSourceEventKind": true,
+                    "sourceEventKind": 7,
+                    "sourceKind": 1,
+                    "sourceEventId": "world-event:12e97fbefc23498b81ad7eb8685126d9:000000000033",
+                    "knowledgeId": "knowledge:resident-001:000000000027",
+                    "rootFactId": "world-event:12e97fbefc23498b81ad7eb8685126d9:000000000033",
+                    "parentKnowledgeId": "",
+                    "immediateSourceResidentId": "",
+                    "tags": [
+                        "farm",
+                        "weeds",
+                        "plot-09",
+                        "weedsappeared"
+                    ],
+                    "isShareable": true
+                },
+                {
+                    "ownerResidentId": "resident-001",
+                    "sequence": 36,
+                    "gameSeconds": 49050.0,
+                    "kind": 0,
+                    "text": "我发现01 号地长出了杂草，得尽快清理。",
+                    "importance": 9,
+                    "hasSourceEventKind": true,
+                    "sourceEventKind": 7,
+                    "sourceKind": 1,
+                    "sourceEventId": "world-event:12e97fbefc23498b81ad7eb8685126d9:000000000042",
+                    "knowledgeId": "knowledge:resident-001:000000000036",
+                    "rootFactId": "world-event:12e97fbefc23498b81ad7eb8685126d9:000000000042",
+                    "parentKnowledgeId": "",
+                    "immediateSourceResidentId": "",
+                    "tags": [
+                        "farm",
+                        "weeds",
+                        "plot-01",
+                        "weedsappeared"
+                    ],
+                    "isShareable": true
+                },
+                {
+                    "ownerResidentId": "resident-001",
+                    "sequence": 41,
+                    "gameSeconds": 52560.0,
+                    "kind": 0,
+                    "text": "我发现02 号地长出了杂草，得尽快清理。",
+                    "importance": 9,
+                    "hasSourceEventKind": true,
+                    "sourceEventKind": 7,
+                    "sourceKind": 1,
+                    "sourceEventId": "world-event:12e97fbefc23498b81ad7eb8685126d9:000000000047",
+                    "knowledgeId": "knowledge:resident-001:000000000041",
+                    "rootFactId": "world-event:12e97fbefc23498b81ad7eb8685126d9:000000000047",
+                    "parentKnowledgeId": "",
+                    "immediateSourceResidentId": "",
+                    "tags": [
+                        "farm",
+                        "weeds",
+                        "plot-02",
+                        "weedsappeared"
+                    ],
+                    "isShareable": true
+                },
+                {
+                    "ownerResidentId": "resident-001",
+                    "sequence": 48,
+                    "gameSeconds": 56730.0,
+                    "kind": 0,
+                    "text": "我发现03 号地长出了杂草，得尽快清理。",
+                    "importance": 9,
+                    "hasSourceEventKind": true,
+                    "sourceEventKind": 7,
+                    "sourceKind": 1,
+                    "sourceEventId": "world-event:12e97fbefc23498b81ad7eb8685126d9:000000000054",
+                    "knowledgeId": "knowledge:resident-001:000000000048",
+                    "rootFactId": "world-event:12e97fbefc23498b81ad7eb8685126d9:000000000054",
+                    "parentKnowledgeId": "",
+                    "immediateSourceResidentId": "",
+                    "tags": [
+                        "farm",
+                        "weeds",
+                        "plot-03",
+                        "weedsappeared"
+                    ],
+                    "isShareable": true
+                },
+                {
+                    "ownerResidentId": "resident-001",
+                    "sequence": 58,
+                    "gameSeconds": 61350.0,
+                    "kind": 0,
+                    "text": "我发现04 号地长出了杂草，得尽快清理。",
+                    "importance": 9,
+                    "hasSourceEventKind": true,
+                    "sourceEventKind": 7,
+                    "sourceKind": 1,
+                    "sourceEventId": "world-event:12e97fbefc23498b81ad7eb8685126d9:000000000064",
+                    "knowledgeId": "knowledge:resident-001:000000000058",
+                    "rootFactId": "world-event:12e97fbefc23498b81ad7eb8685126d9:000000000064",
+                    "parentKnowledgeId": "",
+                    "immediateSourceResidentId": "",
+                    "tags": [
+                        "farm",
+                        "weeds",
+                        "plot-04",
+                        "weedsappeared"
+                    ],
+                    "isShareable": true
+                },
+                {
+                    "ownerResidentId": "resident-001",
+                    "sequence": 75,
+                    "gameSeconds": 75870.0,
+                    "kind": 0,
+                    "text": "我发现05 号地长出了杂草，得尽快清理。",
+                    "importance": 9,
+                    "hasSourceEventKind": true,
+                    "sourceEventKind": 7,
+                    "sourceKind": 1,
+                    "sourceEventId": "world-event:12e97fbefc23498b81ad7eb8685126d9:000000000081",
+                    "knowledgeId": "knowledge:resident-001:000000000075",
+                    "rootFactId": "world-event:12e97fbefc23498b81ad7eb8685126d9:000000000081",
+                    "parentKnowledgeId": "",
+                    "immediateSourceResidentId": "",
+                    "tags": [
+                        "farm",
+                        "weeds",
+                        "plot-05",
+                        "weedsappeared"
+                    ],
+                    "isShareable": true
+                },
+                {
+                    "ownerResidentId": "resident-001",
+                    "sequence": 76,
+                    "gameSeconds": 75870.0,
+                    "kind": 0,
+                    "text": "我发现06 号地长出了杂草，得尽快清理。",
+                    "importance": 9,
+                    "hasSourceEventKind": true,
+                    "sourceEventKind": 7,
+                    "sourceKind": 1,
+                    "sourceEventId": "world-event:12e97fbefc23498b81ad7eb8685126d9:000000000082",
+                    "knowledgeId": "knowledge:resident-001:000000000076",
+                    "rootFactId": "world-event:12e97fbefc23498b81ad7eb8685126d9:000000000082",
+                    "parentKnowledgeId": "",
+                    "immediateSourceResidentId": "",
+                    "tags": [
+                        "farm",
+                        "weeds",
+                        "plot-06",
+                        "weedsappeared"
+                    ],
+                    "isShareable": true
+                },
+                {
+                    "ownerResidentId": "resident-001",
+                    "sequence": 83,
+                    "gameSeconds": 85920.0,
+                    "kind": 0,
+                    "text": "我发现07 号地长出了杂草，得尽快清理。",
+                    "importance": 9,
+                    "hasSourceEventKind": true,
+                    "sourceEventKind": 7,
+                    "sourceKind": 1,
+                    "sourceEventId": "world-event:12e97fbefc23498b81ad7eb8685126d9:000000000089",
+                    "knowledgeId": "knowledge:resident-001:000000000083",
+                    "rootFactId": "world-event:12e97fbefc23498b81ad7eb8685126d9:000000000089",
+                    "parentKnowledgeId": "",
+                    "immediateSourceResidentId": "",
+                    "tags": [
+                        "farm",
+                        "weeds",
+                        "plot-07",
+                        "weedsappeared"
+                    ],
+                    "isShareable": true
+                },
+                {
+                    "ownerResidentId": "resident-001",
+                    "sequence": 84,
+                    "gameSeconds": 85920.0,
+                    "kind": 0,
+                    "text": "我发现08 号地长出了杂草，得尽快清理。",
+                    "importance": 9,
+                    "hasSourceEventKind": true,
+                    "sourceEventKind": 7,
+                    "sourceKind": 1,
+                    "sourceEventId": "world-event:12e97fbefc23498b81ad7eb8685126d9:000000000090",
+                    "knowledgeId": "knowledge:resident-001:000000000084",
+                    "rootFactId": "world-event:12e97fbefc23498b81ad7eb8685126d9:000000000090",
+                    "parentKnowledgeId": "",
+                    "immediateSourceResidentId": "",
+                    "tags": [
+                        "farm",
+                        "weeds",
+                        "plot-08",
+                        "weedsappeared"
+                    ],
+                    "isShareable": true
+                },
+                {
+                    "ownerResidentId": "resident-001",
+                    "sequence": 145,
+                    "gameSeconds": 180540.0,
+                    "kind": 0,
+                    "text": "我注意到06 号地水分下降了，得优先补水。",
+                    "importance": 8,
+                    "hasSourceEventKind": true,
+                    "sourceEventKind": 6,
+                    "sourceKind": 1,
+                    "sourceEventId": "world-event:12e97fbefc23498b81ad7eb8685126d9:000000000151",
+                    "knowledgeId": "knowledge:resident-001:000000000145",
+                    "rootFactId": "world-event:12e97fbefc23498b81ad7eb8685126d9:000000000151",
+                    "parentKnowledgeId": "",
+                    "immediateSourceResidentId": "",
+                    "tags": [
+                        "farm",
+                        "moisture",
+                        "plot-06",
+                        "moisturechanged"
+                    ],
+                    "isShareable": true
+                },
+                {
+                    "ownerResidentId": "resident-001",
+                    "sequence": 148,
+                    "gameSeconds": 189270.0,
+                    "kind": 0,
+                    "text": "我注意到01 号地水分下降了，得优先补水。",
+                    "importance": 8,
+                    "hasSourceEventKind": true,
+                    "sourceEventKind": 6,
+                    "sourceKind": 1,
+                    "sourceEventId": "world-event:12e97fbefc23498b81ad7eb8685126d9:000000000154",
+                    "knowledgeId": "knowledge:resident-001:000000000148",
+                    "rootFactId": "world-event:12e97fbefc23498b81ad7eb8685126d9:000000000154",
+                    "parentKnowledgeId": "",
+                    "immediateSourceResidentId": "",
+                    "tags": [
+                        "farm",
+                        "moisture",
+                        "plot-01",
+                        "moisturechanged"
+                    ],
+                    "isShareable": true
+                },
+                {
+                    "ownerResidentId": "resident-001",
+                    "sequence": 149,
+                    "gameSeconds": 189270.0,
+                    "kind": 0,
+                    "text": "我注意到07 号地水分下降了，得优先补水。",
+                    "importance": 8,
+                    "hasSourceEventKind": true,
+                    "sourceEventKind": 6,
+                    "sourceKind": 1,
+                    "sourceEventId": "world-event:12e97fbefc23498b81ad7eb8685126d9:000000000155",
+                    "knowledgeId": "knowledge:resident-001:000000000149",
+                    "rootFactId": "world-event:12e97fbefc23498b81ad7eb8685126d9:000000000155",
+                    "parentKnowledgeId": "",
+                    "immediateSourceResidentId": "",
+                    "tags": [
+                        "farm",
+                        "moisture",
+                        "plot-07",
+                        "moisturechanged"
+                    ],
+                    "isShareable": true
+                },
+                {
+                    "ownerResidentId": "resident-001",
+                    "sequence": 150,
+                    "gameSeconds": 189270.0,
+                    "kind": 0,
+                    "text": "我注意到08 号地水分下降了，得优先补水。",
+                    "importance": 8,
+                    "hasSourceEventKind": true,
+                    "sourceEventKind": 6,
+                    "sourceKind": 1,
+                    "sourceEventId": "world-event:12e97fbefc23498b81ad7eb8685126d9:000000000156",
+                    "knowledgeId": "knowledge:resident-001:000000000150",
+                    "rootFactId": "world-event:12e97fbefc23498b81ad7eb8685126d9:000000000156",
+                    "parentKnowledgeId": "",
+                    "immediateSourceResidentId": "",
+                    "tags": [
+                        "farm",
+                        "moisture",
+                        "plot-08",
+                        "moisturechanged"
+                    ],
+                    "isShareable": true
+                },
+                {
+                    "ownerResidentId": "resident-001",
+                    "sequence": 151,
+                    "gameSeconds": 189270.0,
+                    "kind": 0,
+                    "text": "我注意到09 号地水分下降了，得优先补水。",
+                    "importance": 8,
+                    "hasSourceEventKind": true,
+                    "sourceEventKind": 6,
+                    "sourceKind": 1,
+                    "sourceEventId": "world-event:12e97fbefc23498b81ad7eb8685126d9:000000000157",
+                    "knowledgeId": "knowledge:resident-001:000000000151",
+                    "rootFactId": "world-event:12e97fbefc23498b81ad7eb8685126d9:000000000157",
+                    "parentKnowledgeId": "",
+                    "immediateSourceResidentId": "",
+                    "tags": [
+                        "farm",
+                        "moisture",
+                        "plot-09",
+                        "moisturechanged"
+                    ],
+                    "isShareable": true
+                },
+                {
+                    "ownerResidentId": "resident-001",
+                    "sequence": 152,
+                    "gameSeconds": 190380.0,
+                    "kind": 0,
+                    "text": "我注意到02 号地水分下降了，得优先补水。",
+                    "importance": 8,
+                    "hasSourceEventKind": true,
+                    "sourceEventKind": 6,
+                    "sourceKind": 1,
+                    "sourceEventId": "world-event:12e97fbefc23498b81ad7eb8685126d9:000000000158",
+                    "knowledgeId": "knowledge:resident-001:000000000152",
+                    "rootFactId": "world-event:12e97fbefc23498b81ad7eb8685126d9:000000000158",
+                    "parentKnowledgeId": "",
+                    "immediateSourceResidentId": "",
+                    "tags": [
+                        "farm",
+                        "moisture",
+                        "plot-02",
+                        "moisturechanged"
+                    ],
+                    "isShareable": true
+                },
+                {
+                    "ownerResidentId": "resident-001",
+                    "sequence": 155,
+                    "gameSeconds": 191880.0,
+                    "kind": 0,
+                    "text": "我注意到03 号地水分下降了，得优先补水。",
+                    "importance": 8,
+                    "hasSourceEventKind": true,
+                    "sourceEventKind": 6,
+                    "sourceKind": 1,
+                    "sourceEventId": "world-event:12e97fbefc23498b81ad7eb8685126d9:000000000161",
+                    "knowledgeId": "knowledge:resident-001:000000000155",
+                    "rootFactId": "world-event:12e97fbefc23498b81ad7eb8685126d9:000000000161",
+                    "parentKnowledgeId": "",
+                    "immediateSourceResidentId": "",
+                    "tags": [
+                        "farm",
+                        "moisture",
+                        "plot-03",
+                        "moisturechanged"
+                    ],
+                    "isShareable": true
+                },
+                {
+                    "ownerResidentId": "resident-001",
+                    "sequence": 158,
+                    "gameSeconds": 206790.0,
+                    "kind": 0,
+                    "text": "我注意到04 号地水分下降了，得优先补水。",
+                    "importance": 8,
+                    "hasSourceEventKind": true,
+                    "sourceEventKind": 6,
+                    "sourceKind": 1,
+                    "sourceEventId": "world-event:12e97fbefc23498b81ad7eb8685126d9:000000000164",
+                    "knowledgeId": "knowledge:resident-001:000000000158",
+                    "rootFactId": "world-event:12e97fbefc23498b81ad7eb8685126d9:000000000164",
+                    "parentKnowledgeId": "",
+                    "immediateSourceResidentId": "",
+                    "tags": [
+                        "farm",
+                        "moisture",
+                        "plot-04",
+                        "moisturechanged"
+                    ],
+                    "isShareable": true
+                },
+                {
+                    "ownerResidentId": "resident-001",
+                    "sequence": 159,
+                    "gameSeconds": 206790.0,
+                    "kind": 0,
+                    "text": "我注意到05 号地水分下降了，得优先补水。",
+                    "importance": 8,
+                    "hasSourceEventKind": true,
+                    "sourceEventKind": 6,
+                    "sourceKind": 1,
+                    "sourceEventId": "world-event:12e97fbefc23498b81ad7eb8685126d9:000000000165",
+                    "knowledgeId": "knowledge:resident-001:000000000159",
+                    "rootFactId": "world-event:12e97fbefc23498b81ad7eb8685126d9:000000000165",
+                    "parentKnowledgeId": "",
+                    "immediateSourceResidentId": "",
+                    "tags": [
+                        "farm",
+                        "moisture",
+                        "plot-05",
+                        "moisturechanged"
+                    ],
+                    "isShareable": true
+                },
+                {
+                    "ownerResidentId": "resident-001",
+                    "sequence": 160,
+                    "gameSeconds": 213990.0,
+                    "kind": 0,
+                    "text": "我注意到06 号地水分下降了，得优先补水。",
+                    "importance": 8,
+                    "hasSourceEventKind": true,
+                    "sourceEventKind": 6,
+                    "sourceKind": 1,
+                    "sourceEventId": "world-event:12e97fbefc23498b81ad7eb8685126d9:000000000166",
+                    "knowledgeId": "knowledge:resident-001:000000000160",
+                    "rootFactId": "world-event:12e97fbefc23498b81ad7eb8685126d9:000000000166",
+                    "parentKnowledgeId": "",
+                    "immediateSourceResidentId": "",
+                    "tags": [
+                        "farm",
+                        "moisture",
+                        "plot-06",
+                        "moisturechanged"
+                    ],
+                    "isShareable": true
+                },
+                {
+                    "ownerResidentId": "resident-001",
+                    "sequence": 161,
+                    "gameSeconds": 221190.0,
+                    "kind": 0,
+                    "text": "我注意到01 号地水分下降了，得优先补水。",
+                    "importance": 8,
+                    "hasSourceEventKind": true,
+                    "sourceEventKind": 6,
+                    "sourceKind": 1,
+                    "sourceEventId": "world-event:12e97fbefc23498b81ad7eb8685126d9:000000000167",
+                    "knowledgeId": "knowledge:resident-001:000000000161",
+                    "rootFactId": "world-event:12e97fbefc23498b81ad7eb8685126d9:000000000167",
+                    "parentKnowledgeId": "",
+                    "immediateSourceResidentId": "",
+                    "tags": [
+                        "farm",
+                        "moisture",
+                        "plot-01",
+                        "moisturechanged"
+                    ],
+                    "isShareable": true
+                },
+                {
+                    "ownerResidentId": "resident-001",
+                    "sequence": 162,
+                    "gameSeconds": 221190.0,
+                    "kind": 0,
+                    "text": "我注意到02 号地水分下降了，得优先补水。",
+                    "importance": 8,
+                    "hasSourceEventKind": true,
+                    "sourceEventKind": 6,
+                    "sourceKind": 1,
+                    "sourceEventId": "world-event:12e97fbefc23498b81ad7eb8685126d9:000000000168",
+                    "knowledgeId": "knowledge:resident-001:000000000162",
+                    "rootFactId": "world-event:12e97fbefc23498b81ad7eb8685126d9:000000000168",
+                    "parentKnowledgeId": "",
+                    "immediateSourceResidentId": "",
+                    "tags": [
+                        "farm",
+                        "moisture",
+                        "plot-02",
+                        "moisturechanged"
+                    ],
+                    "isShareable": true
+                },
+                {
+                    "ownerResidentId": "resident-001",
+                    "sequence": 163,
+                    "gameSeconds": 221190.0,
+                    "kind": 0,
+                    "text": "我注意到03 号地水分下降了，得优先补水。",
+                    "importance": 8,
+                    "hasSourceEventKind": true,
+                    "sourceEventKind": 6,
+                    "sourceKind": 1,
+                    "sourceEventId": "world-event:12e97fbefc23498b81ad7eb8685126d9:000000000169",
+                    "knowledgeId": "knowledge:resident-001:000000000163",
+                    "rootFactId": "world-event:12e97fbefc23498b81ad7eb8685126d9:000000000169",
+                    "parentKnowledgeId": "",
+                    "immediateSourceResidentId": "",
+                    "tags": [
+                        "farm",
+                        "moisture",
+                        "plot-03",
+                        "moisturechanged"
+                    ],
+                    "isShareable": true
+                },
+                {
+                    "ownerResidentId": "resident-001",
+                    "sequence": 164,
+                    "gameSeconds": 221190.0,
+                    "kind": 0,
+                    "text": "我注意到07 号地水分下降了，得优先补水。",
+                    "importance": 8,
+                    "hasSourceEventKind": true,
+                    "sourceEventKind": 6,
+                    "sourceKind": 1,
+                    "sourceEventId": "world-event:12e97fbefc23498b81ad7eb8685126d9:000000000170",
+                    "knowledgeId": "knowledge:resident-001:000000000164",
+                    "rootFactId": "world-event:12e97fbefc23498b81ad7eb8685126d9:000000000170",
+                    "parentKnowledgeId": "",
+                    "immediateSourceResidentId": "",
+                    "tags": [
+                        "farm",
+                        "moisture",
+                        "plot-07",
+                        "moisturechanged"
+                    ],
+                    "isShareable": true
+                },
+                {
+                    "ownerResidentId": "resident-001",
+                    "sequence": 165,
+                    "gameSeconds": 221190.0,
+                    "kind": 0,
+                    "text": "我注意到08 号地水分下降了，得优先补水。",
+                    "importance": 8,
+                    "hasSourceEventKind": true,
+                    "sourceEventKind": 6,
+                    "sourceKind": 1,
+                    "sourceEventId": "world-event:12e97fbefc23498b81ad7eb8685126d9:000000000171",
+                    "knowledgeId": "knowledge:resident-001:000000000165",
+                    "rootFactId": "world-event:12e97fbefc23498b81ad7eb8685126d9:000000000171",
+                    "parentKnowledgeId": "",
+                    "immediateSourceResidentId": "",
+                    "tags": [
+                        "farm",
+                        "moisture",
+                        "plot-08",
+                        "moisturechanged"
+                    ],
+                    "isShareable": true
+                },
+                {
+                    "ownerResidentId": "resident-001",
+                    "sequence": 166,
+                    "gameSeconds": 221190.0,
+                    "kind": 0,
+                    "text": "我注意到09 号地水分下降了，得优先补水。",
+                    "importance": 8,
+                    "hasSourceEventKind": true,
+                    "sourceEventKind": 6,
+                    "sourceKind": 1,
+                    "sourceEventId": "world-event:12e97fbefc23498b81ad7eb8685126d9:000000000172",
+                    "knowledgeId": "knowledge:resident-001:000000000166",
+                    "rootFactId": "world-event:12e97fbefc23498b81ad7eb8685126d9:000000000172",
+                    "parentKnowledgeId": "",
+                    "immediateSourceResidentId": "",
+                    "tags": [
+                        "farm",
+                        "moisture",
+                        "plot-09",
+                        "moisturechanged"
+                    ],
+                    "isShareable": true
+                },
+                {
+                    "ownerResidentId": "resident-001",
+                    "sequence": 169,
+                    "gameSeconds": 229320.0,
+                    "kind": 0,
+                    "text": "我注意到04 号地水分下降了，得优先补水。",
+                    "importance": 8,
+                    "hasSourceEventKind": true,
+                    "sourceEventKind": 6,
+                    "sourceKind": 1,
+                    "sourceEventId": "world-event:12e97fbefc23498b81ad7eb8685126d9:000000000175",
+                    "knowledgeId": "knowledge:resident-001:000000000169",
+                    "rootFactId": "world-event:12e97fbefc23498b81ad7eb8685126d9:000000000175",
+                    "parentKnowledgeId": "",
+                    "immediateSourceResidentId": "",
+                    "tags": [
+                        "farm",
+                        "moisture",
+                        "plot-04",
+                        "moisturechanged"
+                    ],
+                    "isShareable": true
+                },
+                {
+                    "ownerResidentId": "resident-001",
+                    "sequence": 172,
+                    "gameSeconds": 230940.0,
+                    "kind": 0,
+                    "text": "我注意到05 号地水分下降了，得优先补水。",
+                    "importance": 8,
+                    "hasSourceEventKind": true,
+                    "sourceEventKind": 6,
+                    "sourceKind": 1,
+                    "sourceEventId": "world-event:12e97fbefc23498b81ad7eb8685126d9:000000000178",
+                    "knowledgeId": "knowledge:resident-001:000000000172",
+                    "rootFactId": "world-event:12e97fbefc23498b81ad7eb8685126d9:000000000178",
+                    "parentKnowledgeId": "",
+                    "immediateSourceResidentId": "",
+                    "tags": [
+                        "farm",
+                        "moisture",
+                        "plot-05",
+                        "moisturechanged"
+                    ],
+                    "isShareable": true
+                },
+                {
+                    "ownerResidentId": "resident-001",
+                    "sequence": 181,
+                    "gameSeconds": 244050.0,
+                    "kind": 0,
+                    "text": "我注意到06 号地水分下降了，得优先补水。",
+                    "importance": 8,
+                    "hasSourceEventKind": true,
+                    "sourceEventKind": 6,
+                    "sourceKind": 1,
+                    "sourceEventId": "world-event:12e97fbefc23498b81ad7eb8685126d9:000000000187",
+                    "knowledgeId": "knowledge:resident-001:000000000181",
+                    "rootFactId": "world-event:12e97fbefc23498b81ad7eb8685126d9:000000000187",
+                    "parentKnowledgeId": "",
+                    "immediateSourceResidentId": "",
+                    "tags": [
+                        "farm",
+                        "moisture",
+                        "plot-06",
+                        "moisturechanged"
+                    ],
+                    "isShareable": true
+                },
+                {
+                    "ownerResidentId": "resident-001",
+                    "sequence": 191,
+                    "gameSeconds": 248340.0,
+                    "kind": 0,
+                    "text": "我注意到07 号地水分下降了，得优先补水。",
+                    "importance": 8,
+                    "hasSourceEventKind": true,
+                    "sourceEventKind": 6,
+                    "sourceKind": 1,
+                    "sourceEventId": "world-event:12e97fbefc23498b81ad7eb8685126d9:000000000197",
+                    "knowledgeId": "knowledge:resident-001:000000000191",
+                    "rootFactId": "world-event:12e97fbefc23498b81ad7eb8685126d9:000000000197",
+                    "parentKnowledgeId": "",
+                    "immediateSourceResidentId": "",
+                    "tags": [
+                        "farm",
+                        "moisture",
+                        "plot-07",
+                        "moisturechanged"
+                    ],
+                    "isShareable": true
+                },
+                {
+                    "ownerResidentId": "resident-001",
+                    "sequence": 195,
+                    "gameSeconds": 249990.0,
+                    "kind": 0,
+                    "text": "我注意到08 号地水分下降了，得优先补水。",
+                    "importance": 8,
+                    "hasSourceEventKind": true,
+                    "sourceEventKind": 6,
+                    "sourceKind": 1,
+                    "sourceEventId": "world-event:12e97fbefc23498b81ad7eb8685126d9:000000000201",
+                    "knowledgeId": "knowledge:resident-001:000000000195",
+                    "rootFactId": "world-event:12e97fbefc23498b81ad7eb8685126d9:000000000201",
+                    "parentKnowledgeId": "",
+                    "immediateSourceResidentId": "",
+                    "tags": [
+                        "farm",
+                        "moisture",
+                        "plot-08",
+                        "moisturechanged"
+                    ],
+                    "isShareable": true
+                },
+                {
+                    "ownerResidentId": "resident-001",
+                    "sequence": 248,
+                    "gameSeconds": 308610.0,
+                    "kind": 0,
+                    "text": "我发现09 号地长出了杂草，得尽快清理。",
+                    "importance": 9,
+                    "hasSourceEventKind": true,
+                    "sourceEventKind": 7,
+                    "sourceKind": 1,
+                    "sourceEventId": "world-event:12e97fbefc23498b81ad7eb8685126d9:000000000254",
+                    "knowledgeId": "knowledge:resident-001:000000000248",
+                    "rootFactId": "world-event:12e97fbefc23498b81ad7eb8685126d9:000000000254",
+                    "parentKnowledgeId": "",
+                    "immediateSourceResidentId": "",
+                    "tags": [
+                        "farm",
+                        "weeds",
+                        "plot-09",
+                        "weedsappeared"
+                    ],
+                    "isShareable": true
+                },
+                {
+                    "ownerResidentId": "resident-001",
+                    "sequence": 250,
+                    "gameSeconds": 309900.0,
+                    "kind": 0,
+                    "text": "我完成清理09 号地的杂草。",
+                    "importance": 4,
+                    "hasSourceEventKind": true,
+                    "sourceEventKind": 4,
+                    "sourceKind": 1,
+                    "sourceEventId": "world-event:12e97fbefc23498b81ad7eb8685126d9:000000000256",
+                    "knowledgeId": "knowledge:resident-001:000000000250",
+                    "rootFactId": "world-event:12e97fbefc23498b81ad7eb8685126d9:000000000256",
+                    "parentKnowledgeId": "",
+                    "immediateSourceResidentId": "",
+                    "tags": [
+                        "farm-action",
+                        "weed",
+                        "actioncompleted",
+                        "plot-09"
+                    ],
+                    "isShareable": true
+                }
+            ],
+            "recentReflections": [],
+            "runtime": {
+                "startedCycleCount": 0,
+                "currentCycleNumber": 0,
+                "completedCycleCount": 0,
+                "reflectedCycleNumbers": []
+            }
+        },
+        {
+            "residentId": "resident-002",
+            "displayName": "阿木",
+            "npc": {
+                "hasSceneTransform": true,
+                "positionX": -5.798970699310303,
+                "positionY": -0.019999980926513673,
+                "positionZ": 0.9894599318504334,
+                "rotationX": 0.0,
+                "rotationY": -0.4252545237541199,
+                "rotationZ": 0.0,
+                "rotationW": 0.9050738215446472,
+                "executorStatus": 3,
+                "replanStatus": 0,
+                "currentMood": 1,
+                "currentEmoji": "",
+                "currentExpression": "",
+                "currentGoalText": "",
+                "currentDecisionReason": "",
+                "lastFailureReason": "",
+                "activeCycleNumber": 0,
+                "harvestedPlotNumbers": []
+            },
+            "hasFarmGoal": false,
+            "farmGoal": {
+                "goalId": "",
+                "crop": 0,
+                "targetPlotNumbers": [],
+                "requiresSowing": false,
+                "requiresWatering": false,
+                "requiresFertilizing": false,
+                "requiresWeeding": false,
+                "requiresHarvesting": false,
+                "summary": ""
+            },
+            "executor": {
+                "hasCurrentAction": false,
+                "currentAction": {
+                    "kind": "",
+                    "plotNumber": 0,
+                    "durationSeconds": 0.0
+                },
+                "remainingActions": []
+            },
+            "recentMemories": [
+                {
+                    "ownerResidentId": "resident-002",
+                    "sequence": 1,
+                    "gameSeconds": 28800.0,
+                    "kind": 0,
+                    "text": "我知道现在的情况：离线演示已启动；本地规划与表达服务可用。",
+                    "importance": 2,
+                    "hasSourceEventKind": true,
+                    "sourceEventKind": 0,
+                    "sourceKind": 4,
+                    "sourceEventId": "world-event:12e97fbefc23498b81ad7eb8685126d9:000000000001",
+                    "knowledgeId": "knowledge:resident-002:000000000001",
+                    "rootFactId": "world-event:12e97fbefc23498b81ad7eb8685126d9:000000000001",
+                    "parentKnowledgeId": "",
+                    "immediateSourceResidentId": "",
+                    "tags": [
+                        "system"
+                    ],
+                    "isShareable": true
+                },
+                {
+                    "ownerResidentId": "resident-002",
+                    "sequence": 2,
+                    "gameSeconds": 28800.0,
+                    "kind": 0,
+                    "text": "我知道现在的情况：已创建新 Demo；本地规划与表达服务可用。",
+                    "importance": 2,
+                    "hasSourceEventKind": true,
+                    "sourceEventKind": 0,
+                    "sourceKind": 4,
+                    "sourceEventId": "world-event:12e97fbefc23498b81ad7eb8685126d9:000000000003",
+                    "knowledgeId": "knowledge:resident-002:000000000002",
+                    "rootFactId": "world-event:12e97fbefc23498b81ad7eb8685126d9:000000000003",
+                    "parentKnowledgeId": "",
+                    "immediateSourceResidentId": "",
+                    "tags": [
+                        "system"
+                    ],
+                    "isShareable": true
+                },
+                {
+                    "ownerResidentId": "resident-002",
+                    "sequence": 3,
+                    "gameSeconds": 35820.0,
+                    "kind": 0,
+                    "text": "我完成了：钓到一条鱼！已送到公共仓库，饿的时候可以吃。",
+                    "importance": 4,
+                    "hasSourceEventKind": true,
+                    "sourceEventKind": 4,
+                    "sourceKind": 1,
+                    "sourceEventId": "world-event:12e97fbefc23498b81ad7eb8685126d9:000000000016",
+                    "knowledgeId": "knowledge:resident-002:000000000003",
+                    "rootFactId": "world-event:12e97fbefc23498b81ad7eb8685126d9:000000000016",
+                    "parentKnowledgeId": "",
+                    "immediateSourceResidentId": "",
+                    "tags": [
+                        "fish",
+                        "life-activity",
+                        "actioncompleted"
+                    ],
+                    "isShareable": true
+                }
+            ],
+            "recentReflections": [],
+            "runtime": {
+                "startedCycleCount": 0,
+                "currentCycleNumber": 0,
+                "completedCycleCount": 0,
+                "reflectedCycleNumbers": []
+            }
+        },
+        {
+            "residentId": "resident-003",
+            "displayName": "小穗",
+            "npc": {
+                "hasSceneTransform": true,
+                "positionX": 5.296090602874756,
+                "positionY": -0.019999980926513673,
+                "positionZ": 2.560959815979004,
+                "rotationX": 0.0,
+                "rotationY": 0.7324069142341614,
+                "rotationZ": 0.0,
+                "rotationW": 0.6808671951293945,
+                "executorStatus": 3,
+                "replanStatus": 0,
+                "currentMood": 1,
+                "currentEmoji": "",
+                "currentExpression": "",
+                "currentGoalText": "",
+                "currentDecisionReason": "",
+                "lastFailureReason": "",
+                "activeCycleNumber": 0,
+                "harvestedPlotNumbers": []
+            },
+            "hasFarmGoal": false,
+            "farmGoal": {
+                "goalId": "",
+                "crop": 0,
+                "targetPlotNumbers": [],
+                "requiresSowing": false,
+                "requiresWatering": false,
+                "requiresFertilizing": false,
+                "requiresWeeding": false,
+                "requiresHarvesting": false,
+                "summary": ""
+            },
+            "executor": {
+                "hasCurrentAction": false,
+                "currentAction": {
+                    "kind": "",
+                    "plotNumber": 0,
+                    "durationSeconds": 0.0
+                },
+                "remainingActions": []
+            },
+            "recentMemories": [
+                {
+                    "ownerResidentId": "resident-003",
+                    "sequence": 1,
+                    "gameSeconds": 28800.0,
+                    "kind": 0,
+                    "text": "我知道现在的情况：离线演示已启动；本地规划与表达服务可用。",
+                    "importance": 2,
+                    "hasSourceEventKind": true,
+                    "sourceEventKind": 0,
+                    "sourceKind": 4,
+                    "sourceEventId": "world-event:12e97fbefc23498b81ad7eb8685126d9:000000000001",
+                    "knowledgeId": "knowledge:resident-003:000000000001",
+                    "rootFactId": "world-event:12e97fbefc23498b81ad7eb8685126d9:000000000001",
+                    "parentKnowledgeId": "",
+                    "immediateSourceResidentId": "",
+                    "tags": [
+                        "system"
+                    ],
+                    "isShareable": true
+                },
+                {
+                    "ownerResidentId": "resident-003",
+                    "sequence": 2,
+                    "gameSeconds": 28800.0,
+                    "kind": 0,
+                    "text": "我知道现在的情况：已创建新 Demo；本地规划与表达服务可用。",
+                    "importance": 2,
+                    "hasSourceEventKind": true,
+                    "sourceEventKind": 0,
+                    "sourceKind": 4,
+                    "sourceEventId": "world-event:12e97fbefc23498b81ad7eb8685126d9:000000000003",
+                    "knowledgeId": "knowledge:resident-003:000000000002",
+                    "rootFactId": "world-event:12e97fbefc23498b81ad7eb8685126d9:000000000003",
+                    "parentKnowledgeId": "",
+                    "immediateSourceResidentId": "",
+                    "tags": [
+                        "system"
+                    ],
+                    "isShareable": true
+                },
+                {
+                    "ownerResidentId": "resident-003",
+                    "sequence": 3,
+                    "gameSeconds": 35820.0,
+                    "kind": 0,
+                    "text": "我完成了：刚摘了成熟果实，已经放进公共仓库。果树需要时间重新结果。",
+                    "importance": 4,
+                    "hasSourceEventKind": true,
+                    "sourceEventKind": 4,
+                    "sourceKind": 1,
+                    "sourceEventId": "world-event:12e97fbefc23498b81ad7eb8685126d9:000000000018",
+                    "knowledgeId": "knowledge:resident-003:000000000003",
+                    "rootFactId": "world-event:12e97fbefc23498b81ad7eb8685126d9:000000000018",
+                    "parentKnowledgeId": "",
+                    "immediateSourceResidentId": "",
+                    "tags": [
+                        "fruit",
+                        "life-activity",
+                        "actioncompleted"
+                    ],
+                    "isShareable": true
+                }
+            ],
+            "recentReflections": [],
+            "runtime": {
+                "startedCycleCount": 0,
+                "currentCycleNumber": 0,
+                "completedCycleCount": 0,
+                "reflectedCycleNumbers": []
+            }
+        },
+        {
+            "residentId": "resident-004",
+            "displayName": "墨墨",
+            "npc": {
+                "hasSceneTransform": true,
+                "positionX": 5.123497486114502,
+                "positionY": -0.019999980926513673,
+                "positionZ": -1.133697748184204,
+                "rotationX": 0.0,
+                "rotationY": 0.9067968130111694,
+                "rotationZ": 0.0,
+                "rotationW": 0.4215679466724396,
+                "executorStatus": 3,
+                "replanStatus": 0,
+                "currentMood": 1,
+                "currentEmoji": "",
+                "currentExpression": "",
+                "currentGoalText": "",
+                "currentDecisionReason": "",
+                "lastFailureReason": "",
+                "activeCycleNumber": 0,
+                "harvestedPlotNumbers": []
+            },
+            "hasFarmGoal": false,
+            "farmGoal": {
+                "goalId": "",
+                "crop": 0,
+                "targetPlotNumbers": [],
+                "requiresSowing": false,
+                "requiresWatering": false,
+                "requiresFertilizing": false,
+                "requiresWeeding": false,
+                "requiresHarvesting": false,
+                "summary": ""
+            },
+            "executor": {
+                "hasCurrentAction": false,
+                "currentAction": {
+                    "kind": "",
+                    "plotNumber": 0,
+                    "durationSeconds": 0.0
+                },
+                "remainingActions": []
+            },
+            "recentMemories": [
+                {
+                    "ownerResidentId": "resident-004",
+                    "sequence": 1,
+                    "gameSeconds": 28800.0,
+                    "kind": 0,
+                    "text": "我知道现在的情况：离线演示已启动；本地规划与表达服务可用。",
+                    "importance": 2,
+                    "hasSourceEventKind": true,
+                    "sourceEventKind": 0,
+                    "sourceKind": 4,
+                    "sourceEventId": "world-event:12e97fbefc23498b81ad7eb8685126d9:000000000001",
+                    "knowledgeId": "knowledge:resident-004:000000000001",
+                    "rootFactId": "world-event:12e97fbefc23498b81ad7eb8685126d9:000000000001",
+                    "parentKnowledgeId": "",
+                    "immediateSourceResidentId": "",
+                    "tags": [
+                        "system"
+                    ],
+                    "isShareable": true
+                },
+                {
+                    "ownerResidentId": "resident-004",
+                    "sequence": 2,
+                    "gameSeconds": 28800.0,
+                    "kind": 0,
+                    "text": "我知道现在的情况：已创建新 Demo；本地规划与表达服务可用。",
+                    "importance": 2,
+                    "hasSourceEventKind": true,
+                    "sourceEventKind": 0,
+                    "sourceKind": 4,
+                    "sourceEventId": "world-event:12e97fbefc23498b81ad7eb8685126d9:000000000003",
+                    "knowledgeId": "knowledge:resident-004:000000000002",
+                    "rootFactId": "world-event:12e97fbefc23498b81ad7eb8685126d9:000000000003",
+                    "parentKnowledgeId": "",
+                    "immediateSourceResidentId": "",
+                    "tags": [
+                        "system"
+                    ],
+                    "isShareable": true
+                },
+                {
+                    "ownerResidentId": "resident-004",
+                    "sequence": 3,
+                    "gameSeconds": 35820.0,
+                    "kind": 0,
+                    "text": "我完成了：钓到一条鱼！已送到公共仓库，饿的时候可以吃。",
+                    "importance": 4,
+                    "hasSourceEventKind": true,
+                    "sourceEventKind": 4,
+                    "sourceKind": 1,
+                    "sourceEventId": "world-event:12e97fbefc23498b81ad7eb8685126d9:000000000017",
+                    "knowledgeId": "knowledge:resident-004:000000000003",
+                    "rootFactId": "world-event:12e97fbefc23498b81ad7eb8685126d9:000000000017",
+                    "parentKnowledgeId": "",
+                    "immediateSourceResidentId": "",
+                    "tags": [
+                        "fish",
+                        "life-activity",
+                        "actioncompleted"
+                    ],
+                    "isShareable": true
+                }
+            ],
+            "recentReflections": [],
+            "runtime": {
+                "startedCycleCount": 0,
+                "currentCycleNumber": 0,
+                "completedCycleCount": 0,
+                "reflectedCycleNumbers": []
+            }
+        }
+    ],
+    "relationships": [
+        {
+            "ownerResidentId": "resident-001",
+            "otherResidentId": "resident-002",
+            "familiarity": 0,
+            "trust": 0,
+            "relationVersion": 0,
+            "lastChangeEventId": ""
+        },
+        {
+            "ownerResidentId": "resident-001",
+            "otherResidentId": "resident-003",
+            "familiarity": 0,
+            "trust": 0,
+            "relationVersion": 0,
+            "lastChangeEventId": ""
+        },
+        {
+            "ownerResidentId": "resident-001",
+            "otherResidentId": "resident-004",
+            "familiarity": 0,
+            "trust": 0,
+            "relationVersion": 0,
+            "lastChangeEventId": ""
+        },
+        {
+            "ownerResidentId": "resident-002",
+            "otherResidentId": "resident-001",
+            "familiarity": 0,
+            "trust": 0,
+            "relationVersion": 0,
+            "lastChangeEventId": ""
+        },
+        {
+            "ownerResidentId": "resident-002",
+            "otherResidentId": "resident-003",
+            "familiarity": 0,
+            "trust": 0,
+            "relationVersion": 0,
+            "lastChangeEventId": ""
+        },
+        {
+            "ownerResidentId": "resident-002",
+            "otherResidentId": "resident-004",
+            "familiarity": 0,
+            "trust": 0,
+            "relationVersion": 0,
+            "lastChangeEventId": ""
+        },
+        {
+            "ownerResidentId": "resident-003",
+            "otherResidentId": "resident-001",
+            "familiarity": 0,
+            "trust": 0,
+            "relationVersion": 0,
+            "lastChangeEventId": ""
+        },
+        {
+            "ownerResidentId": "resident-003",
+            "otherResidentId": "resident-002",
+            "familiarity": 0,
+            "trust": 0,
+            "relationVersion": 0,
+            "lastChangeEventId": ""
+        },
+        {
+            "ownerResidentId": "resident-003",
+            "otherResidentId": "resident-004",
+            "familiarity": 0,
+            "trust": 0,
+            "relationVersion": 0,
+            "lastChangeEventId": ""
+        },
+        {
+            "ownerResidentId": "resident-004",
+            "otherResidentId": "resident-001",
+            "familiarity": 0,
+            "trust": 0,
+            "relationVersion": 0,
+            "lastChangeEventId": ""
+        },
+        {
+            "ownerResidentId": "resident-004",
+            "otherResidentId": "resident-002",
+            "familiarity": 0,
+            "trust": 0,
+            "relationVersion": 0,
+            "lastChangeEventId": ""
+        },
+        {
+            "ownerResidentId": "resident-004",
+            "otherResidentId": "resident-003",
+            "familiarity": 0,
+            "trust": 0,
+            "relationVersion": 0,
+            "lastChangeEventId": ""
+        }
+    ],
+    "activities": [
+        {
+            "targetId": "fruit-1",
+            "fruitRemaining": 3,
+            "regrowsAtGameSeconds": 0.0
+        },
+        {
+            "targetId": "fruit-2",
+            "fruitRemaining": 3,
+            "regrowsAtGameSeconds": 0.0
+        },
+        {
+            "targetId": "fruit-3",
+            "fruitRemaining": 3,
+            "regrowsAtGameSeconds": 0.0
+        },
+        {
+            "targetId": "fruit-4",
+            "fruitRemaining": 2,
+            "regrowsAtGameSeconds": 0.0
+        }
+    ],
+    "lifeTasks": [
+        {
+            "residentId": "resident-002",
+            "hasTask": false,
+            "task": {
+                "resident_id": "",
+                "task_id": "",
+                "task_type": "",
+                "target_id": "",
+                "target_resident_id": "",
+                "target_plot_numbers": [],
+                "crop": "carrot",
+                "repeat": false,
+                "quantity": 1,
+                "summary": "",
+                "provider": "local",
+                "config_version": 0,
+                "request_id": "",
+                "model": "",
+                "error_code": "",
+                "error_message": ""
+            },
+            "completedPlots": [],
+            "completedCycles": 0,
+            "completedActivityCount": 0,
+            "energy": 88.0250015258789,
+            "hunger": 80.95000457763672,
+            "social": 100.0
+        },
+        {
+            "residentId": "resident-001",
+            "hasTask": true,
+            "task": {
+                "resident_id": "resident-001",
+                "task_id": "d0a5f2c2701c497d907eb17d720f6a3b",
+                "task_type": "TendFarm",
+                "target_id": "",
+                "target_resident_id": "",
+                "target_plot_numbers": [],
+                "crop": "carrot",
+                "repeat": true,
+                "quantity": 1,
+                "summary": "持续照料全部九块农田，循环种胡萝卜并完成播种、浇水、施肥、除草和收获。",
+                "provider": "local",
+                "config_version": 0,
+                "request_id": "",
+                "model": "",
+                "error_code": "",
+                "error_message": ""
+            },
+            "completedPlots": [],
+            "completedCycles": 1,
+            "completedActivityCount": 0,
+            "energy": 30.85002326965332,
+            "hunger": 100.0,
+            "social": 100.0
+        },
+        {
+            "residentId": "resident-004",
+            "hasTask": false,
+            "task": {
+                "resident_id": "",
+                "task_id": "",
+                "task_type": "",
+                "target_id": "",
+                "target_resident_id": "",
+                "target_plot_numbers": [],
+                "crop": "carrot",
+                "repeat": false,
+                "quantity": 1,
+                "summary": "",
+                "provider": "local",
+                "config_version": 0,
+                "request_id": "",
+                "model": "",
+                "error_code": "",
+                "error_message": ""
+            },
+            "completedPlots": [],
+            "completedCycles": 0,
+            "completedActivityCount": 0,
+            "energy": 89.875,
+            "hunger": 56.733333587646487,
+            "social": 100.0
+        },
+        {
+            "residentId": "resident-003",
+            "hasTask": false,
+            "task": {
+                "resident_id": "",
+                "task_id": "",
+                "task_type": "",
+                "target_id": "",
+                "target_resident_id": "",
+                "target_plot_numbers": [],
+                "crop": "carrot",
+                "repeat": false,
+                "quantity": 1,
+                "summary": "",
+                "provider": "local",
+                "config_version": 0,
+                "request_id": "",
+                "model": "",
+                "error_code": "",
+                "error_message": ""
+            },
+            "completedPlots": [],
+            "completedCycles": 0,
+            "completedActivityCount": 0,
+            "energy": 89.875,
+            "hunger": 56.733333587646487,
+            "social": 100.0
+        }
+    ]
+}

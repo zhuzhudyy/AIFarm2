@@ -1,0 +1,9 @@
+FINISHED
+Mode: PlayMode
+Result: Passed
+Passed: 39
+Failed: 0
+Skipped: 2
+Inconclusive: 0
+Duration: 164.312s
+XML: Unity-PlayMode-20260912-130401-450.xml

@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="utf-8"?>
+<test-run id="2" testcasecount="1" result="Failed(Child)" total="1" passed="0" failed="1" inconclusive="0" skipped="0" asserts="0" engine-version="3.5.0.0" clr-version="4.0.30319.42000" start-time="2026-09-12 12:07:44Z" end-time="2026-09-12 12:07:47Z" duration="2.668844">
+  <test-suite type="TestSuite" id="1053" name="My project" fullname="My project" runstate="Runnable" testcasecount="36" result="Failed" site="Child" start-time="2026-09-12 12:07:44Z" end-time="2026-09-12 12:07:47Z" duration="2.668844" total="1" passed="0" failed="1" inconclusive="0" skipped="0" asserts="0">
+    <properties>
+      <property name="platform" value="PlayMode" />
+    </properties>
+    <failure>
+      <message><![CDATA[One or more child tests had errors]]></message>
+    </failure>
+    <test-suite type="Assembly" id="1046" name="AIFarm.PlayModeTests.dll" fullname="C:/学习/研究生/Elys AI/面试模拟题/AIFarm/My project/Library/ScriptAssemblies/AIFarm.PlayModeTests.dll" runstate="Runnable" testcasecount="36" result="Failed" site="Child" start-time="2026-09-12 12:07:44Z" end-time="2026-09-12 12:07:47Z" duration="2.658712" total="1" passed="0" failed="1" inconclusive="0" skipped="0" asserts="0">
+      <properties>
+        <property name="_PID" value="41612" />
+        <property name="_APPDOMAIN" value="Unity Child Domain" />
+        <property name="platform" value="PlayMode" />
+        <property name="EditorOnly" value="False" />
+      </properties>
+      <failure>
+        <message><![CDATA[One or more child tests had errors]]></message>
+      </failure>
+      <test-suite type="TestSuite" id="1047" name="AIFarm" fullname="AIFarm" runstate="Runnable" testcasecount="36" result="Failed" site="Child" start-time="2026-09-12 12:07:44Z" end-time="2026-09-12 12:07:47Z" duration="2.657127" total="1" passed="0" failed="1" inconclusive="0" skipped="0" asserts="0">
+        <properties />
+        <failure>
+          <message><![CDATA[One or more child tests had errors]]></message>
+        </failure>
+        <test-suite type="TestSuite" id="1048" name="Tests" fullname="AIFarm.Tests" runstate="Runnable" testcasecount="36" result="Failed" site="Child" start-time="2026-09-12 12:07:44Z" end-time="2026-09-12 12:07:47Z" duration="2.653276" total="1" passed="0" failed="1" inconclusive="0" skipped="0" asserts="0">
+          <properties />
+          <failure>
+            <message><![CDATA[One or more child tests had errors]]></message>
+          </failure>
+          <test-suite type="TestSuite" id="1049" name="PlayMode" fullname="AIFarm.Tests.PlayMode" runstate="Runnable" testcasecount="36" result="Failed" site="Child" start-time="2026-09-12 12:07:44Z" end-time="2026-09-12 12:07:47Z" duration="2.647124" total="1" passed="0" failed="1" inconclusive="0" skipped="0" asserts="0">
+            <properties />
+            <failure>
+              <message><![CDATA[One or more child tests had errors]]></message>
+            </failure>
+            <test-suite type="TestFixture" id="1037" name="TownLifeIntegrationPlayModeTests" fullname="AIFarm.Tests.PlayMode.TownLifeIntegrationPlayModeTests" classname="AIFarm.Tests.PlayMode.TownLifeIntegrationPlayModeTests" runstate="Runnable" testcasecount="8" result="Failed" site="Child" start-time="2026-09-12 12:07:44Z" end-time="2026-09-12 12:07:47Z" duration="2.640101" total="1" passed="0" failed="1" inconclusive="0" skipped="0" asserts="0">
+              <properties />
+              <failure>
+                <message><![CDATA[One or more child tests had errors]]></message>
+              </failure>
+              <test-case id="1044" name="ResidentLeavingAfterConversationArrivalReleasesBothParticipantsImmediately" fullname="AIFarm.Tests.PlayMode.TownLifeIntegrationPlayModeTests.ResidentLeavingAfterConversationArrivalReleasesBothParticipantsImmediately" methodname="ResidentLeavingAfterConversationArrivalReleasesBothParticipantsImmediately" classname="AIFarm.Tests.PlayMode.TownLifeIntegrationPlayModeTests" runstate="Runnable" seed="1005132797" result="Failed" start-time="2026-09-12 12:07:44Z" end-time="2026-09-12 12:07:47Z" duration="2.628646" asserts="0">
+                <properties>
+                  <property name="_JOINTYPE" value="UnityCombinatorial" />
+                  <property name="retryIteration" value="0" />
+                  <property name="repeatIteration" value="0" />
+                </properties>
+                <failure>
+                  <message><![CDATA[  Conversation must have actually arrived before testing departure. State=Cancelled EndReason=NavigationFailed Error=NavMesh produced no path to 'social-plaza-anchor-01-seat-01'. position=(-6.336, -0.020, 4.368), target=(7.766, -0.040, -2.256), destination=(-6.336, -0.020, 4.368), distance=15.581, stopped=False. Town reset=1.454270300399   at AIFarm.Town.ResidentScheduleRuntime.StopCurrentActivity () [0x0000d] in <a12dc9ef1df94e599a34d4a02d8b8a1c>:0 
+  at AIFarm.Town.ResidentScheduleRuntime.Suspend () [0x00000] in <a12dc9ef1df94e599a34d4a02d8b8a1c>:0 
+  at AIFarm.Presentation.TownResidentScheduleController.SuspendForConversation () [0x000ac] in <aea0baca6c924cb1a8c9da8e04f24e58>:0 
+  at AIFarm.Presentation.TownSocialCoordinator.RequestConversation (AIFarm.Npc.ResidentId firstId, AIFarm.Npc.ResidentId secondId) [0x0014e] in <aea0baca6c924cb1a8c9da8e04f24e58>:0 
+  at AIFarm.Tests.PlayMode.TownLifeIntegrationPlayModeTests+<ResidentLeavingAfterConversationArrivalReleasesBothParticipantsImmediately>d__8.MoveNext () [0x00121] in <df71a62d4ef6448caa6bf4cd84956504>:0 
+  at UnityEngine.TestTools.TestEnumerator+<Execute>d__7.MoveNext () [0x0003a] in <47acd533ca864d31a17c5f738dada2eb>:0 
+  at UnityEngine.TestTools.EnumerableTestMethodCommand+<ExecuteEnumerableAndRecordExceptions>d__4.MoveNext () [0x0006b] in <47acd533ca864d31a17c5f738dada2eb>:0 
+  at UnityEngine.TestTools.EnumerableTestMethodCommand.AdvanceEnumerator (System.Collections.IEnumerator enumerator) [0x00019] in <47acd533ca864d31a17c5f738dada2eb>:0 
+  at UnityEngine.TestTools.EnumerableTestMethodCommand+<ExecuteEnumerable>d__2.MoveNext () [0x0010c] in <47acd533ca864d31a17c5f738dada2eb>:0 
+  at UnityEngine.TestRunner.NUnitExtensions.Runner.UnityLogCheckDelegatingCommand+<ExecuteEnumerable>d__3.MoveNext () [0x00161] in <47acd533ca864d31a17c5f738dada2eb>:0 
+  at UnityEngine.TestTools.BeforeAfterTestCommandBase`1+<ExecuteEnumerable>d__16[T].MoveNext () [0x00353] in <47acd533ca864d31a17c5f738dada2eb>:0 
+  at UnityEngine.TestTools.BeforeAfterTestCommandBase`1+<ExecuteEnumerable>d__16[T].MoveNext () [0x00353] in <47acd533ca864d31a17c5f738dada2eb>:0 
+  at UnityEngine.TestTools.BeforeAfterTestCommandBase`1+<ExecuteEnumerable>d__16[T].MoveNext () [0x00353] in <47acd533ca864d31a17c5f738dada2eb>:0 
+  at UnityEngine.TestTools.BeforeAfterTestCommandBase`1+<ExecuteEnumerable>d__16[T].MoveNext () [0x00353] in <47acd533ca864d31a17c5f738dada2eb>:0 
+  at UnityEngine.TestTools.RetryCommand+<ExecuteEnumerable>d__2.MoveNext () [0x000cf] in <47acd533ca864d31a17c5f738dada2eb>:0 
+  at UnityEngine.TestTools.RepeatCommand+<ExecuteEnumerable>d__2.MoveNext () [0x000cf] in <47acd533ca864d31a17c5f738dada2eb>:0 
+  at UnityEngine.TestTools.IgnoreTestCommand+<ExecuteEnumerable>d__3.MoveNext () [0x000ff] in <47acd533ca864d31a17c5f738dada2eb>:0 
+  at UnityEngine.TestTools.StrictCheckCommand+<ExecuteEnumerable>d__2.MoveNext () [0x00083] in <47acd533ca864d31a17c5f738dada2eb>:0 
+  at UnityEngine.TestTools.Utils.CoroutineRunner+<WrapEnumeratorForChecks>d__8.MoveNext () [0x0006c] in <47acd533ca864d31a17c5f738dada2eb>:0 
+  at UnityEngine.SetupCoroutine.InvokeMoveNext (System.Collections.IEnumerator enumerator, System.IntPtr returnValueAddress) [0x00000] in <2f52b751ded44e96b74c2c8a24c6c65b>:0 ; Farm reset=1.43289590039785   at AIFarm.Presentation.NpcPlanExecutor.RestorePendingActions (System.Collections.Generic.IEnumerable`1[T] actions) [0x0005d] in <aea0baca6c924cb1a8c9da8e04f24e58>:0 
+  at AIFarm.Presentation.TownLifeController.StopTask () [0x0005e] in <aea0baca6c924cb1a8c9da8e04f24e58>:0 
+  at AIFarm.Tests.PlayMode.TownLifeIntegrationPlayModeTests+<ResidentLeavingAfterConversationArrivalReleasesBothParticipantsImmediately>d__8.MoveNext () [0x000ae] in <df71a62d4ef6448caa6bf4cd84956504>:0 
+  at UnityEngine.TestTools.TestEnumerator+<Execute>d__7.MoveNext () [0x0003a] in <47acd533ca864d31a17c5f738dada2eb>:0 
+  at UnityEngine.TestTools.EnumerableTestMethodCommand+<ExecuteEnumerableAndRecordExceptions>d__4.MoveNext () [0x0006b] in <47acd533ca864d31a17c5f738dada2eb>:0 
+  at UnityEngine.TestTools.EnumerableTestMethodCommand.AdvanceEnumerator (System.Collections.IEnumerator enumerator) [0x00019] in <47acd533ca864d31a17c5f738dada2eb>:0 
+  at UnityEngine.TestTools.EnumerableTestMethodCommand+<ExecuteEnumerable>d__2.MoveNext () [0x0010c] in <47acd533ca864d31a17c5f738dada2eb>:0 
+  at UnityEngine.TestRunner.NUnitExtensions.Runner.UnityLogCheckDelegatingCommand+<ExecuteEnumerable>d__3.MoveNext () [0x00161] in <47acd533ca864d31a17c5f738dada2eb>:0 
+  at UnityEngine.TestTools.BeforeAfterTestCommandBase`1+<ExecuteEnumerable>d__16[T].MoveNext () [0x00353] in <47acd533ca864d31a17c5f738dada2eb>:0 
+  at UnityEngine.TestTools.BeforeAfterTestCommandBase`1+<ExecuteEnumerable>d__16[T].MoveNext () [0x00353] in <47acd533ca864d31a17c5f738dada2eb>:0 
+  at UnityEngine.TestTools.BeforeAfterTestCommandBase`1+<ExecuteEnumerable>d__16[T].MoveNext () [0x00353] in <47acd533ca864d31a17c5f738dada2eb>:0 
+  at UnityEngine.TestTools.BeforeAfterTestCommandBase`1+<ExecuteEnumerable>d__16[T].MoveNext () [0x00353] in <47acd533ca864d31a17c5f738dada2eb>:0 
+  at UnityEngine.TestTools.RetryCommand+<ExecuteEnumerable>d__2.MoveNext () [0x000cf] in <47acd533ca864d31a17c5f738dada2eb>:0 
+  at UnityEngine.TestTools.RepeatCommand+<ExecuteEnumerable>d__2.MoveNext () [0x000cf] in <47acd533ca864d31a17c5f738dada2eb>:0 
+  at UnityEngine.TestTools.IgnoreTestCommand+<ExecuteEnumerable>d__3.MoveNext () [0x000ff] in <47acd533ca864d31a17c5f738dada2eb>:0 
+  at UnityEngine.TestTools.StrictCheckCommand+<ExecuteEnumerable>d__2.MoveNext () [0x00083] in <47acd533ca864d31a17c5f738dada2eb>:0 
+  at UnityEngine.TestTools.Utils.CoroutineRunner+<WrapEnumeratorForChecks>d__8.MoveNext () [0x0006c] in <47acd533ca864d31a17c5f738dada2eb>:0 
+  at UnityEngine.SetupCoroutine.InvokeMoveNext (System.Collections.IEnumerator enumerator, System.IntPtr returnValueAddress) [0x00000] in <2f52b751ded44e96b74c2c8a24c6c65b>:0 .
+  Expected: True
+  But was:  False
+]]></message>
+                  <stack-trace><![CDATA[at AIFarm.Tests.PlayMode.TownLifeIntegrationPlayModeTests+<ResidentLeavingAfterConversationArrivalReleasesBothParticipantsImmediately>d__8.MoveNext () [0x00253] in C:\学习\研究生\Elys AI\面试模拟题\AIFarm\My project\Assets\AIFarm\Tests\PlayMode\TownLifeIntegrationPlayModeTests.cs:252
+at UnityEngine.TestTools.TestEnumerator+<Execute>d__7.MoveNext () [0x0003a] in .\Library\PackageCache\com.unity.test-framework@1405238725ab\UnityEngine.TestRunner\NUnitExtensions\Attributes\TestEnumerator.cs:44
+]]></stack-trace>
+                </failure>
+                <output><![CDATA[Conversation script ready residentId=resident-001 participants=resident-001,resident-002 provider=local lines=4
+Saving results to: C:\学习\研究生\Elys AI\面试模拟题\AIFarm\Docs\Verification\Unity-PlayMode-20260912-120744-641.xml
+]]></output>
+              </test-case>
+            </test-suite>
+          </test-suite>
+        </test-suite>
+      </test-suite>
+    </test-suite>
+  </test-suite>
+</test-run>

@@ -5,7 +5,11 @@ namespace AIFarm.Time
 {
     public sealed class GameClock
     {
-        public GameClock(double initialElapsedGameSeconds = 0d, double initialTimeScale = 1d)
+        public const double SecondsPerDay = 86400d;
+        public const double DefaultRealSecondsPerDay = 720d;
+
+        public GameClock(double initialElapsedGameSeconds = 0d, double initialTimeScale = 1d,
+            double gameSecondsPerRealSecond = 1d)
         {
             if (!IsFinite(initialElapsedGameSeconds) || initialElapsedGameSeconds < 0d)
             {
@@ -23,11 +27,23 @@ namespace AIFarm.Time
 
             ElapsedGameSeconds = initialElapsedGameSeconds;
             TimeScale = initialTimeScale;
+            if (!IsFinite(gameSecondsPerRealSecond) || gameSecondsPerRealSecond <= 0d)
+            {
+                throw new ArgumentOutOfRangeException(nameof(gameSecondsPerRealSecond));
+            }
+
+            GameSecondsPerRealSecond = gameSecondsPerRealSecond;
         }
 
         public double ElapsedGameSeconds { get; private set; }
 
         public double TimeScale { get; private set; }
+
+        public double GameSecondsPerRealSecond { get; }
+
+        public int Day => (int)(ElapsedGameSeconds / SecondsPerDay) + 1;
+
+        public int Hour => (int)(ElapsedGameSeconds / 3600d) % 24;
 
         public bool IsPaused { get; private set; }
 
@@ -103,7 +119,7 @@ namespace AIFarm.Time
                 return ActionResult.Success("Game clock did not advance.");
             }
 
-            double gameSeconds = realSeconds * TimeScale;
+            double gameSeconds = realSeconds * TimeScale * GameSecondsPerRealSecond;
             double nextTime = ElapsedGameSeconds + gameSeconds;
             if (!IsFinite(gameSeconds) || !IsFinite(nextTime))
             {

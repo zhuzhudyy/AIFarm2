@@ -261,6 +261,8 @@ namespace AIFarm.Editor
                 GetHarvestDinnerAttendancePoints(arrivalPoints)));
             CreateUi(bootstrap, executor, replanController, executor.transform);
             MeadowSceneUpgrade.Apply();
+            TownSceneExpansion.Apply();
+            TownIntegration.Apply();
             NavMeshSurface navMeshSurface = CreateNavigation();
             MeadowSceneUpgrade.ConfigureNavigation(navMeshSurface);
             navMeshSurface.BuildNavMesh();
@@ -328,12 +330,12 @@ namespace AIFarm.Editor
                 inventoryConfig,
                 day: 1,
                 hour: 8,
-                scale: 20f,
+                scale: 1f,
                 size: 2f,
                 spacing: 0.35f,
-                waterDecaySeconds: 10f,
-                weedDelaySeconds: 15f,
-                maturitySeconds: 30f,
+                waterDecaySeconds: 28800f,
+                weedDelaySeconds: 14400f,
+                maturitySeconds: 172800f,
                 actionSeconds: 0.2f,
                 waitSeconds: 0.2f,
                 expressionCooldown: 12f,

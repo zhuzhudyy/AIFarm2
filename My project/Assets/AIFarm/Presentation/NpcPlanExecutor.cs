@@ -35,6 +35,10 @@ namespace AIFarm.Presentation
         private INpcActionFeedback feedbackDriver;
         private INpcAction currentAction;
         private ActionResult? lastResult;
+        private double previousGameSeconds;
+        private float feedbackDeltaOverride = -1f;
+        private double navigationStartedAt;
+        private double previousRealSeconds;
 
         public event Action<NpcExecutionStatus> StatusChanged;
 
@@ -50,7 +54,11 @@ namespace AIFarm.Presentation
 
         public INpcAction CurrentAction => currentAction;
 
-        public ResidentId ResidentId { get; private set; } = ResidentIds.Yaya;
+        public ResidentId ResidentId
+        {
+            get => AIFarm.Npc.ResidentId.TryCreate(residentIdValue, out ResidentId owner) ? owner : default;
+            private set => residentIdValue = value.Value;
+        }
 
         public ResidentId? CurrentActionResidentId =>
             currentAction == null ? (ResidentId?)null : ResidentId;
@@ -173,6 +181,7 @@ namespace AIFarm.Presentation
             lastFailureReason = string.Empty;
             lastResult = null;
             IsInitialized = true;
+            previousGameSeconds = context.Clock.ElapsedGameSeconds;
             return ActionResult.Success("NpcPlanExecutor initialized.");
         }
 
@@ -348,9 +357,25 @@ namespace AIFarm.Presentation
 
         private void Update()
         {
+            if (!IsInitialized) return;
+            double realNow = UnityEngine.Time.realtimeSinceStartupAsDouble;
+            double realDelta = Math.Max(0, realNow - previousRealSeconds);
+            previousRealSeconds = realNow;
+            double gameNow = actionContext.Clock.ElapsedGameSeconds;
+            float simulationDelta = (float)Math.Max(0, gameNow - previousGameSeconds);
+            previousGameSeconds = gameNow;
+            if (actionContext.Clock.IsPaused)
+            {
+                // Navigation is a real-time operation, but a player pause is not a failure.
+                // Network timeouts remain independent and are intentionally not extended.
+                navigationStartedAt += realDelta;
+                return;
+            }
             if (IsInitialized && (currentAction != null || !actionQueue.IsEmpty))
             {
-                Tick(UnityEngine.Time.deltaTime);
+                feedbackDeltaOverride = bootstrap == null ? -1f : simulationDelta;
+                Tick(UnityEngine.Time.unscaledDeltaTime);
+                feedbackDeltaOverride = -1f;
             }
         }
 
@@ -396,11 +421,15 @@ namespace AIFarm.Presentation
             }
 
             SetStatus(NpcExecutionStatus.Moving);
+            navigationStartedAt = UnityEngine.Time.realtimeSinceStartupAsDouble;
             return movement;
         }
 
         private ActionResult TickMovement(float deltaTime)
         {
+            if (bootstrap != null && UnityEngine.Time.realtimeSinceStartupAsDouble - navigationStartedAt > 45d)
+                return FailCurrent(ActionResult.Failure(ActionFailureReason.NavigationFailed,
+                    "导航超过 45 秒，释放当前动作并等待重新规划。"));
             ActionResult movement = navigationDriver.Tick(deltaTime, out bool arrived);
             if (movement.Failed)
             {
@@ -432,7 +461,7 @@ namespace AIFarm.Presentation
 
         private ActionResult TickFeedback(float deltaTime)
         {
-            ActionResult feedback = feedbackDriver.Tick(deltaTime, out bool completed);
+            ActionResult feedback = feedbackDriver.Tick(feedbackDeltaOverride >= 0f ? feedbackDeltaOverride : deltaTime, out bool completed);
             if (feedback.Failed)
             {
                 return FailCurrent(feedback);

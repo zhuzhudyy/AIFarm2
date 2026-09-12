@@ -6,7 +6,8 @@
         "AIFarm.Presentation",
         "Unity.AI.Navigation",
         "UnityEngine.UI",
-        "Unity.InputSystem"
+        "Unity.InputSystem",
+        "UnityEditor.TestRunner"
     ],
     "includePlatforms": [
         "Editor"

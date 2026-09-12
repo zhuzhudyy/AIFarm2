@@ -1,0 +1,411 @@
+<?xml version="1.0" encoding="utf-8"?>
+<test-run id="2" testcasecount="41" result="Passed" total="41" passed="39" failed="0" inconclusive="0" skipped="2" asserts="0" engine-version="3.5.0.0" clr-version="4.0.30319.42000" start-time="2026-09-12 12:47:19Z" end-time="2026-09-12 12:50:12Z" duration="172.451358">
+  <test-suite type="TestSuite" id="1058" name="My project" fullname="My project" runstate="Runnable" testcasecount="41" result="Passed" start-time="2026-09-12 12:47:19Z" end-time="2026-09-12 12:50:12Z" duration="172.451358" total="41" passed="39" failed="0" inconclusive="0" skipped="2" asserts="0">
+    <properties>
+      <property name="platform" value="PlayMode" />
+    </properties>
+    <test-suite type="Assembly" id="1051" name="AIFarm.PlayModeTests.dll" fullname="C:/学习/研究生/Elys AI/面试模拟题/AIFarm/My project/Library/ScriptAssemblies/AIFarm.PlayModeTests.dll" runstate="Runnable" testcasecount="41" result="Passed" start-time="2026-09-12 12:47:19Z" end-time="2026-09-12 12:50:12Z" duration="172.239107" total="41" passed="39" failed="0" inconclusive="0" skipped="2" asserts="0">
+      <properties>
+        <property name="_PID" value="41612" />
+        <property name="_APPDOMAIN" value="Unity Child Domain" />
+        <property name="platform" value="PlayMode" />
+        <property name="EditorOnly" value="False" />
+      </properties>
+      <test-suite type="TestSuite" id="1052" name="AIFarm" fullname="AIFarm" runstate="Runnable" testcasecount="41" result="Passed" start-time="2026-09-12 12:47:19Z" end-time="2026-09-12 12:50:12Z" duration="172.236748" total="41" passed="39" failed="0" inconclusive="0" skipped="2" asserts="0">
+        <properties />
+        <test-suite type="TestSuite" id="1053" name="Tests" fullname="AIFarm.Tests" runstate="Runnable" testcasecount="41" result="Passed" start-time="2026-09-12 12:47:19Z" end-time="2026-09-12 12:50:12Z" duration="172.235333" total="41" passed="39" failed="0" inconclusive="0" skipped="2" asserts="0">
+          <properties />
+          <test-suite type="TestSuite" id="1054" name="PlayMode" fullname="AIFarm.Tests.PlayMode" runstate="Runnable" testcasecount="41" result="Passed" start-time="2026-09-12 12:47:19Z" end-time="2026-09-12 12:50:12Z" duration="172.233421" total="41" passed="39" failed="0" inconclusive="0" skipped="2" asserts="0">
+            <properties />
+            <test-suite type="TestFixture" id="1001" name="DemoHudObservabilityPlayModeTests" fullname="AIFarm.Tests.PlayMode.DemoHudObservabilityPlayModeTests" classname="AIFarm.Tests.PlayMode.DemoHudObservabilityPlayModeTests" runstate="Runnable" testcasecount="3" result="Passed" start-time="2026-09-12 12:47:19Z" end-time="2026-09-12 12:47:20Z" duration="0.119936" total="3" passed="3" failed="0" inconclusive="0" skipped="0" asserts="0">
+              <properties />
+              <test-case id="1003" name="AiModeLabel_DoesNotClaimOnlineFromRemoteClientOrLocalFallback" fullname="AIFarm.Tests.PlayMode.DemoHudObservabilityPlayModeTests.AiModeLabel_DoesNotClaimOnlineFromRemoteClientOrLocalFallback" methodname="AiModeLabel_DoesNotClaimOnlineFromRemoteClientOrLocalFallback" classname="AIFarm.Tests.PlayMode.DemoHudObservabilityPlayModeTests" runstate="Runnable" seed="1431697012" result="Passed" start-time="2026-09-12 12:47:19Z" end-time="2026-09-12 12:47:20Z" duration="0.060139" asserts="0">
+                <properties>
+                  <property name="_JOINTYPE" value="UnityCombinatorial" />
+                  <property name="retryIteration" value="0" />
+                  <property name="repeatIteration" value="0" />
+                </properties>
+                <output><![CDATA[AI request residentId=resident-001 operation=interpret-command
+AI response residentId=resident-001 source=Local succeeded=True
+]]></output>
+              </test-case>
+              <test-case id="1004" name="ResidentMemorySelector_IsOwnerScopedAndNeverRetainsPreviousPrivateText" fullname="AIFarm.Tests.PlayMode.DemoHudObservabilityPlayModeTests.ResidentMemorySelector_IsOwnerScopedAndNeverRetainsPreviousPrivateText" methodname="ResidentMemorySelector_IsOwnerScopedAndNeverRetainsPreviousPrivateText" classname="AIFarm.Tests.PlayMode.DemoHudObservabilityPlayModeTests" runstate="Runnable" seed="7631929" result="Passed" start-time="2026-09-12 12:47:20Z" end-time="2026-09-12 12:47:20Z" duration="0.034407" asserts="0">
+                <properties>
+                  <property name="_JOINTYPE" value="UnityCombinatorial" />
+                  <property name="retryIteration" value="0" />
+                  <property name="repeatIteration" value="0" />
+                </properties>
+              </test-case>
+              <test-case id="1002" name="TimeButtons_PauseResumeAndSelectOnlySupportedSpeeds" fullname="AIFarm.Tests.PlayMode.DemoHudObservabilityPlayModeTests.TimeButtons_PauseResumeAndSelectOnlySupportedSpeeds" methodname="TimeButtons_PauseResumeAndSelectOnlySupportedSpeeds" classname="AIFarm.Tests.PlayMode.DemoHudObservabilityPlayModeTests" runstate="Runnable" seed="1773539137" result="Passed" start-time="2026-09-12 12:47:20Z" end-time="2026-09-12 12:47:20Z" duration="0.010536" asserts="0">
+                <properties>
+                  <property name="_JOINTYPE" value="UnityCombinatorial" />
+                  <property name="retryIteration" value="0" />
+                  <property name="repeatIteration" value="0" />
+                </properties>
+              </test-case>
+            </test-suite>
+            <test-suite type="TestFixture" id="1005" name="LiveAiGatewayPlayModeTests" fullname="AIFarm.Tests.PlayMode.LiveAiGatewayPlayModeTests" classname="AIFarm.Tests.PlayMode.LiveAiGatewayPlayModeTests" runstate="Runnable" testcasecount="2" result="Passed" start-time="2026-09-12 12:47:20Z" end-time="2026-09-12 12:47:20Z" duration="0.002196" total="2" passed="0" failed="0" inconclusive="0" skipped="2" asserts="0">
+              <properties />
+              <test-case id="1007" name="GatewayInterrupted_FallsBackWithoutHanging" fullname="AIFarm.Tests.PlayMode.LiveAiGatewayPlayModeTests.GatewayInterrupted_FallsBackWithoutHanging" methodname="GatewayInterrupted_FallsBackWithoutHanging" classname="AIFarm.Tests.PlayMode.LiveAiGatewayPlayModeTests" runstate="Explicit" seed="1270496440" result="Skipped" label="Explicit" start-time="2026-09-12 12:47:20Z" end-time="2026-09-12 12:47:20Z" duration="0.000144" asserts="0">
+                <properties>
+                  <property name="_JOINTYPE" value="UnityCombinatorial" />
+                  <property name="_SKIPREASON" value="Requires the gateway to be stopped during the synchronization delay." />
+                  <property name="Category" value="NetworkIntegration" />
+                </properties>
+                <reason>
+                  <message><![CDATA[Requires the gateway to be stopped during the synchronization delay.]]></message>
+                </reason>
+              </test-case>
+              <test-case id="1006" name="RunningGateway_ReturnsValidatedStructuredSpecs" fullname="AIFarm.Tests.PlayMode.LiveAiGatewayPlayModeTests.RunningGateway_ReturnsValidatedStructuredSpecs" methodname="RunningGateway_ReturnsValidatedStructuredSpecs" classname="AIFarm.Tests.PlayMode.LiveAiGatewayPlayModeTests" runstate="Explicit" seed="1369888606" result="Skipped" label="Explicit" start-time="2026-09-12 12:47:20Z" end-time="2026-09-12 12:47:20Z" duration="0.000001" asserts="0">
+                <properties>
+                  <property name="_JOINTYPE" value="UnityCombinatorial" />
+                  <property name="_SKIPREASON" value="Requires a deliberately started AI gateway on 127.0.0.1:8000." />
+                  <property name="Category" value="NetworkIntegration" />
+                </properties>
+                <reason>
+                  <message><![CDATA[Requires a deliberately started AI gateway on 127.0.0.1:8000.]]></message>
+                </reason>
+              </test-case>
+            </test-suite>
+            <test-suite type="TestFixture" id="1008" name="LocalAiGatewayProcessPlayModeTests" fullname="AIFarm.Tests.PlayMode.LocalAiGatewayProcessPlayModeTests" classname="AIFarm.Tests.PlayMode.LocalAiGatewayProcessPlayModeTests" runstate="Runnable" testcasecount="12" result="Passed" start-time="2026-09-12 12:47:20Z" end-time="2026-09-12 12:47:20Z" duration="0.715482" total="12" passed="12" failed="0" inconclusive="0" skipped="0" asserts="0">
+              <properties />
+              <test-case id="1012" name="DifferentModelExternalGateway_IsReadyForConfigurationWithoutStartingOrStoppingAProcess" fullname="AIFarm.Tests.PlayMode.LocalAiGatewayProcessPlayModeTests.DifferentModelExternalGateway_IsReadyForConfigurationWithoutStartingOrStoppingAProcess" methodname="DifferentModelExternalGateway_IsReadyForConfigurationWithoutStartingOrStoppingAProcess" classname="AIFarm.Tests.PlayMode.LocalAiGatewayProcessPlayModeTests" runstate="Runnable" seed="1277853300" result="Passed" start-time="2026-09-12 12:47:20Z" end-time="2026-09-12 12:47:20Z" duration="0.010277" asserts="0">
+                <properties>
+                  <property name="_JOINTYPE" value="UnityCombinatorial" />
+                  <property name="retryIteration" value="0" />
+                  <property name="repeatIteration" value="0" />
+                </properties>
+              </test-case>
+              <test-case id="1011" name="MatchingExternalGateway_IsReusedWithoutSpawningOrOwningIt" fullname="AIFarm.Tests.PlayMode.LocalAiGatewayProcessPlayModeTests.MatchingExternalGateway_IsReusedWithoutSpawningOrOwningIt" methodname="MatchingExternalGateway_IsReusedWithoutSpawningOrOwningIt" classname="AIFarm.Tests.PlayMode.LocalAiGatewayProcessPlayModeTests" runstate="Runnable" seed="166032766" result="Passed" start-time="2026-09-12 12:47:20Z" end-time="2026-09-12 12:47:20Z" duration="0.008340" asserts="0">
+                <properties>
+                  <property name="_JOINTYPE" value="UnityCombinatorial" />
+                  <property name="retryIteration" value="0" />
+                  <property name="repeatIteration" value="0" />
+                </properties>
+              </test-case>
+              <test-case id="1016" name="OwnedProcessExitsBeforeReady_IsDisposedAndFailsLocally" fullname="AIFarm.Tests.PlayMode.LocalAiGatewayProcessPlayModeTests.OwnedProcessExitsBeforeReady_IsDisposedAndFailsLocally" methodname="OwnedProcessExitsBeforeReady_IsDisposedAndFailsLocally" classname="AIFarm.Tests.PlayMode.LocalAiGatewayProcessPlayModeTests" runstate="Runnable" seed="163232846" result="Passed" start-time="2026-09-12 12:47:20Z" end-time="2026-09-12 12:47:20Z" duration="0.007144" asserts="0">
+                <properties>
+                  <property name="_JOINTYPE" value="UnityCombinatorial" />
+                  <property name="retryIteration" value="0" />
+                  <property name="repeatIteration" value="0" />
+                </properties>
+              </test-case>
+              <test-case id="1017" name="OwnedProcessInstanceMismatch_DisposesOnlyOwnedHandleAndFails" fullname="AIFarm.Tests.PlayMode.LocalAiGatewayProcessPlayModeTests.OwnedProcessInstanceMismatch_DisposesOnlyOwnedHandleAndFails" methodname="OwnedProcessInstanceMismatch_DisposesOnlyOwnedHandleAndFails" classname="AIFarm.Tests.PlayMode.LocalAiGatewayProcessPlayModeTests" runstate="Runnable" seed="1209409768" result="Passed" start-time="2026-09-12 12:47:20Z" end-time="2026-09-12 12:47:20Z" duration="0.006375" asserts="0">
+                <properties>
+                  <property name="_JOINTYPE" value="UnityCombinatorial" />
+                  <property name="retryIteration" value="0" />
+                  <property name="repeatIteration" value="0" />
+                </properties>
+              </test-case>
+              <test-case id="1014" name="ReadyOwnedGateway_StopDisposesAndStopsExactHandleOnce" fullname="AIFarm.Tests.PlayMode.LocalAiGatewayProcessPlayModeTests.ReadyOwnedGateway_StopDisposesAndStopsExactHandleOnce" methodname="ReadyOwnedGateway_StopDisposesAndStopsExactHandleOnce" classname="AIFarm.Tests.PlayMode.LocalAiGatewayProcessPlayModeTests" runstate="Runnable" seed="1647579029" result="Passed" start-time="2026-09-12 12:47:20Z" end-time="2026-09-12 12:47:20Z" duration="0.008384" asserts="0">
+                <properties>
+                  <property name="_JOINTYPE" value="UnityCombinatorial" />
+                  <property name="retryIteration" value="0" />
+                  <property name="repeatIteration" value="0" />
+                </properties>
+              </test-case>
+              <test-case id="1015" name="ReadyOwnedGateway_UnexpectedExitUpdatesStatusAndReleasesHandle" fullname="AIFarm.Tests.PlayMode.LocalAiGatewayProcessPlayModeTests.ReadyOwnedGateway_UnexpectedExitUpdatesStatusAndReleasesHandle" methodname="ReadyOwnedGateway_UnexpectedExitUpdatesStatusAndReleasesHandle" classname="AIFarm.Tests.PlayMode.LocalAiGatewayProcessPlayModeTests" runstate="Runnable" seed="1273901131" result="Passed" start-time="2026-09-12 12:47:20Z" end-time="2026-09-12 12:47:20Z" duration="0.606223" asserts="0">
+                <properties>
+                  <property name="_JOINTYPE" value="UnityCombinatorial" />
+                  <property name="retryIteration" value="0" />
+                  <property name="repeatIteration" value="0" />
+                </properties>
+              </test-case>
+              <test-case id="1010" name="SecondStartWhileChecking_IsRejectedWithoutSpawningAnotherProcess" fullname="AIFarm.Tests.PlayMode.LocalAiGatewayProcessPlayModeTests.SecondStartWhileChecking_IsRejectedWithoutSpawningAnotherProcess" methodname="SecondStartWhileChecking_IsRejectedWithoutSpawningAnotherProcess" classname="AIFarm.Tests.PlayMode.LocalAiGatewayProcessPlayModeTests" runstate="Runnable" seed="885024899" result="Passed" start-time="2026-09-12 12:47:20Z" end-time="2026-09-12 12:47:20Z" duration="0.004958" asserts="0">
+                <properties>
+                  <property name="_JOINTYPE" value="UnityCombinatorial" />
+                  <property name="retryIteration" value="0" />
+                  <property name="repeatIteration" value="0" />
+                </properties>
+              </test-case>
+              <test-case id="1020" name="SetupPanel_ButtonsInvokeOpenStartAndCloseListeners" fullname="AIFarm.Tests.PlayMode.LocalAiGatewayProcessPlayModeTests.SetupPanel_ButtonsInvokeOpenStartAndCloseListeners" methodname="SetupPanel_ButtonsInvokeOpenStartAndCloseListeners" classname="AIFarm.Tests.PlayMode.LocalAiGatewayProcessPlayModeTests" runstate="Runnable" seed="1537708219" result="Passed" start-time="2026-09-12 12:47:20Z" end-time="2026-09-12 12:47:20Z" duration="0.029158" asserts="0">
+                <properties>
+                  <property name="_JOINTYPE" value="UnityCombinatorial" />
+                  <property name="retryIteration" value="0" />
+                  <property name="repeatIteration" value="0" />
+                </properties>
+              </test-case>
+              <test-case id="1019" name="SetupPanel_RejectedSubmissionRetainsPasswordAndUpstreamAddress" fullname="AIFarm.Tests.PlayMode.LocalAiGatewayProcessPlayModeTests.SetupPanel_RejectedSubmissionRetainsPasswordAndUpstreamAddress" methodname="SetupPanel_RejectedSubmissionRetainsPasswordAndUpstreamAddress" classname="AIFarm.Tests.PlayMode.LocalAiGatewayProcessPlayModeTests" runstate="Runnable" seed="634658908" result="Passed" start-time="2026-09-12 12:47:20Z" end-time="2026-09-12 12:47:20Z" duration="0.014939" asserts="0">
+                <properties>
+                  <property name="_JOINTYPE" value="UnityCombinatorial" />
+                  <property name="retryIteration" value="0" />
+                  <property name="repeatIteration" value="0" />
+                </properties>
+              </test-case>
+              <test-case id="1018" name="SetupPanel_UsesNativeMaskedFieldsAndPreservesRejectedInputs" fullname="AIFarm.Tests.PlayMode.LocalAiGatewayProcessPlayModeTests.SetupPanel_UsesNativeMaskedFieldsAndPreservesRejectedInputs" methodname="SetupPanel_UsesNativeMaskedFieldsAndPreservesRejectedInputs" classname="AIFarm.Tests.PlayMode.LocalAiGatewayProcessPlayModeTests" runstate="Runnable" seed="954135940" result="Passed" start-time="2026-09-12 12:47:20Z" end-time="2026-09-12 12:47:20Z" duration="0.006731" asserts="0">
+                <properties>
+                  <property name="_JOINTYPE" value="UnityCombinatorial" />
+                  <property name="retryIteration" value="0" />
+                  <property name="repeatIteration" value="0" />
+                </properties>
+              </test-case>
+              <test-case id="1013" name="StopWhileChecking_PreventsLateProcessStartAndRemainsStopped" fullname="AIFarm.Tests.PlayMode.LocalAiGatewayProcessPlayModeTests.StopWhileChecking_PreventsLateProcessStartAndRemainsStopped" methodname="StopWhileChecking_PreventsLateProcessStartAndRemainsStopped" classname="AIFarm.Tests.PlayMode.LocalAiGatewayProcessPlayModeTests" runstate="Runnable" seed="451604875" result="Passed" start-time="2026-09-12 12:47:20Z" end-time="2026-09-12 12:47:20Z" duration="0.004495" asserts="0">
+                <properties>
+                  <property name="_JOINTYPE" value="UnityCombinatorial" />
+                  <property name="retryIteration" value="0" />
+                  <property name="repeatIteration" value="0" />
+                </properties>
+              </test-case>
+              <test-case id="1009" name="UnavailablePort_StartsOneOwnedProcess_ThenBecomesReady" fullname="AIFarm.Tests.PlayMode.LocalAiGatewayProcessPlayModeTests.UnavailablePort_StartsOneOwnedProcess_ThenBecomesReady" methodname="UnavailablePort_StartsOneOwnedProcess_ThenBecomesReady" classname="AIFarm.Tests.PlayMode.LocalAiGatewayProcessPlayModeTests" runstate="Runnable" seed="798688935" result="Passed" start-time="2026-09-12 12:47:20Z" end-time="2026-09-12 12:47:20Z" duration="0.005115" asserts="0">
+                <properties>
+                  <property name="_JOINTYPE" value="UnityCombinatorial" />
+                  <property name="retryIteration" value="0" />
+                  <property name="repeatIteration" value="0" />
+                </properties>
+              </test-case>
+            </test-suite>
+            <test-suite type="TestFixture" id="1021" name="NpcPlanExecutorPlayModeTests" fullname="AIFarm.Tests.PlayMode.NpcPlanExecutorPlayModeTests" classname="AIFarm.Tests.PlayMode.NpcPlanExecutorPlayModeTests" runstate="Runnable" testcasecount="5" result="Passed" start-time="2026-09-12 12:47:20Z" end-time="2026-09-12 12:47:24Z" duration="3.836500" total="5" passed="5" failed="0" inconclusive="0" skipped="0" asserts="0">
+              <properties />
+              <test-case id="1022" name="HudSubmit_WhileActionRunning_QueuesAndExecutesNextCommand" fullname="AIFarm.Tests.PlayMode.NpcPlanExecutorPlayModeTests.HudSubmit_WhileActionRunning_QueuesAndExecutesNextCommand" methodname="HudSubmit_WhileActionRunning_QueuesAndExecutesNextCommand" classname="AIFarm.Tests.PlayMode.NpcPlanExecutorPlayModeTests" runstate="Runnable" seed="1849313691" result="Passed" start-time="2026-09-12 12:47:20Z" end-time="2026-09-12 12:47:22Z" duration="1.261337" asserts="0">
+                <properties>
+                  <property name="_JOINTYPE" value="UnityCombinatorial" />
+                  <property name="retryIteration" value="0" />
+                  <property name="repeatIteration" value="0" />
+                </properties>
+              </test-case>
+              <test-case id="1023" name="NavMeshMode_ConsecutiveActionsAtSamePlot_DoNotStall" fullname="AIFarm.Tests.PlayMode.NpcPlanExecutorPlayModeTests.NavMeshMode_ConsecutiveActionsAtSamePlot_DoNotStall" methodname="NavMeshMode_ConsecutiveActionsAtSamePlot_DoNotStall" classname="AIFarm.Tests.PlayMode.NpcPlanExecutorPlayModeTests" runstate="Runnable" seed="1266515627" result="Passed" start-time="2026-09-12 12:47:22Z" end-time="2026-09-12 12:47:22Z" duration="0.841374" asserts="0">
+                <properties>
+                  <property name="_JOINTYPE" value="UnityCombinatorial" />
+                  <property name="retryIteration" value="0" />
+                  <property name="repeatIteration" value="0" />
+                </properties>
+              </test-case>
+              <test-case id="1025" name="PreconditionsChangedDuringMovement_FailsWithoutSecondMutation" fullname="AIFarm.Tests.PlayMode.NpcPlanExecutorPlayModeTests.PreconditionsChangedDuringMovement_FailsWithoutSecondMutation" methodname="PreconditionsChangedDuringMovement_FailsWithoutSecondMutation" classname="AIFarm.Tests.PlayMode.NpcPlanExecutorPlayModeTests" runstate="Runnable" seed="628966363" result="Passed" start-time="2026-09-12 12:47:22Z" end-time="2026-09-12 12:47:23Z" duration="0.968365" asserts="0">
+                <properties>
+                  <property name="_JOINTYPE" value="UnityCombinatorial" />
+                  <property name="retryIteration" value="0" />
+                  <property name="repeatIteration" value="0" />
+                </properties>
+                <output><![CDATA[NPC action 'Sow Plot 01' failed: Sow failed: Plot 01 is not empty.
+]]></output>
+              </test-case>
+              <test-case id="1026" name="QueuedActions_RunInOrder_AndWaitCommitsClockAtCompletion" fullname="AIFarm.Tests.PlayMode.NpcPlanExecutorPlayModeTests.QueuedActions_RunInOrder_AndWaitCommitsClockAtCompletion" methodname="QueuedActions_RunInOrder_AndWaitCommitsClockAtCompletion" classname="AIFarm.Tests.PlayMode.NpcPlanExecutorPlayModeTests" runstate="Runnable" seed="230233667" result="Passed" start-time="2026-09-12 12:47:23Z" end-time="2026-09-12 12:47:24Z" duration="0.220666" asserts="0">
+                <properties>
+                  <property name="_JOINTYPE" value="UnityCombinatorial" />
+                  <property name="retryIteration" value="0" />
+                  <property name="repeatIteration" value="0" />
+                </properties>
+              </test-case>
+              <test-case id="1024" name="Sow_MovesAndShowsFeedback_BeforeCommittingDomainState" fullname="AIFarm.Tests.PlayMode.NpcPlanExecutorPlayModeTests.Sow_MovesAndShowsFeedback_BeforeCommittingDomainState" methodname="Sow_MovesAndShowsFeedback_BeforeCommittingDomainState" classname="AIFarm.Tests.PlayMode.NpcPlanExecutorPlayModeTests" runstate="Runnable" seed="2047829333" result="Passed" start-time="2026-09-12 12:47:24Z" end-time="2026-09-12 12:47:24Z" duration="0.542671" asserts="0">
+                <properties>
+                  <property name="_JOINTYPE" value="UnityCombinatorial" />
+                  <property name="retryIteration" value="0" />
+                  <property name="repeatIteration" value="0" />
+                </properties>
+              </test-case>
+            </test-suite>
+            <test-suite type="TestFixture" id="1027" name="OfflineFarmEndToEndPlayModeTests" fullname="AIFarm.Tests.PlayMode.OfflineFarmEndToEndPlayModeTests" classname="AIFarm.Tests.PlayMode.OfflineFarmEndToEndPlayModeTests" runstate="Runnable" testcasecount="1" result="Passed" start-time="2026-09-12 12:47:24Z" end-time="2026-09-12 12:47:26Z" duration="1.547220" total="1" passed="1" failed="0" inconclusive="0" skipped="0" asserts="0">
+              <properties />
+              <test-case id="1028" name="ChineseGoal_CompletesNinePlotLifecycleOffline" fullname="AIFarm.Tests.PlayMode.OfflineFarmEndToEndPlayModeTests.ChineseGoal_CompletesNinePlotLifecycleOffline" methodname="ChineseGoal_CompletesNinePlotLifecycleOffline" classname="AIFarm.Tests.PlayMode.OfflineFarmEndToEndPlayModeTests" runstate="Runnable" seed="1603948690" result="Passed" start-time="2026-09-12 12:47:24Z" end-time="2026-09-12 12:47:26Z" duration="1.545587" asserts="0">
+                <properties>
+                  <property name="_JOINTYPE" value="UnityCombinatorial" />
+                  <property name="retryIteration" value="0" />
+                  <property name="repeatIteration" value="0" />
+                </properties>
+              </test-case>
+            </test-suite>
+            <test-suite type="TestFixture" id="1029" name="PlotBlockoutViewPlayModeTests" fullname="AIFarm.Tests.PlayMode.PlotBlockoutViewPlayModeTests" classname="AIFarm.Tests.PlayMode.PlotBlockoutViewPlayModeTests" runstate="Runnable" testcasecount="1" result="Passed" start-time="2026-09-12 12:47:26Z" end-time="2026-09-12 12:47:26Z" duration="0.008960" total="1" passed="1" failed="0" inconclusive="0" skipped="0" asserts="0">
+              <properties />
+              <test-case id="1030" name="SerializedView_RebuildsWeedRendererCacheOnFirstRefresh" fullname="AIFarm.Tests.PlayMode.PlotBlockoutViewPlayModeTests.SerializedView_RebuildsWeedRendererCacheOnFirstRefresh" methodname="SerializedView_RebuildsWeedRendererCacheOnFirstRefresh" classname="AIFarm.Tests.PlayMode.PlotBlockoutViewPlayModeTests" runstate="Runnable" seed="199322734" result="Passed" start-time="2026-09-12 12:47:26Z" end-time="2026-09-12 12:47:26Z" duration="0.007753" asserts="0">
+                <properties>
+                  <property name="_JOINTYPE" value="UnityCombinatorial" />
+                  <property name="retryIteration" value="0" />
+                  <property name="repeatIteration" value="0" />
+                </properties>
+              </test-case>
+            </test-suite>
+            <test-suite type="TestFixture" id="1031" name="SustainableFarmScenePlayModeTests" fullname="AIFarm.Tests.PlayMode.SustainableFarmScenePlayModeTests" classname="AIFarm.Tests.PlayMode.SustainableFarmScenePlayModeTests" runstate="Runnable" testcasecount="1" result="Passed" start-time="2026-09-12 12:47:26Z" end-time="2026-09-12 12:48:35Z" duration="68.879310" total="1" passed="1" failed="0" inconclusive="0" skipped="0" asserts="0">
+              <properties />
+              <test-case id="1032" name="ActualTendFarm_ThreeNormalRounds_WithSaveReloadAndSharedResourceAccounting" fullname="AIFarm.Tests.PlayMode.SustainableFarmScenePlayModeTests.ActualTendFarm_ThreeNormalRounds_WithSaveReloadAndSharedResourceAccounting" methodname="ActualTendFarm_ThreeNormalRounds_WithSaveReloadAndSharedResourceAccounting" classname="AIFarm.Tests.PlayMode.SustainableFarmScenePlayModeTests" runstate="Runnable" seed="775032473" result="Passed" start-time="2026-09-12 12:47:26Z" end-time="2026-09-12 12:48:35Z" duration="68.878124" asserts="0">
+                <properties>
+                  <property name="_JOINTYPE" value="UnityCombinatorial" />
+                  <property name="retryIteration" value="0" />
+                  <property name="repeatIteration" value="0" />
+                </properties>
+                <output><![CDATA[Conversation script ready residentId=resident-001 participants=resident-001,resident-003 provider=local lines=4
+]]></output>
+              </test-case>
+            </test-suite>
+            <test-suite type="TestFixture" id="1033" name="TownDialogueOverlayPlayModeTests" fullname="AIFarm.Tests.PlayMode.TownDialogueOverlayPlayModeTests" classname="AIFarm.Tests.PlayMode.TownDialogueOverlayPlayModeTests" runstate="Runnable" testcasecount="4" result="Passed" start-time="2026-09-12 12:48:35Z" end-time="2026-09-12 12:48:43Z" duration="8.614718" total="4" passed="4" failed="0" inconclusive="0" skipped="0" asserts="0">
+              <properties />
+              <test-case id="1036" name="ConversationTurns_StayOrderedAndReadableDuringPauseAndTwentyTimesSpeed" fullname="AIFarm.Tests.PlayMode.TownDialogueOverlayPlayModeTests.ConversationTurns_StayOrderedAndReadableDuringPauseAndTwentyTimesSpeed" methodname="ConversationTurns_StayOrderedAndReadableDuringPauseAndTwentyTimesSpeed" classname="AIFarm.Tests.PlayMode.TownDialogueOverlayPlayModeTests" runstate="Runnable" seed="1668482888" result="Passed" start-time="2026-09-12 12:48:35Z" end-time="2026-09-12 12:48:43Z" duration="8.528343" asserts="0">
+                <properties>
+                  <property name="_JOINTYPE" value="UnityCombinatorial" />
+                  <property name="retryIteration" value="0" />
+                  <property name="repeatIteration" value="0" />
+                </properties>
+              </test-case>
+              <test-case id="1037" name="HistoryButtons_FilterBySpeakerOrRecipientWithoutLosingFullMessages" fullname="AIFarm.Tests.PlayMode.TownDialogueOverlayPlayModeTests.HistoryButtons_FilterBySpeakerOrRecipientWithoutLosingFullMessages" methodname="HistoryButtons_FilterBySpeakerOrRecipientWithoutLosingFullMessages" classname="AIFarm.Tests.PlayMode.TownDialogueOverlayPlayModeTests" runstate="Runnable" seed="545191167" result="Passed" start-time="2026-09-12 12:48:43Z" end-time="2026-09-12 12:48:43Z" duration="0.033881" asserts="0">
+                <properties>
+                  <property name="_JOINTYPE" value="UnityCombinatorial" />
+                  <property name="retryIteration" value="0" />
+                  <property name="repeatIteration" value="0" />
+                </properties>
+              </test-case>
+              <test-case id="1034" name="LongChinese_UsesReadableScreenCanvas_NoClippingOrClickInterception" fullname="AIFarm.Tests.PlayMode.TownDialogueOverlayPlayModeTests.LongChinese_UsesReadableScreenCanvas_NoClippingOrClickInterception" methodname="LongChinese_UsesReadableScreenCanvas_NoClippingOrClickInterception" classname="AIFarm.Tests.PlayMode.TownDialogueOverlayPlayModeTests" runstate="Runnable" seed="139581838" result="Passed" start-time="2026-09-12 12:48:43Z" end-time="2026-09-12 12:48:43Z" duration="0.029177" asserts="0">
+                <properties>
+                  <property name="_JOINTYPE" value="UnityCombinatorial" />
+                  <property name="retryIteration" value="0" />
+                  <property name="repeatIteration" value="0" />
+                </properties>
+              </test-case>
+              <test-case id="1035" name="SimultaneousBubbles_DoNotCoverHudOrCommandTarget" fullname="AIFarm.Tests.PlayMode.TownDialogueOverlayPlayModeTests.SimultaneousBubbles_DoNotCoverHudOrCommandTarget" methodname="SimultaneousBubbles_DoNotCoverHudOrCommandTarget" classname="AIFarm.Tests.PlayMode.TownDialogueOverlayPlayModeTests" runstate="Runnable" seed="863782981" result="Passed" start-time="2026-09-12 12:48:43Z" end-time="2026-09-12 12:48:43Z" duration="0.020857" asserts="0">
+                <properties>
+                  <property name="_JOINTYPE" value="UnityCombinatorial" />
+                  <property name="retryIteration" value="0" />
+                  <property name="repeatIteration" value="0" />
+                </properties>
+              </test-case>
+            </test-suite>
+            <test-suite type="TestFixture" id="1038" name="TownLifeIntegrationPlayModeTests" fullname="AIFarm.Tests.PlayMode.TownLifeIntegrationPlayModeTests" classname="AIFarm.Tests.PlayMode.TownLifeIntegrationPlayModeTests" runstate="Runnable" testcasecount="12" result="Passed" start-time="2026-09-12 12:48:43Z" end-time="2026-09-12 12:50:12Z" duration="88.506063" total="12" passed="12" failed="0" inconclusive="0" skipped="0" asserts="0">
+              <properties />
+              <test-case id="1041" name="ControlledRemoteHighLevelDecisionActuallyReachesExecutorAndProducesResources" fullname="AIFarm.Tests.PlayMode.TownLifeIntegrationPlayModeTests.ControlledRemoteHighLevelDecisionActuallyReachesExecutorAndProducesResources" methodname="ControlledRemoteHighLevelDecisionActuallyReachesExecutorAndProducesResources" classname="AIFarm.Tests.PlayMode.TownLifeIntegrationPlayModeTests" runstate="Runnable" seed="259301380" result="Passed" start-time="2026-09-12 12:48:43Z" end-time="2026-09-12 12:48:52Z" duration="8.612148" asserts="0">
+                <properties>
+                  <property name="_JOINTYPE" value="UnityCombinatorial" />
+                  <property name="retryIteration" value="0" />
+                  <property name="repeatIteration" value="0" />
+                </properties>
+                <output><![CDATA[AI request residentId=resident-001 operation=resident-decision
+AI response residentId=resident-001 source=Remote succeeded=True
+AI request residentId=resident-001 operation=resident-decision
+AI response residentId=resident-001 source=Remote succeeded=True
+AI request residentId=resident-002 operation=resident-decision
+AI response residentId=resident-002 source=Remote succeeded=True
+AI request residentId=resident-003 operation=resident-decision
+AI response residentId=resident-003 source=Remote succeeded=True
+AI request residentId=resident-004 operation=resident-decision
+AI response residentId=resident-004 source=Remote succeeded=True
+AI request residentId=resident-004 operation=resident-decision
+AI response residentId=resident-004 source=Remote succeeded=True
+AI request residentId=resident-004 operation=resident-decision
+AI response residentId=resident-004 source=Remote succeeded=True
+]]></output>
+              </test-case>
+              <test-case id="1043" name="FarmNavigationFailureCannotStrandBusyExecutor_RecoveryCompletesSubmittedTask" fullname="AIFarm.Tests.PlayMode.TownLifeIntegrationPlayModeTests.FarmNavigationFailureCannotStrandBusyExecutor_RecoveryCompletesSubmittedTask" methodname="FarmNavigationFailureCannotStrandBusyExecutor_RecoveryCompletesSubmittedTask" classname="AIFarm.Tests.PlayMode.TownLifeIntegrationPlayModeTests" runstate="Runnable" seed="317989721" result="Passed" start-time="2026-09-12 12:48:52Z" end-time="2026-09-12 12:48:57Z" duration="5.395291" asserts="0">
+                <properties>
+                  <property name="_JOINTYPE" value="UnityCombinatorial" />
+                  <property name="retryIteration" value="0" />
+                  <property name="repeatIteration" value="0" />
+                </properties>
+                <output><![CDATA[NPC action 'Sow Plot 01' failed: NPC cannot move because its NavMeshAgent is not on a NavMesh.
+]]></output>
+              </test-case>
+              <test-case id="1042" name="FertilizerShortageUsesExistingWeedsBeforeWellAndResumesPlayerTask" fullname="AIFarm.Tests.PlayMode.TownLifeIntegrationPlayModeTests.FertilizerShortageUsesExistingWeedsBeforeWellAndResumesPlayerTask" methodname="FertilizerShortageUsesExistingWeedsBeforeWellAndResumesPlayerTask" classname="AIFarm.Tests.PlayMode.TownLifeIntegrationPlayModeTests" runstate="Runnable" seed="1865942261" result="Passed" start-time="2026-09-12 12:48:57Z" end-time="2026-09-12 12:49:07Z" duration="10.083022" asserts="0">
+                <properties>
+                  <property name="_JOINTYPE" value="UnityCombinatorial" />
+                  <property name="retryIteration" value="0" />
+                  <property name="repeatIteration" value="0" />
+                </properties>
+              </test-case>
+              <test-case id="1049" name="FiniteFishingRestoresActualCompletedCountAndOnlyProducesRemainingFish" fullname="AIFarm.Tests.PlayMode.TownLifeIntegrationPlayModeTests.FiniteFishingRestoresActualCompletedCountAndOnlyProducesRemainingFish" methodname="FiniteFishingRestoresActualCompletedCountAndOnlyProducesRemainingFish" classname="AIFarm.Tests.PlayMode.TownLifeIntegrationPlayModeTests" runstate="Runnable" seed="2143234087" result="Passed" start-time="2026-09-12 12:49:07Z" end-time="2026-09-12 12:49:19Z" duration="11.236595" asserts="0">
+                <properties>
+                  <property name="_JOINTYPE" value="UnityCombinatorial" />
+                  <property name="retryIteration" value="0" />
+                  <property name="repeatIteration" value="0" />
+                </properties>
+              </test-case>
+              <test-case id="1047" name="InterruptedPlayerChatFailsInsteadOfReportingCompletion" fullname="AIFarm.Tests.PlayMode.TownLifeIntegrationPlayModeTests.InterruptedPlayerChatFailsInsteadOfReportingCompletion" methodname="InterruptedPlayerChatFailsInsteadOfReportingCompletion" classname="AIFarm.Tests.PlayMode.TownLifeIntegrationPlayModeTests" runstate="Runnable" seed="1122692476" result="Passed" start-time="2026-09-12 12:49:19Z" end-time="2026-09-12 12:49:19Z" duration="0.555631" asserts="0">
+                <properties>
+                  <property name="_JOINTYPE" value="UnityCombinatorial" />
+                  <property name="retryIteration" value="0" />
+                  <property name="repeatIteration" value="0" />
+                </properties>
+              </test-case>
+              <test-case id="1046" name="PlayerChatTaskCompletesOnlyAfterTheActualConversation" fullname="AIFarm.Tests.PlayMode.TownLifeIntegrationPlayModeTests.PlayerChatTaskCompletesOnlyAfterTheActualConversation" methodname="PlayerChatTaskCompletesOnlyAfterTheActualConversation" classname="AIFarm.Tests.PlayMode.TownLifeIntegrationPlayModeTests" runstate="Runnable" seed="187787659" result="Passed" start-time="2026-09-12 12:49:19Z" end-time="2026-09-12 12:49:31Z" duration="12.222486" asserts="0">
+                <properties>
+                  <property name="_JOINTYPE" value="UnityCombinatorial" />
+                  <property name="retryIteration" value="0" />
+                  <property name="repeatIteration" value="0" />
+                </properties>
+                <output><![CDATA[Conversation script ready residentId=resident-001 participants=resident-001,resident-002 provider=local lines=2
+]]></output>
+              </test-case>
+              <test-case id="1050" name="PlayerPauseDoesNotConsumeEitherNavigationDeadline" fullname="AIFarm.Tests.PlayMode.TownLifeIntegrationPlayModeTests.PlayerPauseDoesNotConsumeEitherNavigationDeadline" methodname="PlayerPauseDoesNotConsumeEitherNavigationDeadline" classname="AIFarm.Tests.PlayMode.TownLifeIntegrationPlayModeTests" runstate="Runnable" seed="1498551394" result="Passed" start-time="2026-09-12 12:49:31Z" end-time="2026-09-12 12:49:32Z" duration="0.558103" asserts="0">
+                <properties>
+                  <property name="_JOINTYPE" value="UnityCombinatorial" />
+                  <property name="retryIteration" value="0" />
+                  <property name="repeatIteration" value="0" />
+                </properties>
+              </test-case>
+              <test-case id="1039" name="ProductionScene_AllResidentsHaveDistinctExecutorsAndAutonomousActions" fullname="AIFarm.Tests.PlayMode.TownLifeIntegrationPlayModeTests.ProductionScene_AllResidentsHaveDistinctExecutorsAndAutonomousActions" methodname="ProductionScene_AllResidentsHaveDistinctExecutorsAndAutonomousActions" classname="AIFarm.Tests.PlayMode.TownLifeIntegrationPlayModeTests" runstate="Runnable" seed="1507743565" result="Passed" start-time="2026-09-12 12:49:32Z" end-time="2026-09-12 12:49:38Z" duration="5.789495" asserts="0">
+                <properties>
+                  <property name="_JOINTYPE" value="UnityCombinatorial" />
+                  <property name="retryIteration" value="0" />
+                  <property name="repeatIteration" value="0" />
+                </properties>
+                <output><![CDATA[AI request residentId=resident-001 operation=resident-decision
+AI request residentId=resident-002 operation=resident-decision
+AI request residentId=resident-001 operation=resident-decision
+AI request residentId=resident-004 operation=resident-decision
+]]></output>
+              </test-case>
+              <test-case id="1045" name="ResidentLeavingAfterConversationArrivalReleasesBothParticipantsImmediately" fullname="AIFarm.Tests.PlayMode.TownLifeIntegrationPlayModeTests.ResidentLeavingAfterConversationArrivalReleasesBothParticipantsImmediately" methodname="ResidentLeavingAfterConversationArrivalReleasesBothParticipantsImmediately" classname="AIFarm.Tests.PlayMode.TownLifeIntegrationPlayModeTests" runstate="Runnable" seed="252287856" result="Passed" start-time="2026-09-12 12:49:38Z" end-time="2026-09-12 12:49:43Z" duration="5.322678" asserts="0">
+                <properties>
+                  <property name="_JOINTYPE" value="UnityCombinatorial" />
+                  <property name="retryIteration" value="0" />
+                  <property name="repeatIteration" value="0" />
+                </properties>
+                <output><![CDATA[Conversation script ready residentId=resident-001 participants=resident-001,resident-002 provider=local lines=4
+]]></output>
+              </test-case>
+              <test-case id="1048" name="RestoredChatHasNoStaleSessionAndStoppingItCannotCompleteNewTask" fullname="AIFarm.Tests.PlayMode.TownLifeIntegrationPlayModeTests.RestoredChatHasNoStaleSessionAndStoppingItCannotCompleteNewTask" methodname="RestoredChatHasNoStaleSessionAndStoppingItCannotCompleteNewTask" classname="AIFarm.Tests.PlayMode.TownLifeIntegrationPlayModeTests" runstate="Runnable" seed="624253005" result="Passed" start-time="2026-09-12 12:49:43Z" end-time="2026-09-12 12:49:44Z" duration="0.571139" asserts="0">
+                <properties>
+                  <property name="_JOINTYPE" value="UnityCombinatorial" />
+                  <property name="retryIteration" value="0" />
+                  <property name="repeatIteration" value="0" />
+                </properties>
+              </test-case>
+              <test-case id="1040" name="SubmittedCommandsRemainBoundWhenSelectionChanges_AllResidentsFishPickAndCancel" fullname="AIFarm.Tests.PlayMode.TownLifeIntegrationPlayModeTests.SubmittedCommandsRemainBoundWhenSelectionChanges_AllResidentsFishPickAndCancel" methodname="SubmittedCommandsRemainBoundWhenSelectionChanges_AllResidentsFishPickAndCancel" classname="AIFarm.Tests.PlayMode.TownLifeIntegrationPlayModeTests" runstate="Runnable" seed="520553352" result="Passed" start-time="2026-09-12 12:49:44Z" end-time="2026-09-12 12:50:01Z" duration="17.160472" asserts="0">
+                <properties>
+                  <property name="_JOINTYPE" value="UnityCombinatorial" />
+                  <property name="retryIteration" value="0" />
+                  <property name="repeatIteration" value="0" />
+                </properties>
+                <output><![CDATA[AI response residentId=resident-001 source=Remote succeeded=True
+AI response residentId=resident-002 source=Remote succeeded=True
+AI response residentId=resident-003 source=Remote succeeded=True
+AI response residentId=resident-004 source=Remote succeeded=True
+AI request residentId=resident-001 operation=resident-decision
+AI response residentId=resident-001 source=Remote succeeded=True
+AI request residentId=resident-001 operation=resident-decision
+AI request residentId=resident-003 operation=resident-decision
+AI response residentId=resident-001 source=Remote succeeded=True
+AI response residentId=resident-003 source=Remote succeeded=True
+AI request residentId=resident-004 operation=resident-decision
+AI response residentId=resident-004 source=Remote succeeded=True
+AI request residentId=resident-002 operation=resident-decision
+AI response residentId=resident-002 source=Remote succeeded=True
+AI request residentId=resident-004 operation=resident-decision
+AI response residentId=resident-004 source=Remote succeeded=True
+AI request residentId=resident-004 operation=resident-decision
+AI response residentId=resident-004 source=Remote succeeded=True
+AI response residentId=resident-001 source=Remote succeeded=True
+AI response residentId=resident-002 source=Remote succeeded=True
+AI response residentId=resident-003 source=Remote succeeded=True
+AI response residentId=resident-004 source=Remote succeeded=True
+AI response residentId=resident-001 source=Remote succeeded=True
+AI response residentId=resident-002 source=Remote succeeded=True
+AI response residentId=resident-003 source=Remote succeeded=True
+AI response residentId=resident-004 source=Remote succeeded=True
+AI request residentId=resident-003 operation=resident-decision
+AI request residentId=resident-001 operation=resident-decision
+AI response residentId=resident-003 source=Remote succeeded=True
+AI response residentId=resident-001 source=Remote succeeded=True
+]]></output>
+              </test-case>
+              <test-case id="1044" name="UnreachableMoveHasBoundedRetriesAndReleasesTaskOwnership" fullname="AIFarm.Tests.PlayMode.TownLifeIntegrationPlayModeTests.UnreachableMoveHasBoundedRetriesAndReleasesTaskOwnership" methodname="UnreachableMoveHasBoundedRetriesAndReleasesTaskOwnership" classname="AIFarm.Tests.PlayMode.TownLifeIntegrationPlayModeTests" runstate="Runnable" seed="635055073" result="Passed" start-time="2026-09-12 12:50:01Z" end-time="2026-09-12 12:50:12Z" duration="10.994763" asserts="0">
+                <properties>
+                  <property name="_JOINTYPE" value="UnityCombinatorial" />
+                  <property name="retryIteration" value="0" />
+                  <property name="repeatIteration" value="0" />
+                </properties>
+                <output><![CDATA[Saving results to: C:\学习\研究生\Elys AI\面试模拟题\AIFarm\Docs\Verification\Unity-PlayMode-20260912-124719-752.xml
+]]></output>
+              </test-case>
+            </test-suite>
+          </test-suite>
+        </test-suite>
+      </test-suite>
+    </test-suite>
+  </test-suite>
+</test-run>

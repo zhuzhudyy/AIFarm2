@@ -6,6 +6,8 @@ using AIFarm.Inventory;
 using AIFarm.Ai;
 using AIFarm.Npc;
 using AIFarm.Time;
+using AIFarm.Activities;
+using AIFarm.Town;
 using UnityEngine;
 
 namespace AIFarm.Presentation
@@ -38,6 +40,55 @@ namespace AIFarm.Presentation
         public ResidentRegistry ResidentRegistry { get; private set; }
 
         public AiRequestCoordinator AiRequests { get; private set; }
+
+        public TownActivityResources Activities { get; private set; }
+
+        public long GatewayConfigurationVersion { get; private set; }
+
+        private readonly Dictionary<ResidentId, TownLifeController> lifeControllers = new Dictionary<ResidentId, TownLifeController>();
+        private readonly Dictionary<int, ResidentId> plotTaskOwners = new Dictionary<int, ResidentId>();
+
+        public bool CanWorkPlot(int plot, ResidentId residentId) =>
+            !plotTaskOwners.TryGetValue(plot, out ResidentId owner) || owner == residentId;
+
+        public bool ClaimTaskPlot(int plot, ResidentId residentId)
+        {
+            if (!CanWorkPlot(plot, residentId)) return false;
+            plotTaskOwners[plot] = residentId;
+            return true;
+        }
+
+        public void ReleaseTaskPlots(ResidentId residentId)
+        {
+            foreach (int plot in new List<int>(plotTaskOwners.Keys))
+                if (plotTaskOwners[plot] == residentId) plotTaskOwners.Remove(plot);
+        }
+
+        public IReadOnlyDictionary<ResidentId, TownLifeController> LifeControllers => lifeControllers;
+
+        public ActionResult SubmitResidentCommand(ResidentId residentId, string command)
+        {
+            return lifeControllers.TryGetValue(residentId, out TownLifeController controller) && controller != null
+                ? controller.SubmitCommand(command)
+                : ActionResult.Failure(ActionFailureReason.InvalidState, "此居民的生活执行器尚未完成初始化。");
+        }
+
+        public string GetResidentDiagnostics(ResidentId residentId)
+        {
+            return lifeControllers.TryGetValue(residentId, out TownLifeController controller) && controller != null
+                ? controller.Diagnostics : "等待居民初始化";
+        }
+
+        public void ApplyGatewayConfiguration(long version, bool online, string model, string error)
+        {
+            if (AiRequests == null) return;
+            GatewayConfigurationVersion = version;
+            AiRequests.ReplaceClient(new RemoteAiGatewayClient(sceneConfig.AiGatewayBaseUrl, Math.Max(15, sceneConfig.AiRequestTimeoutSeconds)));
+            foreach (ReplanController replanner in FindObjectsByType<ReplanController>(FindObjectsSortMode.None))
+                replanner.RefreshGatewayConfiguration();
+            foreach (TownLifeController controller in lifeControllers.Values)
+                controller.RefreshGateway(version, online, error);
+        }
 
         public ResidentReflectionCoordinator ResidentReflections { get; private set; }
 
@@ -85,21 +136,24 @@ namespace AIFarm.Presentation
             }
 
             Field = new FarmField();
+            foreach (FarmPlot plot in Field.Plots) plot.ConfigureYield(sceneConfig.SeedsReturnedPerCrop, sceneConfig.CropYield);
             Inventory = new FarmInventory(
                 inventoryConfig.CarrotSeeds,
                 inventoryConfig.Water,
                 inventoryConfig.Fertilizer,
                 inventoryConfig.Carrots);
-            Clock = new GameClock(sceneConfig.InitialElapsedGameSeconds, sceneConfig.TimeScale);
+            Clock = new GameClock(sceneConfig.InitialElapsedGameSeconds, sceneConfig.TimeScale,
+                sceneConfig.GameSecondsPerRealSecond);
             Mode = sceneConfig.CreateDemoMode();
             Events = new WorldEventLog();
             Simulation = new FarmSimulation(Field, Clock, Mode, Events);
+            Activities = new TownActivityResources(Clock, Inventory, sceneConfig.CreateActivityRules());
             StartBackgroundObservationProjection();
             IAiGatewayClient sharedGateway = sceneConfig.AiGatewayMode == AiGatewayMode.Local
                 ? (IAiGatewayClient)new LocalAiGatewayClient()
                 : new RemoteAiGatewayClient(
                     sceneConfig.AiGatewayBaseUrl,
-                    sceneConfig.AiRequestTimeoutSeconds);
+                    Math.Max(15, sceneConfig.AiRequestTimeoutSeconds));
             AiRequests = new AiRequestCoordinator(
                 sharedGateway,
                 sceneConfig.MaximumConcurrentAiRequests,
@@ -126,6 +180,7 @@ namespace AIFarm.Presentation
             }
 
             NotifyAuthoritativeStateResetting();
+            Activities?.Reset();
 
             foreach (FarmPlot plot in Field.Plots)
             {
@@ -183,6 +238,7 @@ namespace AIFarm.Presentation
         public void NotifyAuthoritativeStateResetting()
         {
             AuthoritativeStateRevision++;
+            plotTaskOwners.Clear();
             AiRequests?.CancelAllForAuthoritativeReset();
 
             Action handlers = AuthoritativeStateResetting;
@@ -268,6 +324,19 @@ namespace AIFarm.Presentation
             if (result.Failed)
             {
                 Debug.LogError(result.Message, this);
+            }
+        }
+
+        private void Start()
+        {
+            if (!IsInitialized) return;
+            foreach (TownResidentScheduleController resident in FindObjectsByType<TownResidentScheduleController>(FindObjectsSortMode.None))
+            {
+                var life = resident.GetComponent<TownLifeController>();
+                if (life == null) life = resident.gameObject.AddComponent<TownLifeController>();
+                ActionResult initialized = life.Initialize(this, resident);
+                if (initialized.Succeeded) lifeControllers[resident.ResidentId] = life;
+                else Debug.LogError(initialized.Message, resident);
             }
         }
 

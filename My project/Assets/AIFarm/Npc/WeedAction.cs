@@ -30,7 +30,7 @@ namespace AIFarm.Npc
 
         protected override ActionResult ApplyCompletion(NpcActionContext context)
         {
-            return context.Field.GetPlot(PlotNumber).Weed();
+            return context.Field.GetPlot(PlotNumber).Weed(context.Inventory);
         }
     }
 }

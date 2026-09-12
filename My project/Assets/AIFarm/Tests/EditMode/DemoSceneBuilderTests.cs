@@ -910,9 +910,13 @@ namespace AIFarm.Tests.EditMode
 
             Assert.That(residentIds, Has.Count.EqualTo(4));
             Assert.That(residentColors, Has.Count.EqualTo(4));
-            Assert.That(GameObject.Find("Resident_Amu").GetComponent<NpcPlanExecutor>(), Is.Null);
-            Assert.That(GameObject.Find("Resident_Xiaosui").GetComponent<NpcPlanExecutor>(), Is.Null);
-            Assert.That(GameObject.Find("Resident_Momo").GetComponent<NpcPlanExecutor>(), Is.Null);
+            foreach (TownResidentScheduleController resident in Object.FindObjectsByType<TownResidentScheduleController>(FindObjectsSortMode.None))
+            {
+                var residentExecutor = resident.GetComponent<NpcPlanExecutor>();
+                Assert.That(residentExecutor, Is.Not.Null, "Every resident must own a farm executor in the saved scene.");
+                Assert.That(residentExecutor.ResidentId, Is.EqualTo(resident.ResidentId));
+                Assert.That(resident.GetComponents<TownLifeController>(), Has.Length.EqualTo(1));
+            }
 
             string[] townObjectNames =
             {
@@ -1066,11 +1070,14 @@ namespace AIFarm.Tests.EditMode
                 AssetDatabase.LoadAssetAtPath<DemoSceneConfig>(DemoSceneBuilder.SceneConfigPath);
             Assert.That(sceneConfig, Is.Not.Null);
             Assert.That(sceneConfig.InventoryConfig, Is.SameAs(inventoryConfig));
-            Assert.That(sceneConfig.TimeScale, Is.EqualTo(20f));
+            Assert.That(sceneConfig.TimeScale, Is.EqualTo(1f));
+            Assert.That(sceneConfig.GameSecondsPerRealSecond, Is.EqualTo(120d));
+            Assert.That(sceneConfig.MaturityGameSeconds, Is.EqualTo(172800f));
+            Assert.That(sceneConfig.FastGrowthDemo, Is.False);
             Assert.That(sceneConfig.ExpressionCooldownSeconds, Is.GreaterThan(0f));
             Assert.That(sceneConfig.ExpressionDisplaySeconds, Is.GreaterThan(0f));
             Assert.That(sceneConfig.AiGatewayBaseUrl, Is.Not.Empty);
-            Assert.That(sceneConfig.AiRequestTimeoutSeconds, Is.InRange(1, 3));
+            Assert.That(sceneConfig.AiRequestTimeoutSeconds, Is.EqualTo(30));
             Assert.That(sceneConfig.AiGatewayMode, Is.EqualTo(AiGatewayMode.Remote));
             Assert.That(sceneConfig.CreateDemoMode().IsAiServiceRequired, Is.False);
 

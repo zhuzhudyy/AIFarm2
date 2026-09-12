@@ -1,0 +1,152 @@
+<?xml version="1.0" encoding="utf-8"?>
+<test-run id="2" testcasecount="3" result="Failed(Child)" total="3" passed="2" failed="1" inconclusive="0" skipped="0" asserts="0" engine-version="3.5.0.0" clr-version="4.0.30319.42000" start-time="2026-09-12 09:37:57Z" end-time="2026-09-12 09:39:19Z" duration="81.75928">
+  <test-suite type="TestSuite" id="1042" name="My project" fullname="My project" runstate="Runnable" testcasecount="27" result="Failed" site="Child" start-time="2026-09-12 09:37:57Z" end-time="2026-09-12 09:39:19Z" duration="81.759280" total="3" passed="2" failed="1" inconclusive="0" skipped="0" asserts="0">
+    <properties>
+      <property name="platform" value="PlayMode" />
+    </properties>
+    <failure>
+      <message><![CDATA[One or more child tests had errors]]></message>
+    </failure>
+    <test-suite type="Assembly" id="1035" name="AIFarm.PlayModeTests.dll" fullname="C:/学习/研究生/Elys AI/面试模拟题/AIFarm/My project/Library/ScriptAssemblies/AIFarm.PlayModeTests.dll" runstate="Runnable" testcasecount="27" result="Failed" site="Child" start-time="2026-09-12 09:37:57Z" end-time="2026-09-12 09:39:19Z" duration="81.751277" total="3" passed="2" failed="1" inconclusive="0" skipped="0" asserts="0">
+      <properties>
+        <property name="_PID" value="41612" />
+        <property name="_APPDOMAIN" value="Unity Child Domain" />
+        <property name="platform" value="PlayMode" />
+        <property name="EditorOnly" value="False" />
+      </properties>
+      <failure>
+        <message><![CDATA[One or more child tests had errors]]></message>
+      </failure>
+      <test-suite type="TestSuite" id="1036" name="AIFarm" fullname="AIFarm" runstate="Runnable" testcasecount="27" result="Failed" site="Child" start-time="2026-09-12 09:37:57Z" end-time="2026-09-12 09:39:19Z" duration="81.749628" total="3" passed="2" failed="1" inconclusive="0" skipped="0" asserts="0">
+        <properties />
+        <failure>
+          <message><![CDATA[One or more child tests had errors]]></message>
+        </failure>
+        <test-suite type="TestSuite" id="1037" name="Tests" fullname="AIFarm.Tests" runstate="Runnable" testcasecount="27" result="Failed" site="Child" start-time="2026-09-12 09:37:57Z" end-time="2026-09-12 09:39:19Z" duration="81.743026" total="3" passed="2" failed="1" inconclusive="0" skipped="0" asserts="0">
+          <properties />
+          <failure>
+            <message><![CDATA[One or more child tests had errors]]></message>
+          </failure>
+          <test-suite type="TestSuite" id="1038" name="PlayMode" fullname="AIFarm.Tests.PlayMode" runstate="Runnable" testcasecount="27" result="Failed" site="Child" start-time="2026-09-12 09:37:57Z" end-time="2026-09-12 09:39:19Z" duration="81.737476" total="3" passed="2" failed="1" inconclusive="0" skipped="0" asserts="0">
+            <properties />
+            <failure>
+              <message><![CDATA[One or more child tests had errors]]></message>
+            </failure>
+            <test-suite type="TestFixture" id="1031" name="TownLifeIntegrationPlayModeTests" fullname="AIFarm.Tests.PlayMode.TownLifeIntegrationPlayModeTests" classname="AIFarm.Tests.PlayMode.TownLifeIntegrationPlayModeTests" runstate="Runnable" testcasecount="3" result="Failed" site="Child" start-time="2026-09-12 09:37:57Z" end-time="2026-09-12 09:39:19Z" duration="81.729806" total="3" passed="2" failed="1" inconclusive="0" skipped="0" asserts="0">
+              <properties />
+              <failure>
+                <message><![CDATA[One or more child tests had errors]]></message>
+              </failure>
+              <test-case id="1034" name="ControlledRemoteHighLevelDecisionActuallyReachesExecutorAndProducesResources" fullname="AIFarm.Tests.PlayMode.TownLifeIntegrationPlayModeTests.ControlledRemoteHighLevelDecisionActuallyReachesExecutorAndProducesResources" methodname="ControlledRemoteHighLevelDecisionActuallyReachesExecutorAndProducesResources" classname="AIFarm.Tests.PlayMode.TownLifeIntegrationPlayModeTests" runstate="Runnable" seed="1404212421" result="Failed" start-time="2026-09-12 09:37:57Z" end-time="2026-09-12 09:38:52Z" duration="55.678819" asserts="0">
+                <properties>
+                  <property name="_JOINTYPE" value="UnityCombinatorial" />
+                  <property name="retryIteration" value="0" />
+                  <property name="repeatIteration" value="0" />
+                </properties>
+                <failure>
+                  <message><![CDATA[  Controlled remote decision must be consumed by the actual life executor.
+  Expected: True
+  But was:  False
+]]></message>
+                  <stack-trace><![CDATA[at AIFarm.Tests.PlayMode.TownLifeIntegrationPlayModeTests+<ControlledRemoteHighLevelDecisionActuallyReachesExecutorAndProducesResources>d__2.MoveNext () [0x001c4] in C:\学习\研究生\Elys AI\面试模拟题\AIFarm\My project\Assets\AIFarm\Tests\PlayMode\TownLifeIntegrationPlayModeTests.cs:121
+at UnityEngine.TestTools.TestEnumerator+<Execute>d__7.MoveNext () [0x0003a] in .\Library\PackageCache\com.unity.test-framework@1405238725ab\UnityEngine.TestRunner\NUnitExtensions\Attributes\TestEnumerator.cs:44
+]]></stack-trace>
+                </failure>
+                <output><![CDATA[AI request residentId=resident-001 operation=resident-decision
+AI response residentId=resident-001 source=Local succeeded=True
+AI request residentId=resident-001 operation=resident-decision
+AI response residentId=resident-001 source=Local succeeded=True
+AI request residentId=resident-002 operation=resident-decision
+AI response residentId=resident-002 source=Local succeeded=True
+AI request residentId=resident-003 operation=resident-decision
+AI response residentId=resident-003 source=Local succeeded=True
+AI request residentId=resident-004 operation=resident-decision
+AI response residentId=resident-004 source=Local succeeded=True
+AI request residentId=resident-004 operation=resident-decision
+AI response residentId=resident-004 source=Local succeeded=True
+AI request residentId=resident-004 operation=resident-decision
+AI response residentId=resident-004 source=Local succeeded=True
+AI request residentId=resident-001 operation=resident-decision
+AI response residentId=resident-001 source=Local succeeded=True
+AI request residentId=resident-002 operation=resident-decision
+AI response residentId=resident-002 source=Local succeeded=True
+AI request residentId=resident-003 operation=resident-decision
+AI response residentId=resident-003 source=Local succeeded=True
+AI request residentId=resident-004 operation=resident-decision
+AI response residentId=resident-004 source=Local succeeded=True
+AI request residentId=resident-001 operation=resident-decision
+AI response residentId=resident-001 source=Local succeeded=True
+AI request residentId=resident-002 operation=resident-decision
+AI response residentId=resident-002 source=Local succeeded=True
+AI request residentId=resident-003 operation=resident-decision
+AI response residentId=resident-003 source=Local succeeded=True
+AI request residentId=resident-001 operation=resident-decision
+AI response residentId=resident-001 source=Local succeeded=True
+AI request residentId=resident-004 operation=resident-decision
+AI response residentId=resident-004 source=Local succeeded=True
+AI request residentId=resident-002 operation=resident-decision
+AI response residentId=resident-002 source=Local succeeded=True
+AI request residentId=resident-003 operation=resident-decision
+AI response residentId=resident-003 source=Local succeeded=True
+]]></output>
+              </test-case>
+              <test-case id="1032" name="ProductionScene_AllResidentsHaveDistinctExecutorsAndAutonomousActions" fullname="AIFarm.Tests.PlayMode.TownLifeIntegrationPlayModeTests.ProductionScene_AllResidentsHaveDistinctExecutorsAndAutonomousActions" methodname="ProductionScene_AllResidentsHaveDistinctExecutorsAndAutonomousActions" classname="AIFarm.Tests.PlayMode.TownLifeIntegrationPlayModeTests" runstate="Runnable" seed="1871703866" result="Passed" start-time="2026-09-12 09:38:52Z" end-time="2026-09-12 09:38:57Z" duration="4.857503" asserts="0">
+                <properties>
+                  <property name="_JOINTYPE" value="UnityCombinatorial" />
+                  <property name="retryIteration" value="0" />
+                  <property name="repeatIteration" value="0" />
+                </properties>
+                <output><![CDATA[AI request residentId=resident-001 operation=resident-decision
+AI request residentId=resident-002 operation=resident-decision
+AI request residentId=resident-001 operation=resident-decision
+AI request residentId=resident-003 operation=resident-decision
+]]></output>
+              </test-case>
+              <test-case id="1033" name="SubmittedCommandsRemainBoundWhenSelectionChanges_AllResidentsFishPickAndCancel" fullname="AIFarm.Tests.PlayMode.TownLifeIntegrationPlayModeTests.SubmittedCommandsRemainBoundWhenSelectionChanges_AllResidentsFishPickAndCancel" methodname="SubmittedCommandsRemainBoundWhenSelectionChanges_AllResidentsFishPickAndCancel" classname="AIFarm.Tests.PlayMode.TownLifeIntegrationPlayModeTests" runstate="Runnable" seed="366067905" result="Passed" start-time="2026-09-12 09:38:57Z" end-time="2026-09-12 09:39:19Z" duration="21.180828" asserts="0">
+                <properties>
+                  <property name="_JOINTYPE" value="UnityCombinatorial" />
+                  <property name="retryIteration" value="0" />
+                  <property name="repeatIteration" value="0" />
+                </properties>
+                <output><![CDATA[AI response residentId=resident-001 source=Remote succeeded=True
+AI response residentId=resident-002 source=Remote succeeded=True
+AI response residentId=resident-003 source=Remote succeeded=True
+AI response residentId=resident-004 source=Remote succeeded=True
+AI request residentId=resident-001 operation=resident-decision
+AI response residentId=resident-001 source=Local succeeded=True
+AI request residentId=resident-002 operation=resident-decision
+AI request residentId=resident-003 operation=resident-decision
+AI response residentId=resident-002 source=Local succeeded=True
+AI response residentId=resident-003 source=Local succeeded=True
+AI request residentId=resident-004 operation=resident-decision
+AI response residentId=resident-004 source=Local succeeded=True
+AI request residentId=resident-004 operation=resident-decision
+AI response residentId=resident-004 source=Local succeeded=True
+AI request residentId=resident-001 operation=resident-decision
+AI response residentId=resident-001 source=Local succeeded=True
+AI request residentId=resident-004 operation=resident-decision
+AI response residentId=resident-004 source=Local succeeded=True
+AI request residentId=resident-002 operation=resident-decision
+AI response residentId=resident-002 source=Local succeeded=True
+AI response residentId=resident-001 source=Remote succeeded=True
+AI response residentId=resident-002 source=Remote succeeded=True
+AI response residentId=resident-003 source=Remote succeeded=True
+AI response residentId=resident-004 source=Remote succeeded=True
+AI response residentId=resident-001 source=Remote succeeded=True
+AI response residentId=resident-002 source=Remote succeeded=True
+AI response residentId=resident-003 source=Remote succeeded=True
+AI response residentId=resident-004 source=Remote succeeded=True
+AI request residentId=resident-002 operation=resident-decision
+AI request residentId=resident-003 operation=resident-decision
+AI response residentId=resident-002 source=Local succeeded=True
+AI response residentId=resident-003 source=Local succeeded=True
+Saving results to: C:\学习\研究生\Elys AI\面试模拟题\AIFarm\Docs\Verification\Unity-PlayMode-20260912-093757-260.xml
+]]></output>
+              </test-case>
+            </test-suite>
+          </test-suite>
+        </test-suite>
+      </test-suite>
+    </test-suite>
+  </test-suite>
+</test-run>

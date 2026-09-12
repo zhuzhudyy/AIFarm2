@@ -17,6 +17,9 @@ namespace AIFarm.Farming
         private readonly double[] weedElapsed = new double[FarmField.PlotCount];
         private readonly double[] growthElapsed = new double[FarmField.PlotCount];
         private readonly bool[] waterHasDecayed = new bool[FarmField.PlotCount];
+        private readonly int[] lifecycleVersions = new int[FarmField.PlotCount];
+        private readonly int[] wateringVersions = new int[FarmField.PlotCount];
+        private double lastObservedGameSeconds;
 
         public FarmSimulation(
             FarmField field,
@@ -30,11 +33,31 @@ namespace AIFarm.Farming
             this.demoMode = demoMode ?? throw new ArgumentNullException(nameof(demoMode));
             this.eventLog = eventLog;
             farmObserverResidentIds = NormalizeFarmObservers(farmObservers);
+            lastObservedGameSeconds = clock.ElapsedGameSeconds;
         }
 
         public int WaterDecayEventCount { get; private set; }
 
         public int WeedEventCount { get; private set; }
+
+        public double GetRemainingGrowthGameSeconds(int plotNumber)
+        {
+            FarmPlot plot = field.GetPlot(plotNumber);
+            return plot.State == PlotState.Empty || plot.State == PlotState.Mature ? 0d :
+                Math.Max(0d, demoMode.MaturityGameSeconds - Math.Max(growthElapsed[plotNumber - 1],
+                    plot.GrowthProgress / (double)FarmPlot.RequiredGrowth * demoMode.MaturityGameSeconds));
+        }
+
+        public string GetGrowthBlockReason(int plotNumber)
+        {
+            FarmPlot plot = field.GetPlot(plotNumber);
+            if (plot.State != PlotState.Growing) return string.Empty;
+            if (plot.WaterLevel < FarmPlot.RequiredWaterLevel) return "缺水，等待浇水";
+            if (!plot.IsFertilized) return "等待施肥";
+            if (plot.HasWeeds) return "杂草阻碍生长，等待除草";
+            if (!plot.HasBeenWeeded) return "等待首次除草";
+            return string.Empty;
+        }
 
         public void CaptureRuntimeState(
             out double[] savedWaterElapsed,
@@ -74,6 +97,12 @@ namespace AIFarm.Farming
             Array.Copy(savedWeedElapsed, weedElapsed, FarmField.PlotCount);
             Array.Copy(savedGrowthElapsed, growthElapsed, FarmField.PlotCount);
             Array.Copy(savedWaterHasDecayed, waterHasDecayed, FarmField.PlotCount);
+            lastObservedGameSeconds = clock.ElapsedGameSeconds;
+            for (int index = 0; index < FarmField.PlotCount; index++)
+            {
+                lifecycleVersions[index] = field.Plots[index].LifecycleVersion;
+                wateringVersions[index] = field.Plots[index].WateringVersion;
+            }
             return ActionResult.Success("Farm simulation runtime restored.");
         }
 
@@ -85,19 +114,27 @@ namespace AIFarm.Farming
             Array.Clear(weedElapsed, 0, weedElapsed.Length);
             Array.Clear(growthElapsed, 0, growthElapsed.Length);
             Array.Clear(waterHasDecayed, 0, waterHasDecayed.Length);
+            lastObservedGameSeconds = clock.ElapsedGameSeconds;
             return ActionResult.Success("Farm simulation runtime reset.");
         }
 
         public ActionResult Advance(double realSeconds)
         {
-            double previousGameSeconds = clock.ElapsedGameSeconds;
             ActionResult timeResult = clock.Advance(realSeconds);
             if (timeResult.Failed)
             {
                 return timeResult;
             }
 
-            double elapsedGameSeconds = clock.ElapsedGameSeconds - previousGameSeconds;
+            return AdvanceToClock();
+        }
+
+        // Called once by the world owner. Repeated observers are harmless: they
+        // cannot grow the same plot twice or multiply the speed again.
+        public ActionResult AdvanceToClock()
+        {
+            double elapsedGameSeconds = clock.ElapsedGameSeconds - lastObservedGameSeconds;
+            lastObservedGameSeconds = clock.ElapsedGameSeconds;
             if (elapsedGameSeconds <= 0d)
             {
                 return ActionResult.Success("Farm simulation did not advance.");
@@ -106,6 +143,17 @@ namespace AIFarm.Farming
             for (int index = 0; index < FarmField.PlotCount; index++)
             {
                 FarmPlot plot = field.Plots[index];
+                if (lifecycleVersions[index] != plot.LifecycleVersion)
+                {
+                    ResetPlotTimers(index);
+                    lifecycleVersions[index] = plot.LifecycleVersion;
+                }
+
+                if (wateringVersions[index] != plot.WateringVersion)
+                {
+                    waterElapsed[index] = 0d;
+                    wateringVersions[index] = plot.WateringVersion;
+                }
                 if (plot.State == PlotState.Empty)
                 {
                     ResetPlotTimers(index);
@@ -117,22 +165,27 @@ namespace AIFarm.Farming
                     continue;
                 }
 
-                ActionResult waterResult = AdvanceWater(plot, index, elapsedGameSeconds);
-                if (waterResult.Failed)
+                // Integrate up to condition boundaries. A large clock step cannot
+                // apply today's dry state retroactively to yesterday's growth.
+                double remaining = elapsedGameSeconds;
+                while (remaining > 0.000001d && plot.State == PlotState.Growing)
                 {
-                    return waterResult;
-                }
+                    double step = remaining;
+                    if (plot.WaterLevel > 0)
+                        step = Math.Min(step, Math.Max(0.000001d,
+                            demoMode.WaterDecayGameSeconds - waterElapsed[index]));
+                    if (plot.IsFertilized && !plot.HasWeeds && !plot.HasBeenWeeded)
+                        step = Math.Min(step, Math.Max(0.000001d,
+                            demoMode.WeedDelayGameSeconds - weedElapsed[index]));
 
-                ActionResult weedResult = AdvanceWeeds(plot, index, elapsedGameSeconds);
-                if (weedResult.Failed)
-                {
-                    return weedResult;
-                }
-
-                ActionResult growthResult = AdvanceCropGrowth(plot, index, elapsedGameSeconds);
-                if (growthResult.Failed)
-                {
-                    return growthResult;
+                    ActionResult growthResult = AdvanceCropGrowth(plot, index, step);
+                    if (growthResult.Failed) return growthResult;
+                    if (plot.State == PlotState.Mature) break;
+                    ActionResult waterResult = AdvanceWater(plot, index, step);
+                    if (waterResult.Failed) return waterResult;
+                    ActionResult weedResult = AdvanceWeeds(plot, index, step);
+                    if (weedResult.Failed) return weedResult;
+                    remaining -= step;
                 }
             }
 
@@ -141,7 +194,7 @@ namespace AIFarm.Farming
 
         private ActionResult AdvanceWater(FarmPlot plot, int index, double elapsedGameSeconds)
         {
-            if (waterHasDecayed[index] || plot.WaterLevel < FarmPlot.MaximumWaterLevel)
+            if (plot.WaterLevel <= 0)
             {
                 return ActionResult.Success();
             }
@@ -155,6 +208,7 @@ namespace AIFarm.Farming
             ActionResult result = plot.DecreaseWater();
             if (result.Succeeded)
             {
+                waterElapsed[index] = 0d;
                 waterHasDecayed[index] = true;
                 WaterDecayEventCount++;
                 eventLog?.RecordPerceivable(
@@ -206,6 +260,12 @@ namespace AIFarm.Farming
                 return ActionResult.Success();
             }
 
+            // Preserve valid exact timer fractions while bounding legacy timing
+            // against the saved visible stage when production defaults changed.
+            growthElapsed[index] = Math.Max(plot.GrowthProgress /
+                (double)FarmPlot.RequiredGrowth * demoMode.MaturityGameSeconds,
+                Math.Min(growthElapsed[index], (plot.GrowthProgress + 0.999d) /
+                    FarmPlot.RequiredGrowth * demoMode.MaturityGameSeconds));
             growthElapsed[index] += elapsedGameSeconds;
             int targetProgress = (int)Math.Floor(
                 growthElapsed[index] / demoMode.MaturityGameSeconds * FarmPlot.RequiredGrowth);

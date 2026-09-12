@@ -45,7 +45,7 @@ namespace AIFarm.Presentation
             yaw = camera.transform.eulerAngles.y;
             pitch = Mathf.Clamp(camera.transform.eulerAngles.x, 25f, 75f);
             distance = Mathf.Max(10f, Vector3.Distance(camera.transform.position, focusPoint));
-            viewSize = Mathf.Clamp(size, 7f, 30f);
+            viewSize = Mathf.Clamp(size, 7f, 55f);
             hasViewState = true;
             CaptureHome();
             ApplyView();
@@ -157,7 +157,7 @@ namespace AIFarm.Presentation
                     float scroll = mouse.scroll.ReadValue().y;
                     if (Mathf.Abs(scroll) > 0.01f)
                     {
-                        viewSize = Mathf.Clamp(viewSize * Mathf.Exp(-scroll * 0.0015f), 7f, 30f);
+                        viewSize = Mathf.Clamp(viewSize * Mathf.Exp(-scroll * 0.0015f), 7f, 55f);
                         changed = true;
                     }
                 }
@@ -209,7 +209,7 @@ namespace AIFarm.Presentation
 
         private static Vector3 ClampFocus(Vector3 focus)
         {
-            return new Vector3(Mathf.Clamp(focus.x, -22f, 22f), 0f, Mathf.Clamp(focus.z, -16f, 20f));
+            return new Vector3(Mathf.Clamp(focus.x, -46f, 46f), 0f, Mathf.Clamp(focus.z, -35f, 39f));
         }
     }
 }

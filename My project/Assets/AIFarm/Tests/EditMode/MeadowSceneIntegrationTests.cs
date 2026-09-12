@@ -126,7 +126,9 @@ namespace AIFarm.Tests.EditMode
             Assert.That(farmPoints, Has.Length.EqualTo(9));
             Assert.That(townPoints.Count(point => point.InteractionPointId.StartsWith("location-")), Is.EqualTo(36));
             Assert.That(townPoints.Count(point => point.InteractionPointId.StartsWith("social-")), Is.EqualTo(4));
-            Assert.That(townPoints.Select(point => point.InteractionPointId).Distinct().Count(), Is.EqualTo(40));
+            Assert.That(townPoints.Select(point => point.InteractionPointId).Distinct().Count(), Is.EqualTo(50));
+            foreach (string id in new[] { "fishing-1", "fishing-2", "fruit-1", "fruit-2", "fruit-3", "fruit-4", "well", "rest-garden", "forest-walk", "farm-gate" })
+                Assert.That(townPoints.Count(point => point.InteractionPointId == id), Is.EqualTo(1), id);
 
             foreach (TownResidentScheduleController resident in residents)
             {

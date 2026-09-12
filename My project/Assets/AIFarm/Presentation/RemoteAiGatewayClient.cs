@@ -7,7 +7,7 @@ using AIFarm.Npc;
 
 namespace AIFarm.Presentation
 {
-    public sealed class RemoteAiGatewayClient : IAiGatewayClient
+    public sealed class RemoteAiGatewayClient : IAiGatewayClient, IResidentTaskGateway
     {
         private readonly string baseUrl;
         private readonly int timeoutSeconds;
@@ -31,7 +31,7 @@ namespace AIFarm.Presentation
             timeoutSeconds = requestTimeoutSeconds;
             transport = gatewayTransport ?? new UnityWebRequestGatewayTransport();
             fallback = localFallback ?? new LocalAiGatewayClient();
-            ActiveMode = AiGatewayMode.Remote;
+            ActiveMode = AiGatewayMode.Local;
         }
 
         public AiGatewayMode ConfiguredMode => AiGatewayMode.Remote;
@@ -39,6 +39,32 @@ namespace AIFarm.Presentation
         public AiGatewayMode ActiveMode { get; private set; }
 
         public string LastRemoteFailure { get; private set; } = string.Empty;
+
+        public IEnumerator InterpretResidentTask(ResidentId owner, string command, string[] targets,
+            string[] residents, Action<AiGatewayResult<ResidentTaskSpec>> completed)
+        {
+            AiGatewayHttpResult response = null;
+            foreach (object step in RunChild(transport.PostJson(Endpoint("/v1/resident-task"),
+                AiGatewayJsonCodec.SerializeResidentTask(owner, command, targets, residents), timeoutSeconds,
+                value => response = value))) yield return step;
+            ActionResult outcome = ValidateHttpResult(response);
+            ResidentTaskSpec task = null;
+            if (outcome.Succeeded) outcome = AiGatewayJsonCodec.TryParseResidentTask(response.Body, owner, out task);
+            if (outcome.Succeeded)
+            {
+                AiGatewayMode source = AiGatewayJsonCodec.ResponseSource(response.Body);
+                CompleteRemote(AiGatewayResult<ResidentTaskSpec>.Success(owner, task, source,
+                    "Resident task validated.").WithDiagnosticError(task.error_message), completed);
+                yield break;
+            }
+            LastRemoteFailure = outcome.Message;
+            AiGatewayResult<ResidentTaskSpec> local = null;
+            foreach (object step in RunChild(((IResidentTaskGateway)new LocalAiGatewayClient()).InterpretResidentTask(
+                owner, command, targets, residents, value => local = value))) yield return step;
+            if (local != null && local.Succeeded) local = AiGatewayResult<ResidentTaskSpec>.Success(owner,
+                local.Value, AiGatewayMode.Local, LastRemoteFailure);
+            CompleteLocal(owner, local, completed);
+        }
 
         public IEnumerator InterpretCommand(
             string command,
@@ -91,8 +117,8 @@ namespace AIFarm.Presentation
                         AiGatewayResult<FarmGoalSpec>.Success(
                             residentId,
                             goal,
-                            AiGatewayMode.Remote,
-                            parsed.Message),
+                            AiGatewayJsonCodec.ResponseSource(httpResult.Body),
+                            parsed.Message).WithDiagnosticError(AiGatewayJsonCodec.ResponseError(httpResult.Body)),
                         completed);
                     yield break;
                 }
@@ -157,8 +183,8 @@ namespace AIFarm.Presentation
                         AiGatewayResult<NpcExpression>.Success(
                             residentId,
                             expression,
-                            AiGatewayMode.Remote,
-                            parsed.Message),
+                            AiGatewayJsonCodec.ResponseSource(httpResult.Body),
+                            parsed.Message).WithDiagnosticError(AiGatewayJsonCodec.ResponseError(httpResult.Body)),
                         completed);
                     yield break;
                 }
@@ -270,8 +296,8 @@ namespace AIFarm.Presentation
                         AiGatewayResult<NpcReflection>.Success(
                             residentId,
                             reflection,
-                            AiGatewayMode.Remote,
-                            parsed.Message),
+                            AiGatewayJsonCodec.ResponseSource(httpResult.Body),
+                            parsed.Message).WithDiagnosticError(AiGatewayJsonCodec.ResponseError(httpResult.Body)),
                         completed);
                     yield break;
                 }
@@ -328,8 +354,8 @@ namespace AIFarm.Presentation
                         AiGatewayResult<ConversationScriptSpec>.Success(
                             request.ResidentId,
                             script,
-                            AiGatewayMode.Remote,
-                            parsed.Message),
+                            AiGatewayJsonCodec.ResponseSource(httpResult.Body),
+                            parsed.Message).WithDiagnosticError(AiGatewayJsonCodec.ResponseError(httpResult.Body)),
                         completed);
                     yield break;
                 }
@@ -385,8 +411,8 @@ namespace AIFarm.Presentation
                         AiGatewayResult<ResidentDecisionSpec>.Success(
                             request.ResidentId,
                             decision,
-                            AiGatewayMode.Remote,
-                            parsed.Message),
+                            AiGatewayJsonCodec.ResponseSource(httpResult.Body),
+                            parsed.Message).WithDiagnosticError(AiGatewayJsonCodec.ResponseError(httpResult.Body)),
                         completed);
                     yield break;
                 }
@@ -475,8 +501,8 @@ namespace AIFarm.Presentation
             Action<AiGatewayResult<T>> completed)
             where T : class
         {
-            ActiveMode = AiGatewayMode.Remote;
-            LastRemoteFailure = string.Empty;
+            ActiveMode = result.Source;
+            LastRemoteFailure = result.DiagnosticError;
             LogResponse(result.ResidentId, result.Source, result.Succeeded);
             completed(result);
         }
@@ -511,7 +537,9 @@ namespace AIFarm.Presentation
             }
 
             LogResponse(result.ResidentId, result.Source, result.Succeeded);
-            completed(result);
+            completed(result.Succeeded && !string.IsNullOrWhiteSpace(LastRemoteFailure)
+                ? AiGatewayResult<T>.Success(residentId, result.Value, AiGatewayMode.Local, LastRemoteFailure).WithDiagnosticError(LastRemoteFailure)
+                : result);
         }
 
         private ActionResult ValidateHttpResult(AiGatewayHttpResult result)
@@ -526,7 +554,7 @@ namespace AIFarm.Presentation
             if (!result.Succeeded)
             {
                 return ActionResult.Failure(
-                    ActionFailureReason.ServiceUnavailable,
+                    result.StatusCode == 400 || result.StatusCode == 422 ? ActionFailureReason.InvalidResponse : ActionFailureReason.ServiceUnavailable,
                     string.IsNullOrWhiteSpace(result.Error)
                         ? "The remote AI gateway is unavailable."
                         : result.Error);

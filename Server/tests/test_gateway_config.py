@@ -110,10 +110,18 @@ def test_openai_configuration_hot_swaps_shared_provider_and_persists_secret(
     assert response.json() == {
         "provider": "openai",
         "model": TEST_MODEL,
-        "api_key_required": True,
+        "api_key_required": False,
         "api_key_configured": True,
         "persisted": True,
         "source": "runtime",
+        "base_url": "https://api.deepseek.com",
+        "protocol": "chat_completions",
+        "output_mode": "text",
+        "endpoint": "https://api.deepseek.com/v1/chat/completions",
+        "config_version": 2,
+        "upstream_status": "connecting",
+        "last_error_code": "",
+        "last_error": "",
     }
     assert TEST_KEY not in response.text
     assert health.json()["provider"] == "openai"
@@ -251,16 +259,22 @@ def test_blank_key_reuses_current_secret_and_clear_removes_it(tmp_path: Path) ->
     assert not config_path.exists()
 
 
-def test_openai_probe_verifies_model_without_inference_and_redacts_auth_error(
+def test_openai_probe_requires_three_inferences_and_redacts_auth_error(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    successful_client = SimpleNamespace(
-        models=SimpleNamespace(
-            list=lambda: SimpleNamespace(
-                data=[SimpleNamespace(id=TEST_MODEL)],
-            )
-        )
-    )
+    calls = []
+    def infer(**kwargs):
+        calls.append(kwargs)
+        if "text" not in kwargs:
+            text = "你好。"
+        else:
+            snapshot = json.loads(kwargs["input"])
+            if "allowed_intents" in snapshot:
+                text = json.dumps({"resident_id":snapshot["resident_id"], "intent":"Walk", "target_resident_id":None, "reason":"出去走走", "provider":"openai"})
+            else:
+                text = json.dumps({"resident_id":snapshot["resident_id"], "lines":[{"speaker_id":owner,"mood":"Happy","emoji":"🙂","text":"农田刚浇过水，去果园看看。","shared_knowledge_id":None} for owner in snapshot["participant_ids"]], "outcome":"Neutral", "provider":"openai"})
+        return SimpleNamespace(status="completed", output_text=text, output=[])
+    successful_client = SimpleNamespace(responses=SimpleNamespace(create=infer))
     provider = OpenAIProvider(
         api_key=TEST_KEY,
         model=TEST_MODEL,
@@ -272,7 +286,7 @@ def test_openai_probe_verifies_model_without_inference_and_redacts_auth_error(
     request = httpx.Request("GET", "https://example.invalid/models")
     response = httpx.Response(401, request=request)
 
-    def fail_authentication() -> None:
+    def fail_authentication(**kwargs) -> None:
         raise AuthenticationError(
             f"Invalid credential {TEST_KEY}",
             response=response,
@@ -280,7 +294,7 @@ def test_openai_probe_verifies_model_without_inference_and_redacts_auth_error(
         )
 
     failing_client = SimpleNamespace(
-        models=SimpleNamespace(list=fail_authentication),
+        responses=SimpleNamespace(create=fail_authentication),
     )
     failing_provider = OpenAIProvider(
         api_key=TEST_KEY,
@@ -292,6 +306,8 @@ def test_openai_probe_verifies_model_without_inference_and_redacts_auth_error(
 
     assert success.ok is True
     assert success.code == "ok"
+    assert len(calls) == 3
+    assert [check["name"] for check in success.checks] == ["text", "resident_decision", "conversation"]
     assert failure.ok is False
     assert failure.code == "authentication_failed"
     assert TEST_KEY not in caplog.text
@@ -309,6 +325,6 @@ def test_offline_probe_completes_without_network(tmp_path: Path) -> None:
         )
 
     assert response.status_code == 200
-    assert response.json()["ok"] is True
+    assert response.json()["ok"] is False
     assert response.json()["code"] == "offline"
     assert response.json()["provider"] == "mock"

@@ -1,6 +1,8 @@
 using System;
+using AIFarm.Activities;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
 using AIFarm.Core;
 using AIFarm.Farming;
 using AIFarm.Inventory;
@@ -211,6 +213,12 @@ namespace AIFarm.Presentation
                 return gameResult;
             }
 
+            foreach (TownLifeController life in bootstrap.LifeControllers.Values)
+            {
+                ActionResult restored = life.RestoreTask(new ResidentTaskSnapshot { residentId = life.ResidentId.Value });
+                if (restored.Failed) return restored;
+            }
+
             npcTransform.SetPositionAndRotation(initialNpcPosition, initialNpcRotation);
             LastLoadUsedSafeReplan = false;
             LastLoadMigratedLegacySave = false;
@@ -268,8 +276,12 @@ namespace AIFarm.Presentation
                     carrotSeeds = bootstrap.Inventory.GetCount(InventoryItem.CarrotSeed),
                     water = bootstrap.Inventory.GetCount(InventoryItem.Water),
                     fertilizer = bootstrap.Inventory.GetCount(InventoryItem.Fertilizer),
-                    carrots = bootstrap.Inventory.GetCount(InventoryItem.Carrot)
-                }
+                    carrots = bootstrap.Inventory.GetCount(InventoryItem.Carrot),
+                    fish = bootstrap.Inventory.GetCount(InventoryItem.Fish),
+                    fruit = bootstrap.Inventory.GetCount(InventoryItem.Fruit),
+                    compost = bootstrap.Inventory.GetCount(InventoryItem.Compost)
+                },
+                activities = bootstrap.Activities?.Capture() ?? Array.Empty<ActivityResourceSnapshot>()
             };
 
             var residentSnapshot = new ResidentSaveData
@@ -363,6 +375,12 @@ namespace AIFarm.Presentation
 
             snapshot.residents = residentSnapshots;
             snapshot.relationships = CaptureRelationships();
+            var lifeTasks = new List<ResidentTaskSnapshot>();
+            foreach (TownLifeController life in bootstrap.LifeControllers.Values)
+            {
+                if (life.ResidentId.IsValid) lifeTasks.Add(life.CaptureTask());
+            }
+            snapshot.lifeTasks = lifeTasks.ToArray();
 
             data = snapshot;
             return ActionResult.Success("Versioned game state captured.");
@@ -849,9 +867,42 @@ namespace AIFarm.Presentation
             }
 
             if (data.inventory.carrotSeeds < 0 || data.inventory.water < 0 ||
-                data.inventory.fertilizer < 0 || data.inventory.carrots < 0)
+                data.inventory.fertilizer < 0 || data.inventory.carrots < 0 ||
+                data.inventory.fish < 0 || data.inventory.fruit < 0 || data.inventory.compost < 0)
             {
                 return InvalidSave("Saved inventory contains a negative count.");
+            }
+
+            var validationActivities = new TownActivityResources(validationClock, new FarmInventory(),
+                bootstrap.Activities?.Rules);
+            ActionResult activitiesValidation = validationActivities.Restore(data.activities);
+            if (activitiesValidation.Failed) return InvalidSave(activitiesValidation.Message);
+            if (data.lifeTasks != null)
+            {
+                var taskOwners = new HashSet<ResidentId>();
+                foreach (ResidentTaskSnapshot task in data.lifeTasks)
+                {
+                    if (task == null || !ResidentId.TryCreate(task.residentId, out ResidentId owner) ||
+                        !taskOwners.Add(owner) || !bootstrap.ResidentRegistry.ResidentIds.Contains(owner))
+                        return InvalidSave("Saved resident activity has a missing, duplicate, or unknown ResidentId.");
+                    if (
+                        task.completedCycles < 0 || float.IsNaN(task.energy) || float.IsNaN(task.hunger) || float.IsNaN(task.social) ||
+                        float.IsInfinity(task.energy) || float.IsInfinity(task.hunger) || float.IsInfinity(task.social) ||
+                        task.energy < 0 || task.energy > 100 || task.hunger < 0 || task.hunger > 100 || task.social < 0 || task.social > 100)
+                        return InvalidSave($"Saved resident {owner} has invalid cycles/needs: " +
+                            $"cycles={task.completedCycles}, energy={task.energy}, hunger={task.hunger}, social={task.social}.");
+                    ActionResult taskPresence = task.NormalizeTaskPresence(owner);
+                    if (taskPresence.Failed) return InvalidSave($"Saved resident {owner} task is invalid: {taskPresence.Message}");
+                    ActionResult activityProgress = task.ValidateActivityProgress();
+                    if (activityProgress.Failed) return InvalidSave($"Saved resident {owner} activity progress is invalid: {activityProgress.Message}");
+                    if (task.completedPlots != null)
+                    {
+                        var uniquePlots = new HashSet<int>();
+                        foreach (int plot in task.completedPlots)
+                            if (plot < 1 || plot > FarmField.PlotCount || !uniquePlots.Add(plot))
+                                return InvalidSave("Saved farming task has invalid or duplicate completed plots.");
+                    }
+                }
             }
 
             var validationField = new FarmField();
@@ -1410,7 +1461,10 @@ namespace AIFarm.Presentation
                 inventory.carrotSeeds,
                 inventory.water,
                 inventory.fertilizer,
-                inventory.carrots);
+                inventory.carrots,
+                inventory.fish,
+                inventory.fruit,
+                inventory.compost);
             if (inventoryResult.Failed)
             {
                 return inventoryResult;
@@ -1427,6 +1481,9 @@ namespace AIFarm.Presentation
             }
 
             bootstrap.ResidentReflections?.Synchronize(clock.elapsedGameSeconds);
+
+            ActionResult activitiesResult = bootstrap.Activities?.Restore(plan.Data.activities) ?? ActionResult.Success();
+            if (activitiesResult.Failed) return activitiesResult;
 
             SimulationSaveData simulation = plan.Data.simulation;
             ActionResult simulationResult = bootstrap.Simulation.RestoreRuntimeState(
@@ -1464,6 +1521,20 @@ namespace AIFarm.Presentation
             if (residentsResult.Failed)
             {
                 return residentsResult;
+            }
+
+            // Release every old resident claim before restoring any new claim;
+            // otherwise load order can leave an earlier resident blocked by a
+            // later resident's stale task from the world being replaced.
+            foreach (TownLifeController life in bootstrap.LifeControllers.Values) life.StopTask();
+            foreach (TownLifeController life in bootstrap.LifeControllers.Values)
+            {
+                ResidentTaskSnapshot task = null;
+                foreach (ResidentTaskSnapshot savedTask in plan.Data.lifeTasks ?? Array.Empty<ResidentTaskSnapshot>())
+                    if (savedTask.residentId == life.ResidentId.Value) { task = savedTask; break; }
+                if (task == null) task = new ResidentTaskSnapshot { residentId = life.ResidentId.Value };
+                ActionResult taskResult = life.RestoreTask(task);
+                if (taskResult.Failed) return taskResult;
             }
 
             SocialGraph graph = ResolveRelationshipGraph();

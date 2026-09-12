@@ -84,7 +84,7 @@ namespace AIFarm.Presentation
 
         [Range(1f, (float)ConversationSession.MaximumTimeoutSeconds)]
         [SerializeField]
-        private float timeoutSeconds = 20f;
+        private float timeoutSeconds = 120f;
 
         [Min(0.1f)]
         [SerializeField]
@@ -92,7 +92,7 @@ namespace AIFarm.Presentation
 
         [Min(0.1f)]
         [SerializeField]
-        private float lineIntervalSeconds = 0.8f;
+        private float lineIntervalSeconds = 4f;
 
         private readonly Dictionary<ResidentId, TownResidentScheduleController>
             residentsById =
@@ -100,6 +100,7 @@ namespace AIFarm.Presentation
         private readonly Dictionary<ConversationId, SceneConversation> sceneConversations =
             new Dictionary<ConversationId, SceneConversation>();
         private double nextOpportunityCheckAtSeconds;
+        private readonly Dictionary<ResidentId, double> conversationCooldowns = new Dictionary<ResidentId, double>();
 
         public event Action<ConversationSession> ConversationCompleted;
 
@@ -114,6 +115,67 @@ namespace AIFarm.Presentation
         public bool IsInitialized { get; private set; }
 
         public int ActiveSceneConversationCount => sceneConversations.Count;
+
+        public string LastConversationError { get; private set; } = string.Empty;
+
+        public string GetConversationId(ResidentId owner)
+        {
+            foreach (SceneConversation conversation in sceneConversations.Values)
+                if (conversation.Session.IsParticipant(owner)) return conversation.Session.ConversationId.Value;
+            return string.Empty;
+        }
+
+        public void CancelResidentConversation(ResidentId owner)
+        {
+            foreach (SceneConversation conversation in new List<SceneConversation>(sceneConversations.Values))
+                if (conversation.Session.IsParticipant(owner)) CancelAndCleanup(conversation, ConversationEndReason.Cancelled);
+        }
+
+        public ActionResult RequestConversation(ResidentId firstId, ResidentId secondId)
+        {
+            if (!IsInitialized || !residentsById.TryGetValue(firstId, out TownResidentScheduleController first) ||
+                !residentsById.TryGetValue(secondId, out TownResidentScheduleController second) || firstId == secondId)
+                return ActionResult.Failure(ActionFailureReason.InvalidArgument, "交谈对象不存在。");
+            double now = UnityEngine.Time.realtimeSinceStartupAsDouble;
+            if (conversationCooldowns.TryGetValue(firstId, out double firstAt) && now < firstAt ||
+                conversationCooldowns.TryGetValue(secondId, out double secondAt) && now < secondAt)
+                return ActionResult.Failure(ActionFailureReason.InvalidState, "居民刚结束交谈，稍后可以再聊。");
+            if (first.IsConversationSuspended || second.IsConversationSuspended ||
+                first.IsFarmingBusy || second.IsFarmingBusy)
+                return ActionResult.Failure(ActionFailureReason.InvalidState, "对方正在忙碌，暂时拒绝邀请。");
+            ConversationAnchor anchor = null;
+            foreach (ConversationAnchor candidate in conversationAnchors)
+            {
+                if (candidate != null && candidate.FirstStandPoint != null && candidate.SecondStandPoint != null &&
+                    !scheduleCoordinator.ReservationService.IsReserved(candidate.FirstStandPoint.InteractionPointId, now) &&
+                    !scheduleCoordinator.ReservationService.IsReserved(candidate.SecondStandPoint.InteractionPointId, now))
+                { anchor = candidate; break; }
+            }
+            if (anchor == null) return ActionResult.Failure(ActionFailureReason.InvalidState, "附近没有空闲的双人交谈位置。");
+            ActionResult firstSuspended = first.SuspendForConversation();
+            if (firstSuspended.Failed) return firstSuspended;
+            ActionResult secondSuspended = second.SuspendForConversation();
+            if (secondSuspended.Failed) { first.ResumeAfterConversation(); return secondSuspended; }
+            ActionResult start = ConversationCoordinator.TryStartConversation(firstId, secondId,
+                anchor.FirstStandPoint.InteractionPointId, anchor.SecondStandPoint.InteractionPointId,
+                sentenceCount, now, out ConversationSession session);
+            if (start.Failed) { first.ResumeAfterConversation(); second.ResumeAfterConversation(); return start; }
+            ActionResult moveOne = first.BeginConversationMove(anchor.FirstStandPoint.InteractionPointId);
+            ActionResult moveTwo = second.BeginConversationMove(anchor.SecondStandPoint.InteractionPointId);
+            if (moveOne.Failed || moveTwo.Failed)
+            {
+                LastConversationError = moveOne.Failed ? moveOne.Message : moveTwo.Message;
+                ConversationCoordinator.CancelConversation(session.ConversationId, ConversationEndReason.NavigationFailed);
+                first.ResumeAfterConversation(); second.ResumeAfterConversation();
+                return moveOne.Failed ? moveOne : moveTwo;
+            }
+            var record = new SceneConversation(session, first, second, now);
+            LastConversationError = string.Empty;
+            sceneConversations.Add(session.ConversationId, record);
+            conversationCooldowns[firstId] = conversationCooldowns[secondId] = now + 90;
+            StartCoroutine(RequestConversationScript(record));
+            return ActionResult.Success("对方接受邀请，正在前往交谈位置。");
+        }
 
         public ActionResult TryBuildResidentContext(
             ResidentId ownerResidentId,
@@ -228,7 +290,7 @@ namespace AIFarm.Presentation
                 scheduleCoordinator.ReservationService,
                 templates,
                 outcomeApplier,
-                timeoutSeconds);
+                Math.Max(120f, timeoutSeconds));
             nextOpportunityCheckAtSeconds = UnityEngine.Time.realtimeSinceStartupAsDouble;
             bootstrap.AuthoritativeStateResetting += HandleAuthoritativeStateResetting;
             IsInitialized = true;
@@ -279,7 +341,14 @@ namespace AIFarm.Presentation
             var records = new List<SceneConversation>(sceneConversations.Values);
             foreach (SceneConversation record in records)
             {
-                if (record.FirstResident == null || record.SecondResident == null)
+                if (record.FirstResident == null || record.SecondResident == null ||
+                    !record.FirstResident.isActiveAndEnabled || !record.SecondResident.isActiveAndEnabled)
+                {
+                    CancelAndCleanup(record, ConversationEndReason.Cancelled);
+                    continue;
+                }
+
+                if (bootstrap.Clock.Hour >= 22 || bootstrap.Clock.Hour < 6)
                 {
                     CancelAndCleanup(record, ConversationEndReason.Cancelled);
                     continue;
@@ -301,6 +370,7 @@ namespace AIFarm.Presentation
                 ActionResult movement = TickMovement(record, deltaTime);
                 if (movement.Failed)
                 {
+                    LastConversationError = movement.Message;
                     CancelAndCleanup(record, ConversationEndReason.NavigationFailed);
                     continue;
                 }
@@ -323,7 +393,8 @@ namespace AIFarm.Presentation
                     PresentUtterance(record, utterance);
                 }
 
-                record.NextLineAtSeconds = monotonicSeconds + lineIntervalSeconds;
+                record.NextLineAtSeconds = monotonicSeconds + Math.Max(lineIntervalSeconds,
+                    utterance == null ? 4d : TownDialogueOverlay.ReadingSeconds(utterance.Text));
                 if (record.Session.State == ConversationState.Completed)
                 {
                     record.IsFinalLineVisible = true;
@@ -405,7 +476,7 @@ namespace AIFarm.Presentation
                     resident.ResidentId,
                     resident.CurrentLocationId,
                     idleAtSocialLocation,
-                    hasActiveAction: resident.IsFarmingBusy ||
+                    hasActiveAction: resident.IsFarmingBusy || resident.IsLifeBusy ||
                         resident.IsTownEventSuspended,
                     isPerformingEmergencyFarmWork: resident.IsFarmingBusy,
                     hasPlayerInstruction: hasPlayerInstruction,
@@ -695,6 +766,10 @@ namespace AIFarm.Presentation
             SceneConversation record,
             ConversationUtterance utterance)
         {
+            ResidentId recipient = utterance.SpeakerResidentId == record.FirstResident.ResidentId
+                ? record.SecondResident.ResidentId : record.FirstResident.ResidentId;
+            TownDialogueOverlay.Publish(utterance.SpeakerResidentId, utterance.Text,
+                record.Session.ConversationId.Value, recipient, record.Session.ScriptProvider);
             record.FirstResident.ClearConversationLine();
             record.SecondResident.ClearConversationLine();
             record.FirstResident.FaceConversationPartner(record.SecondResident.transform);

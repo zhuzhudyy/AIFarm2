@@ -37,6 +37,28 @@ namespace AIFarm.Farming
 
         public int GrowthProgress { get; private set; }
 
+        public int LifecycleVersion { get; private set; }
+
+        public int WateringVersion { get; private set; }
+
+        public int GrowthStage => State == PlotState.Empty ? 0 :
+            State == PlotState.Mature ? 4 : 1 + GrowthProgress / 34;
+
+        public int SeedReturnCount { get; private set; } = 1;
+
+        public int CropYieldCount { get; private set; } = 1;
+
+        public void ConfigureYield(int seedReturnCount, int cropYieldCount)
+        {
+            if (seedReturnCount < 1 || cropYieldCount < 1)
+            {
+                throw new System.ArgumentOutOfRangeException(nameof(seedReturnCount));
+            }
+
+            SeedReturnCount = seedReturnCount;
+            CropYieldCount = cropYieldCount;
+        }
+
         public ActionResult RestoreState(
             PlotState state,
             CropType? crop,
@@ -90,6 +112,7 @@ namespace AIFarm.Farming
             HasWeeds = hasWeeds;
             HasBeenWeeded = hasBeenWeeded;
             GrowthProgress = growthProgress;
+            LifecycleVersion++;
             return ActionResult.Success($"Plot {PlotNumber:00} restored.");
         }
 
@@ -120,6 +143,7 @@ namespace AIFarm.Farming
             HasWeeds = false;
             HasBeenWeeded = false;
             GrowthProgress = 0;
+            LifecycleVersion++;
             return ActionResult.Success("Carrot seed sown.");
         }
 
@@ -151,6 +175,7 @@ namespace AIFarm.Farming
             }
 
             WaterLevel = MaximumWaterLevel;
+            WateringVersion++;
             return ActionResult.Success("Plot watered.");
         }
 
@@ -253,6 +278,18 @@ namespace AIFarm.Farming
             return ActionResult.Success("Weeds removed.");
         }
 
+        public ActionResult Weed(FarmInventory inventory)
+        {
+            if (inventory == null) return InvalidInventory();
+            if (State != PlotState.Growing || !HasWeeds)
+            {
+                return ActionResult.Failure(ActionFailureReason.InvalidState, "This plot has no weeds to compost.");
+            }
+
+            ActionResult addition = inventory.TryAdd(InventoryItem.Compost);
+            return addition.Failed ? addition : Weed();
+        }
+
         public ActionResult AdvanceGrowth(int amount)
         {
             if (amount <= 0)
@@ -304,7 +341,12 @@ namespace AIFarm.Farming
                     "Only a mature carrot crop can be harvested.");
             }
 
-            ActionResult addition = inventory.TryAdd(InventoryItem.Carrot);
+            ActionResult addition = inventory.TryApply(
+                new System.Collections.Generic.Dictionary<InventoryItem, int>
+                {
+                    [InventoryItem.Carrot] = CropYieldCount,
+                    [InventoryItem.CarrotSeed] = SeedReturnCount
+                });
             if (addition.Failed)
             {
                 return addition;

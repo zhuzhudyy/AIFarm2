@@ -112,7 +112,7 @@ namespace AIFarm.Tests.PlayMode
         }
 
         [UnityTest]
-        public IEnumerator AiModeLabel_ShowsRemoteThenLocalAfterAutomaticFallback()
+        public IEnumerator AiModeLabel_DoesNotClaimOnlineFromRemoteClientOrLocalFallback()
         {
             hudObject = new GameObject("HudAiMode");
             ReplanController controller = hudObject.AddComponent<ReplanController>();
@@ -137,7 +137,7 @@ namespace AIFarm.Tests.PlayMode
                 aiModeLabel: modeLabel);
 
             yield return null;
-            Assert.That(modeLabel.text, Is.EqualTo("AI: REMOTE"));
+            Assert.That(modeLabel.text, Is.EqualTo("AI：未配置"), "A configured transport is not proof of upstream inference.");
 
             AiGatewayResult<FarmGoalSpec> fallbackResult = null;
             yield return remoteClient.InterpretCommand(
@@ -147,7 +147,8 @@ namespace AIFarm.Tests.PlayMode
 
             Assert.That(fallbackResult, Is.Not.Null);
             Assert.That(fallbackResult.Source, Is.EqualTo(AiGatewayMode.Local));
-            Assert.That(modeLabel.text, Is.EqualTo("AI: LOCAL"));
+            Assert.That(modeLabel.text, Is.EqualTo("AI：未配置"));
+            Assert.That(remoteClient.LastRemoteFailure, Is.Not.Empty);
         }
 
         [UnityTest]

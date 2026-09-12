@@ -2,7 +2,9 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
+using System.Reflection;
 using System.Text.RegularExpressions;
 using AIFarm.Core;
 using UnityEngine;
@@ -22,7 +24,7 @@ namespace AIFarm.Presentation
     public sealed class LocalAiGatewayLaunchSpec
     {
         public const int MaximumApiKeyLength = 512;
-        public const int MaximumModelIdLength = 128;
+        public const int MaximumModelIdLength = 256;
 
         private static readonly Regex ModelIdPattern = new Regex(
             "^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
@@ -78,24 +80,22 @@ namespace AIFarm.Presentation
         {
             spec = null;
             string normalizedApiKey = (apiKeyValue ?? string.Empty).Trim();
-            if (normalizedApiKey.Length < 1 ||
-                normalizedApiKey.Length > MaximumApiKeyLength ||
+            if (normalizedApiKey.Length > MaximumApiKeyLength ||
                 ContainsControlCharacter(normalizedApiKey))
             {
                 return ActionResult.Failure(
                     ActionFailureReason.InvalidArgument,
-                    $"API Key must contain 1 to {MaximumApiKeyLength} visible characters.");
+                    $"API Key must contain at most {MaximumApiKeyLength} visible characters; local servers may omit it.");
             }
 
             string normalizedModelId = (modelId ?? string.Empty).Trim();
             if (normalizedModelId.Length < 1 ||
                 normalizedModelId.Length > MaximumModelIdLength ||
-                !ModelIdPattern.IsMatch(normalizedModelId))
+                ContainsControlCharacter(normalizedModelId))
             {
                 return ActionResult.Failure(
                     ActionFailureReason.InvalidArgument,
-                    "Model ID must start with a letter or number and contain only " +
-                    "letters, numbers, '.', '_', ':', '/', or '-'.");
+                    "Model must be a non-empty name without control characters.");
             }
 
             string normalizedBaseUrl = (baseUrl ?? string.Empty).Trim().TrimEnd('/');
@@ -344,7 +344,7 @@ namespace AIFarm.Presentation
             out ILocalAiGatewayProcessHandle processHandle)
         {
             processHandle = null;
-            if (launchSpec == null || !launchSpec.HasApiKey)
+            if (launchSpec == null)
             {
                 return ActionResult.Failure(
                     ActionFailureReason.InvalidArgument,
@@ -378,7 +378,7 @@ namespace AIFarm.Presentation
                 RedirectStandardOutput = true,
                 RedirectStandardError = true
             };
-            startInfo.EnvironmentVariables["AIFARM_PROVIDER"] = "openai";
+            startInfo.EnvironmentVariables["AIFARM_PROVIDER"] = launchSpec.HasApiKey ? "openai" : "mock";
             startInfo.EnvironmentVariables["OPENAI_MODEL"] = launchSpec.ModelId;
             startInfo.EnvironmentVariables["OPENAI_API_KEY"] = launchSpec.ApiKey;
             startInfo.EnvironmentVariables["AIFARM_GATEWAY_INSTANCE_ID"] =
@@ -453,6 +453,7 @@ namespace AIFarm.Presentation
 
         private sealed class SystemLocalAiGatewayProcessHandle : ILocalAiGatewayProcessHandle
         {
+            private const int TreeTerminationTimeoutMilliseconds = 2000;
             private Process process;
 
             public SystemLocalAiGatewayProcessHandle(Process ownedProcess)
@@ -509,6 +510,13 @@ namespace AIFarm.Presentation
 
                 try
                 {
+                    // A Windows venv executable can be a wrapper whose child owns
+                    // Uvicorn's listening socket. Terminate the owned tree first.
+                    if (TryTerminateOwnedTree())
+                    {
+                        return;
+                    }
+
                     process.Kill();
                 }
                 catch (Exception error) when (
@@ -516,9 +524,90 @@ namespace AIFarm.Presentation
                     error is System.ComponentModel.Win32Exception ||
                     error is NotSupportedException)
                 {
-                    // The handle owns only this exact process. Failure to stop is non-fatal
-                    // during application teardown and must never broaden into name/port kills.
+                    // Never expand a failed teardown into process-name or port-based kills.
                 }
+            }
+
+            private bool TryTerminateOwnedTree()
+            {
+                MethodInfo killTree = typeof(Process).GetMethod(
+                    "Kill", new[] { typeof(bool) });
+                if (killTree != null)
+                {
+                    try
+                    {
+                        killTree.Invoke(process, new object[] { true });
+                        process.WaitForExit(TreeTerminationTimeoutMilliseconds);
+                        return true;
+                    }
+                    catch (TargetInvocationException)
+                    {
+                        // Unity Mono may expose this overload without implementing it.
+                    }
+                    catch (NotSupportedException)
+                    {
+                        // Fall through to the platform's bounded owned-PID operation.
+                    }
+                }
+
+                if (Environment.OSVersion.Platform != PlatformID.Win32NT || HasExited)
+                {
+                    return HasExited;
+                }
+
+                // The still-live Process handle establishes ownership of this PID.
+                // No shell, image-name filter, port lookup or unrelated process is used.
+                try
+                {
+                    ProcessStartInfo startInfo = CreateWindowsTreeTerminationStartInfo(process.Id);
+                    using (Process terminator = Process.Start(startInfo))
+                    {
+                        if (terminator == null)
+                        {
+                            return false;
+                        }
+
+                        terminator.BeginOutputReadLine();
+                        terminator.BeginErrorReadLine();
+                        if (!terminator.WaitForExit(TreeTerminationTimeoutMilliseconds))
+                        {
+                            // Stop only our own helper if the OS operation cannot finish promptly.
+                            terminator.Kill();
+                            return false;
+                        }
+
+                        return terminator.ExitCode == 0 || HasExited;
+                    }
+                }
+                catch (Exception error) when (
+                    error is InvalidOperationException ||
+                    error is System.ComponentModel.Win32Exception ||
+                    error is IOException ||
+                    error is UnauthorizedAccessException ||
+                    error is NotSupportedException)
+                {
+                    return false;
+                }
+            }
+
+            private static ProcessStartInfo CreateWindowsTreeTerminationStartInfo(int ownedProcessId)
+            {
+                if (ownedProcessId <= 0)
+                {
+                    throw new ArgumentOutOfRangeException(nameof(ownedProcessId));
+                }
+
+                return new ProcessStartInfo
+                {
+                    FileName = Path.Combine(
+                        Environment.GetFolderPath(Environment.SpecialFolder.System), "taskkill.exe"),
+                    Arguments = "/PID " + ownedProcessId.ToString(CultureInfo.InvariantCulture) + " /T /F",
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                    WindowStyle = ProcessWindowStyle.Hidden,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true
+                };
             }
 
             public void Dispose()
@@ -675,12 +764,6 @@ namespace AIFarm.Presentation
                 return launchValidated;
             }
 
-            if (ownedProcess != null)
-            {
-                StopOwnedProcessSupervisor();
-                ReleaseOwnedProcess();
-            }
-
             processLauncher = processLauncher ?? new SystemLocalAiGatewayProcessLauncher();
             readinessProbe = readinessProbe ?? new UnityLocalAiGatewayReadinessProbe();
             pendingLaunchSpec = launchSpec;
@@ -725,21 +808,8 @@ namespace AIFarm.Presentation
             {
                 ClearPendingLaunchSecret();
                 startupCoroutine = null;
-                if (IsCompatible(existingStatus, launchSpec.ModelId))
-                {
-                    SetState(
-                        LocalAiGatewayState.Ready,
-                        $"已复用共享网关：{launchSpec.ModelId}。本次输入的 Key 未应用；" +
-                        "正在使用该网关已有的凭据。",
-                        launchSpec.ModelId);
-                }
-                else
-                {
-                    SetState(
-                        LocalAiGatewayState.Failed,
-                        "本机端口已有另一套网关配置；未覆盖它，也未使用新输入的密钥。",
-                        string.Empty);
-                }
+                SetState(LocalAiGatewayState.Ready,
+                    "本机网关已运行；上游配置通过游戏内“测试并应用”即时更新。", existingStatus.ModelId);
 
                 yield break;
             }
@@ -788,8 +858,7 @@ namespace AIFarm.Presentation
                     status => readyStatus = status);
                 if (readyStatus != null && readyStatus.Reachable)
                 {
-                    if (readyStatus.InstanceId == launchSpec.InstanceId &&
-                        IsCompatible(readyStatus, launchSpec.ModelId))
+                    if (readyStatus.InstanceId == launchSpec.InstanceId)
                     {
                         startupCoroutine = null;
                         SetState(

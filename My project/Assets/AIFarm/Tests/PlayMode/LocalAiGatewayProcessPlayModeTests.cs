@@ -2,6 +2,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.IO;
+using System.Reflection;
 using AIFarm.Core;
 using AIFarm.Presentation;
 using NUnit.Framework;
@@ -117,12 +118,13 @@ namespace AIFarm.Tests.PlayMode
             Assert.That(process.OwnsProcess, Is.False);
             Assert.That(launcher.StartCount, Is.Zero);
             Assert.That(probe.CallCount, Is.EqualTo(1));
-            Assert.That(process.StatusMessage, Does.Contain("复用"));
+            Assert.That(process.StatusMessage, Does.Contain("已运行"));
+            Assert.That(process.StatusMessage, Does.Contain("测试并应用"));
             Assert.That(process.StatusMessage, Does.Not.Contain(SecretMarker));
         }
 
         [UnityTest]
-        public IEnumerator IncompatibleExternalGateway_FailsWithoutStartingOrStoppingAProcess()
+        public IEnumerator DifferentModelExternalGateway_IsReadyForConfigurationWithoutStartingOrStoppingAProcess()
         {
             var unusedHandle = new FakeProcessHandle();
             var launcher = new FakeProcessLauncher(() => unusedHandle);
@@ -138,9 +140,10 @@ namespace AIFarm.Tests.PlayMode
             Assert.That(started.Succeeded, Is.True, started.Message);
             yield return WaitForTerminalState(process);
 
-            Assert.That(process.State, Is.EqualTo(LocalAiGatewayState.Failed));
+            Assert.That(process.State, Is.EqualTo(LocalAiGatewayState.Ready));
             Assert.That(process.OwnsProcess, Is.False);
-            Assert.That(process.ActiveModelId, Is.Empty);
+            Assert.That(process.ActiveModelId, Is.EqualTo("different-model"));
+            Assert.That(process.StatusMessage, Does.Contain("测试并应用"));
             Assert.That(launcher.StartCount, Is.Zero);
             Assert.That(unusedHandle.DisposeCount, Is.Zero);
             Assert.That(unusedHandle.StopCount, Is.Zero);
@@ -299,7 +302,7 @@ namespace AIFarm.Tests.PlayMode
         }
 
         [UnityTest]
-        public IEnumerator SetupPanel_UsesPasswordDefaultModelAndClearsSubmittedKey()
+        public IEnumerator SetupPanel_UsesNativeMaskedFieldsAndPreservesRejectedInputs()
         {
             var launcher = new FakeProcessLauncher(() => new FakeProcessHandle());
             var probe = new BlockingProbe(
@@ -307,6 +310,7 @@ namespace AIFarm.Tests.PlayMode
             LocalAiGatewayProcess process = CreateProcess(launcher, probe);
             GameObject host = process.gameObject;
             ApiGatewaySetupPanel panel = host.AddComponent<ApiGatewaySetupPanel>();
+            panel.enabled = false;
             Button openButton = CreateButton(host.transform, "OpenButton");
             var panelRoot = new GameObject("PanelRoot", typeof(RectTransform));
             panelRoot.transform.SetParent(host.transform, false);
@@ -330,6 +334,9 @@ namespace AIFarm.Tests.PlayMode
                 statusText);
 
             Assert.That(configured.Succeeded, Is.True, configured.Message);
+            InitializeNativePanelWithoutNetwork(panel, host);
+            keyInput = ReadPanelField<InputField>(panel, "apiKeyInput");
+            modelInput = ReadPanelField<InputField>(panel, "modelInput");
             Assert.That(keyInput.contentType, Is.EqualTo(InputField.ContentType.Password));
             Assert.That(
                 keyInput.characterLimit,
@@ -337,15 +344,17 @@ namespace AIFarm.Tests.PlayMode
             Assert.That(
                 modelInput.characterLimit,
                 Is.EqualTo(LocalAiGatewayLaunchSpec.MaximumModelIdLength));
-            Assert.That(modelInput.text, Is.EqualTo(LocalAiGatewayProcess.DefaultModelId));
+            Assert.That(modelInput.text, Is.Empty, "A model is explicitly configured instead of inferred from a brand.");
 
             keyInput.text = SecretMarker;
+            modelInput.text = "custom local/model";
             ActionResult submitted = panel.StartConfiguredGateway();
 
-            Assert.That(submitted.Succeeded, Is.True, submitted.Message);
+            Assert.That(submitted.Failed, Is.True, "The upstream URL has not been supplied.");
             Assert.That(submitted.Message, Does.Not.Contain(SecretMarker));
-            Assert.That(keyInput.text, Is.Empty);
-            Assert.That(process.State, Is.EqualTo(LocalAiGatewayState.CheckingExistingGateway));
+            Assert.That(keyInput.text, Is.EqualTo(SecretMarker));
+            Assert.That(modelInput.text, Is.EqualTo("custom local/model"));
+            Assert.That(process.State, Is.EqualTo(LocalAiGatewayState.Stopped));
             Assert.That(launcher.StartCount, Is.Zero,
                 "The blocking fake probe must prevent any real or fake process launch.");
 
@@ -354,7 +363,7 @@ namespace AIFarm.Tests.PlayMode
         }
 
         [UnityTest]
-        public IEnumerator SetupPanel_RejectedSubmissionAlsoClearsPassword()
+        public IEnumerator SetupPanel_RejectedSubmissionRetainsPasswordAndUpstreamAddress()
         {
             var launcher = new FakeProcessLauncher(() => new FakeProcessHandle());
             var probe = new ScriptedProbe(_ =>
@@ -362,6 +371,7 @@ namespace AIFarm.Tests.PlayMode
             LocalAiGatewayProcess process = CreateProcess(launcher, probe);
             GameObject host = process.gameObject;
             ApiGatewaySetupPanel panel = host.AddComponent<ApiGatewaySetupPanel>();
+            panel.enabled = false;
             Button openButton = CreateButton(host.transform, "OpenButton");
             var panelRoot = new GameObject("PanelRoot", typeof(RectTransform));
             panelRoot.transform.SetParent(host.transform, false);
@@ -381,13 +391,20 @@ namespace AIFarm.Tests.PlayMode
                 stopButton,
                 closeButton,
                 statusText).Succeeded, Is.True);
+            InitializeNativePanelWithoutNetwork(panel, host);
+            keyInput = ReadPanelField<InputField>(panel, "apiKeyInput");
+            modelInput = ReadPanelField<InputField>(panel, "modelInput");
+            statusText = ReadPanelField<Text>(panel, "statusText");
+            InputField upstreamInput = ReadPanelField<InputField>(panel, "upstreamInput");
+            upstreamInput.text = "http://127.0.0.1:11434/v1";
             keyInput.text = SecretMarker;
-            modelInput.text = "invalid model";
+            modelInput.text = "";
 
             ActionResult submitted = panel.StartConfiguredGateway();
 
             Assert.That(submitted.Failed, Is.True);
-            Assert.That(keyInput.text, Is.Empty);
+            Assert.That(keyInput.text, Is.EqualTo(SecretMarker));
+            Assert.That(upstreamInput.text, Is.EqualTo("http://127.0.0.1:11434/v1"));
             Assert.That(launcher.StartCount, Is.Zero);
             Assert.That(probe.CallCount, Is.Zero);
             Assert.That(statusText.text, Does.Not.Contain(SecretMarker));
@@ -403,6 +420,7 @@ namespace AIFarm.Tests.PlayMode
             LocalAiGatewayProcess process = CreateProcess(launcher, probe);
             GameObject host = process.gameObject;
             ApiGatewaySetupPanel panel = host.AddComponent<ApiGatewaySetupPanel>();
+            panel.enabled = false;
             Button openButton = CreateButton(host.transform, "OpenButton");
             var panelRoot = new GameObject("PanelRoot", typeof(RectTransform));
             panelRoot.transform.SetParent(host.transform, false);
@@ -423,6 +441,13 @@ namespace AIFarm.Tests.PlayMode
                 stopButton,
                 closeButton,
                 statusText).Succeeded, Is.True);
+            InitializeNativePanelWithoutNetwork(panel, host);
+            panelRoot = ReadPanelField<GameObject>(panel, "panelRoot");
+            keyInput = ReadPanelField<InputField>(panel, "apiKeyInput");
+            modelInput = ReadPanelField<InputField>(panel, "modelInput");
+            startButton = ReadPanelField<Button>(panel, "startButton");
+            closeButton = ReadPanelField<Button>(panel, "closeButton");
+            statusText = ReadPanelField<Text>(panel, "statusText");
             panelRoot.SetActive(false);
 
             yield return null;
@@ -434,11 +459,18 @@ namespace AIFarm.Tests.PlayMode
             modelInput.text = ModelId;
             startButton.onClick.Invoke();
 
-            Assert.That(keyInput.text, Is.Empty);
-            Assert.That(process.State, Is.EqualTo(LocalAiGatewayState.CheckingExistingGateway));
-            Assert.That(process.IsBusy, Is.True);
+            Assert.That(keyInput.text, Is.EqualTo(SecretMarker));
+            Assert.That(process.State, Is.EqualTo(LocalAiGatewayState.Stopped));
+            Assert.That(process.IsBusy, Is.False);
             Assert.That(launcher.StartCount, Is.Zero);
             Assert.That(statusText.text, Does.Not.Contain(SecretMarker));
+
+            Button revealButton = panelRoot.transform.Find("Reveal").GetComponent<Button>();
+            revealButton.onClick.Invoke();
+            Assert.That(keyInput.contentType, Is.EqualTo(InputField.ContentType.Standard));
+            Assert.That(keyInput.text, Is.EqualTo(SecretMarker));
+            revealButton.onClick.Invoke();
+            Assert.That(keyInput.contentType, Is.EqualTo(InputField.ContentType.Password));
 
             closeButton.onClick.Invoke();
             Assert.That(panel.IsVisible, Is.False);
@@ -448,6 +480,23 @@ namespace AIFarm.Tests.PlayMode
             yield return null;
             Assert.That(process.State, Is.EqualTo(LocalAiGatewayState.Stopped));
             Assert.That(launcher.StartCount, Is.Zero);
+        }
+
+        private static void InitializeNativePanelWithoutNetwork(ApiGatewaySetupPanel panel, GameObject host)
+        {
+            // Prevent the automatic gateway coroutine from touching the player's saved
+            // configuration. Exercise the real panel construction and event bindings.
+            var connection = host.AddComponent<GatewayConnectionController>();
+            connection.enabled = false;
+            typeof(ApiGatewaySetupPanel).GetMethod("Start", BindingFlags.Instance | BindingFlags.NonPublic)
+                .Invoke(panel, null);
+            Assert.That(ReadPanelField<GatewayConnectionController>(panel, "connection"), Is.SameAs(connection));
+        }
+
+        private static T ReadPanelField<T>(ApiGatewaySetupPanel panel, string name) where T : class
+        {
+            return typeof(ApiGatewaySetupPanel).GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)
+                .GetValue(panel) as T;
         }
 
         private LocalAiGatewayProcess CreateProcess(

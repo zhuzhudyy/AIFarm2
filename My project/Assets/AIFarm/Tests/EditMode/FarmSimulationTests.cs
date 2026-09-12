@@ -14,7 +14,7 @@ namespace AIFarm.Tests.EditMode
         public void DemoMode_ProducesWaterDecayWeedsAndMaturityInOrder()
         {
             var field = new FarmField();
-            var inventory = new FarmInventory(carrotSeeds: 1, water: 1, fertilizer: 1);
+            var inventory = new FarmInventory(carrotSeeds: 1, water: 2, fertilizer: 1);
             var clock = new GameClock(initialTimeScale: 1d);
             var mode = new DemoMode(
                 recommendedTimeScale: 1d,
@@ -46,6 +46,9 @@ namespace AIFarm.Tests.EditMode
                 events.Entries.Any(entry => entry.Kind == WorldEventKind.WeedsAppeared),
                 Is.True);
             Assert.That(plot.Weed().Succeeded, Is.True);
+            // Water now continues to evaporate each interval. Care replenishes it
+            // before the second interval instead of receiving a permanent moist floor.
+            Assert.That(plot.Water(inventory).Succeeded, Is.True);
 
             Assert.That(simulation.Advance(3.99d).Succeeded, Is.True);
             Assert.That(plot.State, Is.EqualTo(PlotState.Growing));
@@ -53,7 +56,7 @@ namespace AIFarm.Tests.EditMode
             Assert.That(simulation.Advance(0.01d).Succeeded, Is.True);
             Assert.That(plot.State, Is.EqualTo(PlotState.Mature));
             Assert.That(plot.WaterLevel, Is.EqualTo(FarmPlot.RequiredWaterLevel));
-            Assert.That(simulation.WaterDecayEventCount, Is.EqualTo(1));
+            Assert.That(simulation.WaterDecayEventCount, Is.EqualTo(2));
             Assert.That(
                 events.Entries.Any(entry => entry.Kind == WorldEventKind.CropMatured),
                 Is.True);

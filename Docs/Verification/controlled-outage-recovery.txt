@@ -1,0 +1,75 @@
+CONTROLLED 503: gatewayReachable=True online=False state=降级 error=upstream_error: 模型服务返回异常，已保留本地生活。 Controlled upstream outage for recovery verification.
+resident-002 行为：PickFruit → fruit-2
+任务：自主生活；轮次：0
+精力 99 / 饥饿 35 / 社交 40
+决策：本地规则从本次请求的允许集合中选择安全的高层意图。
+最近决策：第 1 日 12:49；本地规则 / 降级
+执行来源：本地规则 / 降级
+下次计划：10.9s；请求：False
+会话：
+阻塞：模型服务返回异常，已保留本地生活。 Controlled upstream outage for recovery verification. position=(-5.65, -0.02, -1.16)
+resident-004 行为：Rest → location-home-momo-point-01
+任务：自主生活；轮次：0
+精力 73 / 饥饿 35 / 社交 21
+决策：本地规则从本次请求的允许集合中选择安全的高层意图。
+最近决策：第 1 日 12:39；本地规则 / 降级
+执行来源：本地规则 / 降级
+下次计划：8.7s；请求：False
+会话：
+阻塞：模型服务返回异常，已保留本地生活。 Controlled upstream outage for recovery verification. position=(5.20, -0.02, 5.57)
+resident-003 行为：自主生活 → 
+任务：自主生活；轮次：0
+精力 86 / 饥饿 35 / 社交 40
+决策：
+最近决策：第 1 日 12:24；本地规则 / 降级
+执行来源：本地规则 / 降级
+下次计划：0.0s；请求：False
+会话：
+阻塞：模型服务返回异常，已保留本地生活。 Controlled upstream outage for recovery verification. position=(-5.93, -0.02, -0.30)
+resident-001 行为：Rest → location-home-yaya-point-01
+任务：自主生活；轮次：0
+精力 73 / 饥饿 35 / 社交 21
+决策：本地规则从本次请求的允许集合中选择安全的高层意图。
+最近决策：第 1 日 16:38；本地规则 / 降级
+执行来源：本地规则
+下次计划：0.0s；请求：False
+会话：
+阻塞：模型服务返回异常，已保留本地生活。 Controlled upstream outage for recovery verification. position=(-6.43, -0.02, 4.36)
+
+RECOVERED automatically: 在线 v3 online=True
+resident-002 remote=3 行为：Fish → fishing-2
+任务：自主生活；轮次：0
+精力 97 / 饥饿 36 / 社交 41
+决策：受控模型选择当前可执行的活动。
+最近决策：第 1 日 13:20；真实模型
+执行来源：本地规则
+下次计划：0.0s；请求：False
+会话：
+阻塞：无
+resident-004 remote=6 行为：Fish → fishing-1
+任务：自主生活；轮次：0
+精力 99 / 饥饿 36 / 社交 22
+决策：受控模型选择当前可执行的活动。
+最近决策：第 1 日 13:25；真实模型
+执行来源：真实模型
+下次计划：0.0s；请求：False
+会话：
+阻塞：无
+resident-003 remote=4 行为：Rest → location-home-xiaosui-point-01
+任务：自主生活；轮次：0
+精力 85 / 饥饿 36 / 社交 41
+决策：受控模型选择一项当前允许的交流活动。
+最近决策：第 1 日 13:19；真实模型
+执行来源：本地规则 / 降级
+下次计划：0.0s；请求：False
+会话：
+阻塞：无
+resident-001 remote=5 行为：Rest → location-home-yaya-point-01
+任务：自主生活；轮次：0
+精力 72 / 饥饿 36 / 社交 22
+决策：本地规则从本次请求的允许集合中选择安全的高层意图。
+最近决策：第 1 日 16:38；本地规则 / 降级
+执行来源：本地规则
+下次计划：0.0s；请求：False
+会话：
+阻塞：模型服务返回异常，已保留本地生活。 Controlled upstream outage for recovery verification.

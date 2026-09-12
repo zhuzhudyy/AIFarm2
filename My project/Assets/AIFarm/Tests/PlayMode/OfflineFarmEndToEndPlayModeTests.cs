@@ -38,7 +38,9 @@ namespace AIFarm.Tests.PlayMode
             var clock = new GameClock(initialTimeScale: 120d);
             var mode = new DemoMode(
                 recommendedTimeScale: 120d,
-                waterDecayGameSeconds: 2d,
+                // This legacy executor-only fixture has one watering per crop;
+                // continuous resupply is covered by SustainableTownResourceTests.
+                waterDecayGameSeconds: 100d,
                 weedDelayGameSeconds: 4d,
                 maturityGameSeconds: 120d,
                 sowActionSeconds: 0.01f,
@@ -120,7 +122,7 @@ namespace AIFarm.Tests.PlayMode
             Assert.That(simulation.WaterDecayEventCount, Is.GreaterThanOrEqualTo(1));
             Assert.That(clock.ElapsedGameSeconds, Is.GreaterThan(0d));
 
-            Assert.That(inventory.GetCount(InventoryItem.CarrotSeed), Is.Zero);
+            Assert.That(inventory.GetCount(InventoryItem.CarrotSeed), Is.EqualTo(9));
             Assert.That(inventory.GetCount(InventoryItem.Water), Is.Zero);
             Assert.That(inventory.GetCount(InventoryItem.Fertilizer), Is.Zero);
             Assert.That(inventory.GetCount(InventoryItem.Carrot), Is.EqualTo(9));

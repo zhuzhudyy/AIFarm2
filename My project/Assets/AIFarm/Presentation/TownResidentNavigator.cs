@@ -34,12 +34,15 @@ namespace AIFarm.Presentation
         private LocationArrivalPoint currentTarget;
         private float pathResolveElapsed;
         private bool hasReceivedPath;
+        private bool triedSynchronousPathRecovery;
 
         public bool IsMoving { get; private set; }
 
         public bool UsesNavMesh => useNavMesh;
 
         public LocationArrivalPoint CurrentTarget => currentTarget;
+
+        public int PathRecoveryCount { get; private set; }
 
         public ActionResult Configure(
             NavMeshAgent agent,
@@ -131,6 +134,7 @@ namespace AIFarm.Presentation
             currentTarget = target;
             pathResolveElapsed = 0f;
             hasReceivedPath = false;
+            triedSynchronousPathRecovery = false;
             IsMoving = true;
             return ActionResult.Success($"Moving to '{interactionPointId}'.");
         }
@@ -177,6 +181,7 @@ namespace AIFarm.Presentation
             currentTarget = null;
             pathResolveElapsed = 0f;
             hasReceivedPath = false;
+            triedSynchronousPathRecovery = false;
             return ActionResult.Success("Resident movement cancelled.");
         }
 
@@ -245,10 +250,32 @@ namespace AIFarm.Presentation
             if (!hasReceivedPath &&
                 directDistance > navMeshAgent.stoppingDistance + arrivalTolerance)
             {
+                // Unity 6000.5 can accept SetDestination immediately after ResetPath while
+                // producing neither a pending request nor a path. Resolve exactly once on
+                // a subsequent tick; never teleport or accept an incomplete route.
+                if (!triedSynchronousPathRecovery)
+                {
+                    triedSynchronousPathRecovery = true;
+                    var recoveredPath = new NavMeshPath();
+                    if (!NavMesh.SamplePosition(currentTarget.Position, out NavMeshHit targetHit,
+                            0.5f, navMeshAgent.areaMask) ||
+                        !navMeshAgent.CalculatePath(targetHit.position, recoveredPath) ||
+                        recoveredPath.status != NavMeshPathStatus.PathComplete ||
+                        !navMeshAgent.SetPath(recoveredPath))
+                    {
+                        return ActionResult.Failure(ActionFailureReason.NavigationFailed,
+                            $"No complete recovery path exists to '{currentTarget.InteractionPointId}'.");
+                    }
+                    PathRecoveryCount++;
+                    hasReceivedPath = navMeshAgent.hasPath;
+                    return ActionResult.Success();
+                }
                 return pathResolveElapsed > pathResolveTimeout
                     ? ActionResult.Failure(
                         ActionFailureReason.NavigationFailed,
-                        $"NavMesh produced no path to '{currentTarget.InteractionPointId}'.")
+                        $"NavMesh produced no path to '{currentTarget.InteractionPointId}'. " +
+                        $"position={transform.position:F3}, target={currentTarget.Position:F3}, " +
+                        $"destination={navMeshAgent.destination:F3}, distance={directDistance:F3}, stopped={navMeshAgent.isStopped}.")
                     : ActionResult.Success();
             }
 

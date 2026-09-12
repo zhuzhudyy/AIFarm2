@@ -25,6 +25,8 @@ namespace AIFarm.Presentation
         [SerializeField]
         private Transform billboardTransform;
 
+        private string lastExpression = string.Empty;
+
         public ActionResult Configure(
             ReplanController controller,
             GameObject root,
@@ -59,10 +61,24 @@ namespace AIFarm.Presentation
                 return;
             }
 
+            // Keep the bridge ticking; disabling its own GameObject would lose
+            // every later legacy expression instead of forwarding it to history.
             bubbleRoot.SetActive(true);
+            Canvas legacyCanvas = bubbleRoot.GetComponent<Canvas>();
+            if (legacyCanvas != null)
+            {
+                legacyCanvas.enabled = false;
+            }
             dialogueText.text = replanController.NpcExpression;
             emojiText.text = replanController.CurrentEmoji;
             moodText.text = replanController.CurrentMood.ToString();
+            if (Application.isPlaying && !string.IsNullOrWhiteSpace(replanController.NpcExpression) &&
+                replanController.NpcExpression != lastExpression)
+            {
+                lastExpression = replanController.NpcExpression;
+                TownDialogueOverlay.Publish(replanController.ResidentId, lastExpression,
+                    source: replanController.CurrentAiMode == AIFarm.Ai.AiGatewayMode.Remote ? "openai" : "local");
+            }
         }
 
         private void Update()

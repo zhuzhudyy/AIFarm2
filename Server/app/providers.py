@@ -4,12 +4,14 @@ import os
 import re
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
+from contextvars import ContextVar
 from time import perf_counter
 from typing import Any, Protocol, TypeVar
 from uuid import uuid4
 
 from openai import OpenAI, OpenAIError
 from pydantic import BaseModel, ValidationError
+from app.protocols import ADAPTERS, UpstreamError, diagnose, parse_json_output, resolve_endpoint
 
 from app.schemas import (
     ConversationLineSpec,
@@ -28,6 +30,8 @@ from app.schemas import (
     ResidentDecisionSpec,
     ResidentReflectionRequest,
     ResidentReflectionSpec,
+    ResidentTaskRequest,
+    ResidentTaskSpec,
     UtteranceSpec,
 )
 
@@ -48,6 +52,9 @@ class FarmProvider(Protocol):
         self,
         request: InterpretCommandRequest,
     ) -> FarmGoalSpec: ...
+
+    def interpret_task(self, request: ResidentTaskRequest) -> ResidentTaskSpec:
+        ...
 
     def generate_utterance(
         self,
@@ -79,6 +86,7 @@ class ProviderProbeResult:
     ok: bool
     code: str
     message: str
+    checks: tuple[dict, ...] = ()
 
 
 class ProviderInputError(ValueError):
@@ -106,7 +114,7 @@ class MockProvider:
 
     def probe(self) -> ProviderProbeResult:
         return ProviderProbeResult(
-            ok=True,
+            ok=False,
             code="offline",
             message="离线 Mock 已就绪，不会访问网络。",
         )
@@ -186,6 +194,123 @@ class MockProvider:
             requires_harvesting=True,
             summary="完成 3×3 农田的胡萝卜全周期",
         )
+
+    def interpret_task(self, request: ResidentTaskRequest) -> ResidentTaskSpec:
+        # Keep separators: removing the comma in "1、3号地" changes the actual target.
+        command = request.command.strip().lower()
+        quantity_pattern = r"([-+]?(?:\d+(?:\.\d*)?|\.\d+)|[负零〇一二两三四五六七八九十百点]+)\s*(?:次|轮|遍|条|尾|个|颗|枚|份|times)(?!\s*(?:钓位|果树|地块|农田))"
+        action_command = re.sub(quantity_pattern, "", command)
+        explicit_points = re.findall(r"(?:fishing|fruit)-\d+", command)
+        if any(point not in request.allowed_target_ids for point in explicit_points):
+            raise ProviderInputError("target_not_found", "指定的交互目标不存在或当前不可用。")
+        explicit_residents = re.findall(r"resident-[a-z0-9]+(?:-[a-z0-9]+)*", command)
+        if any(owner not in request.allowed_target_resident_ids and owner != request.resident_id for owner in explicit_residents):
+            raise ProviderInputError("target_not_found", "指定的居民不存在或当前不可交流。")
+        if any(word in command for word in ("土豆", "小麦", "玉米", "番茄")):
+            raise ProviderInputError("unsupported_intent", "当前只支持胡萝卜种植。")
+        actions = [
+            ("Stop", ("停止", "取消", "自由活动", "恢复自主", "stop")),
+            ("TendFarm", ("照料", "照顾", "照看", "循环种", "持续种", "全周期")),
+            ("Fish", ("钓鱼", "捕鱼", "fish")),
+            ("PickFruit", ("摘果", "采果", "摘苹果", "采摘", "pickfruit")),
+            ("Chat", ("聊天", "交谈", "对话", "chat")),
+            ("Water", ("浇水", "water")), ("Fertilize", ("施肥", "fertilize")),
+            ("Weed", ("除草", "拔草", "weed")), ("Harvest", ("收获", "收割", "harvest")),
+            ("Sow", ("播种", "种植", "种满", "种胡萝卜", "种上", "sow")),
+            ("Move", ("移动", "前往", "去", "走到", "move")),
+        ]
+        task_type = next((kind for kind, words in actions if any(word in action_command for word in words)), None)
+        legacy_full_goal = self._normalize_command(command) in self._supported_commands
+        if legacy_full_goal or ("种" in command and any(word in command for word in ("收掉", "收成", "收获", "收成", "收掉"))):
+            task_type = "TendFarm"
+        if task_type is None:
+            raise ProviderInputError("unsupported_intent", "未识别此任务。支持移动、农活、钓鱼、摘果、聊天和停止。")
+        target = next((item for item in request.allowed_target_ids if item.lower() in command), "")
+        aliases = {"池塘": "fishing-1", "河岸": "fishing-1", "果园": "fruit-1", "水井": "well", "广场": "town-square", "农田": "farm", "住宅": "home"}
+        if not target:
+            target = next((value for key, value in aliases.items() if key in command and (not request.allowed_target_ids or value in request.allowed_target_ids)), "")
+        if task_type in {"Fish", "PickFruit"}:
+            point_number = r"-?\d+|[零〇一二两三四五六七八九十百]+"
+            point = re.search(rf"(?:第\s*)?({point_number})\s*[号个棵]?\s*(?:钓位|果树)|(?:钓位|果树)\s*[#第]?\s*({point_number})", command)
+            if point:
+                try:
+                    number = self._parse_quantity_token(next(group for group in point.groups() if group is not None))
+                except ProviderInputError:
+                    raise ProviderInputError("target_not_found", "指定的钓位或果树不存在。") from None
+                target = ("fishing-" if task_type == "Fish" else "fruit-") + str(number)
+                if target not in request.allowed_target_ids:
+                    raise ProviderInputError("target_not_found", "指定的钓位或果树不存在或当前不可用。")
+        resident_target = next((item for item in request.allowed_target_resident_ids if item in command), None)
+        names = {"芽芽": "resident-001", "阿木": "resident-002", "小穗": "resident-003", "墨墨": "resident-004"}
+        if not resident_target:
+            resident_target = next((value for key, value in names.items() if key in command and value in request.allowed_target_resident_ids), None)
+        if task_type == "Chat" and resident_target is None:
+            raise ProviderInputError("target_not_found", "请指定存在的聊天居民。")
+        if task_type == "Chat" and resident_target == request.resident_id:
+            raise ProviderInputError("target_not_found", "不能与自己开启居民会话。")
+        if task_type == "Move" and not target:
+            raise ProviderInputError("target_not_found", "未找到可达地点，请指定列表中的地点。")
+        plots = (list(range(1, 10)) if legacy_full_goal else self._parse_task_plots(command)) if task_type in {"Sow", "Water", "Fertilize", "Weed", "Harvest", "TendFarm"} else []
+        explicit_quantity = re.search(quantity_pattern, command) is not None
+        quantity = self._parse_activity_quantity(command, quantity_pattern)
+        if task_type not in {"Fish", "PickFruit"} and explicit_quantity and quantity > 1:
+            raise ProviderInputError("unsupported_quantity", "农事任务目前支持单次操作或持续照料；请勿指定多次操作数量。")
+        repeat = any(word in command for word in ("持续", "循环", "一直", "反复"))
+        if task_type in {"Fish", "PickFruit"} and explicit_quantity:
+            repeat = False
+        if task_type == "Chat" and repeat:
+            raise ProviderInputError("unsupported_task_mode", "聊天任务目前支持一次有轮次上限的会话，不支持循环聊天。")
+        return ResidentTaskSpec(resident_id=request.resident_id, task_id=uuid4().hex, task_type=task_type, target_id=target, target_resident_id=resident_target,
+            target_plot_numbers=plots, repeat=repeat, quantity=quantity, summary=f"{request.command[:200]}（本地解析）", provider="mock")
+
+    @staticmethod
+    def _parse_task_plots(command: str) -> list[int]:
+        plots = []
+        covered = []
+        for match in re.finditer(r"(-?\d+)\s*(?:到|至|[-~～])\s*(-?\d+)\s*(?:号|块)?(?:地|田|农田)", command):
+            first, last = (int(value) for value in match.groups())
+            if not 1 <= first <= last <= 9:
+                raise ProviderInputError("target_not_found", "地块范围必须在 1 到 9 之间且从小到大。")
+            plots.extend(range(first, last + 1))
+            covered.append(match.span())
+        for match in re.finditer(r"(-?\d+(?:\s*[、，,和及]\s*-?\d+)+)\s*(?:号|块)(?:地|田|农田)?", command):
+            plots.extend(int(value) for value in re.findall(r"-?\d+", match.group(1)))
+            covered.append(match.span())
+        # Negative lookahead keeps activity counts (浇水3次) separate from plot IDs.
+        pattern = r"(?:第|地块|田块|plot|播种|浇水|施肥|除草|收获)[ #第]*(-?\d+)(?![\d.])(?!\s*(?:次|轮|遍|条|尾|个|颗|枚|份|times))|(?<![\d.])(-?\d+)\s*(?:号|块)(?:地|田|农田)?"
+        for match in re.finditer(pattern, command):
+            if not any(first <= match.start() < last for first, last in covered):
+                plots.append(int(next(value for value in match.groups() if value is not None)))
+        if any(number < 1 or number > 9 for number in plots):
+            raise ProviderInputError("target_not_found", "地块编号必须在 1 到 9 之间。")
+        if re.search(r"(?:第|地块|田块|plot|播种|浇水|施肥|除草|收获)\s*-?\d+\.\d+|-?\d+\.\d+\s*(?:号|块)(?:地|田)", command):
+            raise ProviderInputError("target_not_found", "地块编号必须是 1 到 9 的整数。")
+        if re.search(r"第?[零〇一二两三四五六七八九十百]+(?:号|块)(?:地|田)", command):
+            raise ProviderInputError("target_not_found", "请用 1 到 9 的数字指定地块编号。")
+        return list(dict.fromkeys(plots)) if plots else list(range(1, 10))
+
+    @staticmethod
+    def _parse_activity_quantity(command: str, pattern: str) -> int:
+        quantities = [MockProvider._parse_quantity_token(match.group(1)) for match in re.finditer(pattern, command)]
+        if len(set(quantities)) > 1:
+            raise ProviderInputError("invalid_quantity", "一条活动指令请指定一个明确的数量。")
+        return quantities[0] if quantities else 1
+
+    @staticmethod
+    def _parse_quantity_token(token: str) -> int:
+        digits = {"零": 0, "〇": 0, "一": 1, "二": 2, "两": 2, "三": 3, "四": 4, "五": 5, "六": 6, "七": 7, "八": 8, "九": 9}
+        if re.fullmatch(r"[+]?\d+", token):
+            number = int(token)
+        elif token in digits:
+            number = digits[token]
+        elif re.fullmatch(r"[一二两三四五六七八九]?十[一二两三四五六七八九]?", token):
+            tens, ones = token.split("十")
+            number = digits.get(tens, 1) * 10 + digits.get(ones, 0)
+        else:
+            raise ProviderInputError("invalid_quantity", "活动数量必须是 1 到 99 的整数。")
+        if not 1 <= number <= 99:
+            raise ProviderInputError("invalid_quantity", "活动数量必须是 1 到 99 的整数。")
+        return number
 
     def generate_utterance(self, request: GenerateUtteranceRequest) -> UtteranceSpec:
         trigger = NpcExpressionTrigger(request.trigger)
@@ -398,11 +523,10 @@ class MockProvider:
 
 
 class OpenAIProvider:
-    """DeepSeek provider implemented through its OpenAI-compatible Responses API."""
+    """Shared high-level AI service backed by one explicitly selected protocol."""
 
     name = "openai"
-    requires_api_key = True
-    api_key_configured = True
+    requires_api_key = False
 
     _interpret_instructions = (
         "Interpret the bounded user command as a FarmGoalSpec. Return only JSON that "
@@ -454,24 +578,31 @@ class OpenAIProvider:
         timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
         clock: Callable[[], float] = perf_counter,
         request_id_factory: Callable[[], str] | None = None,
+        base_url: str = DEEPSEEK_BASE_URL,
+        protocol: str | None = None,
+        output_mode: str = "text",
+        http_client: Any | None = None,
     ) -> None:
         normalized_api_key = api_key.strip()
         normalized_model = model.strip()
-        if not normalized_api_key:
-            raise RuntimeError("OPENAI_API_KEY is required for AIFARM_PROVIDER=openai.")
         if not normalized_model:
             raise RuntimeError("OPENAI_MODEL is required for AIFARM_PROVIDER=openai.")
 
         self._model = normalized_model
+        self.api_key_configured = bool(normalized_api_key)
+        self._api_key = normalized_api_key
+        self.base_url = base_url
+        self.protocol = protocol or ("responses" if client is not None else "chat_completions")
+        self.output_mode = output_mode
+        self.endpoint = resolve_endpoint(base_url, self.protocol, self._model)
+        self.last_error: ContextVar[UpstreamError | None] = ContextVar("provider_error", default=None)
+        self.last_request_id: ContextVar[str] = ContextVar("provider_request_id", default="")
         self._fallback = fallback or MockProvider()
         self._clock = clock
         self._request_id_factory = request_id_factory or (lambda: uuid4().hex)
-        self._client = client or OpenAI(
-            api_key=normalized_api_key,
-            base_url=DEEPSEEK_BASE_URL,
-            timeout=timeout_seconds,
-            max_retries=0,
-        )
+        self._client = client
+        self._adapter = ADAPTERS[self.protocol](endpoint=self.endpoint, model=self._model, api_key=normalized_api_key,
+            timeout=timeout_seconds, output_mode=output_mode, client=http_client) if client is None else None
 
     @property
     def model(self) -> str:
@@ -482,7 +613,30 @@ class OpenAIProvider:
         return cls(
             api_key=os.getenv("OPENAI_API_KEY", ""),
             model=os.getenv("OPENAI_MODEL", ""),
+            base_url=os.getenv("OPENAI_BASE_URL", DEEPSEEK_BASE_URL),
+            protocol=os.getenv("AIFARM_PROTOCOL", "chat_completions"),
         )
+
+    def interpret_task(self, request: ResidentTaskRequest) -> ResidentTaskSpec:
+        return self._request_structured_output(
+            operation="resident-task", resident_id=request.resident_id,
+            instructions="Interpret the player's command as ResidentTaskSpec. Preserve resident_id. Choose a task_type from the schema, target_id only from allowed_target_ids (or empty for automatic selection), and target_resident_id only from allowed_target_resident_ids. Only carrot farming exists. TendFarm means care from sowing through harvest. repeat is true only for explicitly ongoing/cyclic care. Never turn unrelated commands into farming. Invalid or unknown targets must be refused. Produce a short Chinese summary.",
+            snapshot=request.model_dump(mode="json"), response_model=ResidentTaskSpec, schema_name="resident_task_spec",
+            fallback_call=lambda: self._fallback.interpret_task(request),
+            validate_result=lambda result: self._validate_task(request, result))
+
+    @staticmethod
+    def _validate_task(request: ResidentTaskRequest, result: ResidentTaskSpec) -> None:
+        if result.resident_id != request.resident_id:
+            raise ProviderResponseError("Task resident_id does not match request owner.")
+        if result.target_id and result.target_id not in request.allowed_target_ids:
+            raise ProviderResponseError("Task target_id is not in allowed_target_ids.")
+        if result.target_resident_id and result.target_resident_id not in request.allowed_target_resident_ids:
+            raise ProviderResponseError("Task target resident is not allowed.")
+        if result.task_type == "Move" and not result.target_id:
+            raise ProviderResponseError("Move requires a valid target.")
+        if result.task_type == "Chat" and not result.target_resident_id:
+            raise ProviderResponseError("Chat requires a valid resident.")
 
     def interpret_command(
         self,
@@ -588,59 +742,43 @@ class OpenAIProvider:
         )
 
     def probe(self) -> ProviderProbeResult:
-        started_at = self._clock()
-        try:
-            response = self._client.models.list()
-            model_ids = {
-                str(self._read_value(item, "id"))
-                for item in self._read_value(response, "data") or ()
-                if self._read_value(item, "id")
-            }
-            if self._model not in model_ids:
-                result = ProviderProbeResult(
-                    ok=False,
-                    code="model_not_found",
-                    message="连接成功，但当前账号未返回所选模型。",
-                )
-            else:
-                result = ProviderProbeResult(
-                    ok=True,
-                    code="ok",
-                    message="鉴权成功，所选模型可用。",
-                )
-        except (ConnectionError, OpenAIError, TimeoutError) as error:
-            error_name = type(error).__name__
-            code_by_error = {
-                "AuthenticationError": "authentication_failed",
-                "APITimeoutError": "timeout",
-                "APIConnectionError": "connection_failed",
-                "RateLimitError": "rate_limited",
-                "NotFoundError": "model_not_found",
-            }
-            code = code_by_error.get(error_name, "upstream_error")
-            message_by_code = {
-                "authentication_failed": "鉴权失败，请检查 API Key。",
-                "timeout": "连接测试超时，请稍后重试。",
-                "connection_failed": "无法连接到模型服务。",
-                "rate_limited": "服务当前限流，请稍后重试。",
-                "model_not_found": "所选模型不存在或当前账号无权访问。",
-                "upstream_error": "模型服务拒绝了连接测试。",
-            }
-            result = ProviderProbeResult(
-                ok=False,
-                code=code,
-                message=message_by_code[code],
-            )
+        from app.schemas import ResidentContext, ResidentPersonaSnapshot, RelationshipSnapshot
 
-        elapsed_ms = max(0.0, (self._clock() - started_at) * 1000)
-        _logger.info(
-            "provider_probe model=%s elapsed_ms=%.2f ok=%s code=%s",
-            self._model,
-            elapsed_ms,
-            result.ok,
-            result.code,
-        )
-        return result
+        def context(owner: str, other: str, name: str) -> ResidentContext:
+            return ResidentContext(resident_id=owner,
+                persona=ResidentPersonaSnapshot(display_name=name, role="居民", personality_traits=["可靠"], speaking_style="自然简短"),
+                current_state="白天；刚给农田浇水，正在广场休息。",
+                relationship_snapshots=[RelationshipSnapshot(owner_resident_id=owner, target_resident_id=other, familiarity=10, trust=10)], relevant_memories=[])
+
+        first, second = context("probe-001", "probe-002", "测试居民一"), context("probe-002", "probe-001", "测试居民二")
+        decision = ResidentDecisionRequest(resident_id=first.resident_id, context=first,
+            situation="请选择一项可用活动。", allowed_intents=["Walk", "Rest"], allowed_target_resident_ids=[])
+        conversation = ConversationScriptRequest(resident_id=first.resident_id, participant_ids=[first.resident_id, second.resident_id],
+            participants=[first, second], topic="刚刚完成浇水，接下来去果园看看。", max_lines=2)
+        checks = []
+        for name, operation in (("text", self._probe_text), ("resident_decision", lambda: self.decide_resident(decision)),
+                ("conversation", lambda: self.generate_conversation_script(conversation))):
+            try:
+                self.last_error.set(None)
+                result = operation()
+                failure = self.last_error.get()
+                if failure is not None:
+                    raise failure
+                if getattr(result, "provider", "openai") != "openai":
+                    raise UpstreamError("output_parse_error", "测试请求发生本地回退，不能判定为真实模型在线。")
+                checks.append({"name": name, "ok": True, "code": "ok", "message": "上游实际推理并通过本地校验。"})
+            except (UpstreamError, OpenAIError, ConnectionError, TimeoutError, ValueError, ProviderResponseError) as error:
+                failure = diagnose(error, self._api_key)
+                checks.append({"name": name, "ok": False, "code": failure.code, "message": failure.message})
+        failure = next((check for check in checks if not check["ok"]), None)
+        return ProviderProbeResult(ok=failure is None, code=failure["code"] if failure else "ok",
+            message=failure["message"] if failure else "文本推理、居民决策和居民对话均已通过上游实际推理。", checks=tuple(checks))
+
+    def _probe_text(self) -> str:
+        if self._client is not None:
+            response = self._client.responses.create(model=self._model, instructions="Reply with a short greeting.", input="你好", max_output_tokens=64)
+            return self._extract_output_text(response)
+        return self._adapter.complete("Reply with a short greeting.", "你好", max_tokens=64).text
 
     def _request_structured_output(
         self,
@@ -656,9 +794,16 @@ class OpenAIProvider:
         max_output_tokens: int = 512,
     ) -> _OutputModel:
         request_id = self._request_id_factory()
+        self.last_request_id.set(request_id)
         started_at = self._clock()
+        self.last_error.set(None)
 
         try:
+            if self._client is None:
+                result = self._request_adapter(instructions, snapshot, response_model, schema_name, validate_result, max_output_tokens)
+                self._log_result(operation=operation, resident_id=resident_id, request_id=request_id, started_at=started_at,
+                    result_type=type(result).__name__, source="openai")
+                return result
             response = self._client.responses.create(
                 model=self._model,
                 instructions=instructions,
@@ -678,7 +823,8 @@ class OpenAIProvider:
             )
             output_text = self._extract_output_text(response)
             result = response_model.model_validate_json(output_text)
-            self._require_openai_provider_marker(result)
+            if "provider" in response_model.model_fields:
+                result = result.model_copy(update={"provider": "openai"})
             if validate_result is not None:
                 validate_result(result)
         except (
@@ -687,7 +833,10 @@ class OpenAIProvider:
             ProviderResponseError,
             TimeoutError,
             ValidationError,
+            UpstreamError,
+            ValueError,
         ) as error:
+            self.last_error.set(diagnose(error, self._api_key))
             return self._use_fallback(
                 operation=operation,
                 resident_id=resident_id,
@@ -707,6 +856,39 @@ class OpenAIProvider:
             upstream_request_id=str(getattr(response, "id", "-")),
         )
         return result
+
+    def _request_adapter(self, instructions, snapshot, response_model, schema_name, validate_result, max_output_tokens):
+        from app.schemas import ExecutionSpec
+
+        metadata_fields = set(ExecutionSpec.model_fields)
+        schema = response_model.model_json_schema()
+        for name in metadata_fields | {"provider", "task_id"}:
+            schema["properties"].pop(name, None)
+            if name in schema.get("required", []):
+                schema["required"].remove(name)
+        system = instructions.replace("set provider to openai", "omit provider metadata")
+        system += "\nReturn a single JSON object matching this schema. No explanations or world mutations. Schema:\n" + json.dumps(schema, ensure_ascii=False)
+        user = json.dumps(snapshot, ensure_ascii=False, separators=(",", ":"))
+        for attempt in range(2):
+            reply = self._adapter.complete(system, user, schema, schema_name, max_tokens=max(2048, max_output_tokens))
+            try:
+                payload = parse_json_output(reply.text)
+                for field in metadata_fields:
+                    payload.pop(field, None)
+                if "provider" in response_model.model_fields:
+                    payload["provider"] = "openai"
+                if "task_id" in response_model.model_fields:
+                    payload["task_id"] = uuid4().hex
+                result = response_model.model_validate_json(json.dumps(payload, ensure_ascii=False))
+                if validate_result is not None:
+                    validate_result(result)
+                return result
+            except (ValueError, ValidationError, ProviderResponseError) as error:
+                if attempt:
+                    raise ProviderResponseError("输出在一次结构修复后仍未通过本地校验。") from error
+                # Send only the original owned snapshot and an error category, not arbitrary
+                # malformed model text that could introduce a second set of instructions.
+                user += "\nPrevious output failed " + type(error).__name__ + ". Retry once with exactly the required JSON fields and allowed values."
 
     def _use_fallback(
         self,

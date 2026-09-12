@@ -9,6 +9,20 @@ from app.providers import MockProvider
 from app.schemas import FarmGoalSpec, ResidentContext
 
 
+METADATA_FIELDS = {"config_version", "request_id", "model", "execution_source", "error_code", "error_message"}
+
+
+def _local_payload(response) -> dict:
+    body = response.json()
+    assert body.pop("config_version") == 1
+    assert len(body.pop("request_id")) == 32
+    assert body.pop("model") == ""
+    assert body.pop("execution_source") == "local"
+    assert body.pop("error_code") == ""
+    assert body.pop("error_message") == ""
+    return body
+
+
 FULL_GOAL = {
     "goal_id": "full_field_carrot_lifecycle",
     "crop": "carrot",
@@ -131,7 +145,9 @@ def test_openapi_marks_core_specs_as_closed_and_fully_required(
     ):
         schema = schemas[schema_name]
         assert schema["additionalProperties"] is False
-        assert set(schema["required"]) == set(schema["properties"])
+        assert set(schema["required"]) == set(schema["properties"]) - METADATA_FIELDS
+        assert schema["properties"]["execution_source"]["enum"] == ["remote", "local", "fallback"]
+        assert schema["properties"]["config_version"]["type"] == "integer"
 
 
 @pytest.mark.parametrize(
@@ -154,7 +170,7 @@ def test_interpret_command_returns_strict_full_field_goal(
     )
 
     assert response.status_code == 200
-    assert response.json() == FULL_GOAL
+    assert _local_payload(response) == FULL_GOAL
 
 
 def test_interpret_command_rejects_unsupported_intent(client: TestClient) -> None:
@@ -388,7 +404,7 @@ def test_resident_decision_uses_explicit_owner_and_allowed_sets(
     )
 
     assert response.status_code == 200
-    assert response.json() == {
+    assert _local_payload(response) == {
         "resident_id": "resident-001",
         "intent": "Idle",
         "target_resident_id": None,
@@ -406,7 +422,7 @@ def test_mock_resident_decision_proposes_harvest_dinner_from_conversation_fact(
     )
 
     assert response.status_code == 200
-    body = response.json()
+    body = _local_payload(response)
     assert body == {
         "resident_id": "resident-003",
         "intent": "propose_town_event",

@@ -1,6 +1,7 @@
 using System;
 using AIFarm.Ai;
 using AIFarm.Core;
+using AIFarm.Activities;
 using UnityEngine;
 
 namespace AIFarm.Presentation
@@ -23,19 +24,39 @@ namespace AIFarm.Presentation
 
         [Min(0.01f)]
         [SerializeField]
-        private float timeScale = 20f;
+        private float timeScale = 1f;
+
+        [Min(60f)]
+        [SerializeField]
+        private float realSecondsPerDay = 720f;
+
+        [Tooltip("Explicit fast-growth demonstration. Normal production crops take two game days.")]
+        [SerializeField]
+        private bool fastGrowthDemo;
+
+        [Min(1)]
+        [SerializeField]
+        private int seedsReturnedPerCrop = 1;
+
+        [Min(1)]
+        [SerializeField]
+        private int cropYield = 1;
+
+        [Header("Town activities (all durations are simulation seconds)")]
+        [SerializeField]
+        private ActivityRules activityRules = new ActivityRules();
 
         [Min(0.1f)]
         [SerializeField]
-        private float waterDecayGameSeconds = 10f;
+        private float waterDecayGameSeconds = 28800f;
 
         [Min(0.1f)]
         [SerializeField]
-        private float weedDelayGameSeconds = 15f;
+        private float weedDelayGameSeconds = 14400f;
 
         [Min(0.1f)]
         [SerializeField]
-        private float maturityGameSeconds = 30f;
+        private float maturityGameSeconds = 172800f;
 
         [Min(0.01f)]
         [SerializeField]
@@ -69,9 +90,9 @@ namespace AIFarm.Presentation
         [SerializeField]
         private string aiGatewayBaseUrl = DefaultAiGatewayBaseUrl;
 
-        [Range(1, 3)]
+        [Range(1, 60)]
         [SerializeField]
-        private int aiRequestTimeoutSeconds = 3;
+        private int aiRequestTimeoutSeconds = 30;
 
         [Range(1, 4)]
         [SerializeField]
@@ -85,15 +106,39 @@ namespace AIFarm.Presentation
 
         public float TimeScale => timeScale;
 
+        public double GameSecondsPerRealSecond => 86400d / Math.Max(60f, realSecondsPerDay);
+
+        public bool FastGrowthDemo => fastGrowthDemo;
+
+        public int SeedsReturnedPerCrop => Math.Max(1, seedsReturnedPerCrop);
+
+        public int CropYield => Math.Max(1, cropYield);
+
+        public ActivityRules CreateActivityRules()
+        {
+            ActivityRules source = activityRules ?? new ActivityRules();
+            return new ActivityRules
+            {
+                fishingGameSeconds = source.fishingGameSeconds,
+                pickingGameSeconds = source.pickingGameSeconds,
+                supplyGameSeconds = source.supplyGameSeconds,
+                fruitRegrowthGameSeconds = source.fruitRegrowthGameSeconds,
+                fruitsPerTree = source.fruitsPerTree,
+                fishPerCatch = source.fishPerCatch,
+                waterCarryCapacity = source.waterCarryCapacity,
+                fertilizerCarryCapacity = source.fertilizerCarryCapacity
+            };
+        }
+
         public float PlotSize => plotSize;
 
         public float PlotSpacing => plotSpacing;
 
-        public float WaterDecayGameSeconds => waterDecayGameSeconds;
+        public float WaterDecayGameSeconds => fastGrowthDemo ? 10f : waterDecayGameSeconds;
 
-        public float WeedDelayGameSeconds => weedDelayGameSeconds;
+        public float WeedDelayGameSeconds => fastGrowthDemo ? 15f : weedDelayGameSeconds;
 
-        public float MaturityGameSeconds => maturityGameSeconds;
+        public float MaturityGameSeconds => fastGrowthDemo ? 30f : maturityGameSeconds;
 
         public float ExpressionCooldownSeconds => expressionCooldownSeconds;
 
@@ -107,7 +152,7 @@ namespace AIFarm.Presentation
 
         public int AiRequestTimeoutSeconds => aiRequestTimeoutSeconds > 0
             ? aiRequestTimeoutSeconds
-            : 3;
+            : 30;
 
         public int MaximumConcurrentAiRequests => maximumConcurrentAiRequests > 0
             ? maximumConcurrentAiRequests
@@ -119,15 +164,15 @@ namespace AIFarm.Presentation
         {
             return new DemoMode(
                 recommendedTimeScale: timeScale,
-                waterDecayGameSeconds: waterDecayGameSeconds,
-                weedDelayGameSeconds: weedDelayGameSeconds,
-                maturityGameSeconds: maturityGameSeconds,
-                sowActionSeconds: farmActionSeconds,
-                fertilizeActionSeconds: farmActionSeconds * 1.1f,
-                waterActionSeconds: farmActionSeconds,
-                weedActionSeconds: farmActionSeconds,
-                harvestActionSeconds: farmActionSeconds * 1.25f,
-                waitActionSeconds: waitActionSeconds,
+                waterDecayGameSeconds: WaterDecayGameSeconds,
+                weedDelayGameSeconds: WeedDelayGameSeconds,
+                maturityGameSeconds: MaturityGameSeconds,
+                sowActionSeconds: farmActionSeconds * (float)GameSecondsPerRealSecond,
+                fertilizeActionSeconds: farmActionSeconds * 1.1f * (float)GameSecondsPerRealSecond,
+                waterActionSeconds: farmActionSeconds * (float)GameSecondsPerRealSecond,
+                weedActionSeconds: farmActionSeconds * (float)GameSecondsPerRealSecond,
+                harvestActionSeconds: farmActionSeconds * 1.25f * (float)GameSecondsPerRealSecond,
+                waitActionSeconds: waitActionSeconds * (float)GameSecondsPerRealSecond,
                 expressionCooldownSeconds: expressionCooldownSeconds,
                 expressionDisplaySeconds: expressionDisplaySeconds);
         }
@@ -139,16 +184,16 @@ namespace AIFarm.Presentation
             float scale,
             float size,
             float spacing,
-            float waterDecaySeconds = 10f,
-            float weedDelaySeconds = 15f,
-            float maturitySeconds = 30f,
+            float waterDecaySeconds = 28800f,
+            float weedDelaySeconds = 14400f,
+            float maturitySeconds = 172800f,
             float actionSeconds = 0.2f,
             float waitSeconds = 0.2f,
             float expressionCooldown = 12f,
             float expressionDisplay = 2.5f,
             AiGatewayMode gatewayMode = AiGatewayMode.Local,
             string gatewayBaseUrl = DefaultAiGatewayBaseUrl,
-            int requestTimeoutSeconds = 3,
+            int requestTimeoutSeconds = 30,
             int maxConcurrentAiRequests = AiRequestCoordinator.DefaultMaximumConcurrentRequests)
         {
             if (inventory == null)
@@ -176,11 +221,11 @@ namespace AIFarm.Presentation
                     nameof(gatewayBaseUrl));
             }
 
-            if (requestTimeoutSeconds < 1 || requestTimeoutSeconds > 3)
+            if (requestTimeoutSeconds < 1 || requestTimeoutSeconds > 60)
             {
                 throw new ArgumentOutOfRangeException(
                     nameof(requestTimeoutSeconds),
-                    "AI gateway timeout must be between 1 and 3 seconds for the demo.");
+                    "AI gateway timeout must be between 1 and 60 seconds.");
             }
 
             if (maxConcurrentAiRequests < 1 || maxConcurrentAiRequests > 4)

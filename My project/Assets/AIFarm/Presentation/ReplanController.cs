@@ -115,6 +115,11 @@ namespace AIFarm.Presentation
 
         public bool IsInitialized { get; private set; }
 
+        public void RefreshGatewayConfiguration()
+        {
+            InvalidateAsyncRequests();
+        }
+
         public ActionResult Configure(GameBootstrap gameBootstrap, NpcPlanExecutor planExecutor)
         {
             if (gameBootstrap == null || planExecutor == null)
@@ -444,10 +449,10 @@ namespace AIFarm.Presentation
                 gatewayRequestPending = true;
                 CurrentGoalText = "Contacting Remote AI…";
                 CurrentDecisionReason = "正在请求远程 AI 网关解释命令。";
-                StartCoroutine(RequestGoalInterpretation(
+                StartCoroutine(DeferRequest(RequestGoalInterpretation(
                     command,
                     asyncRequestGeneration,
-                    CaptureAuthoritativeStateRevision()));
+                    CaptureAuthoritativeStateRevision())));
                 return ActionResult.Success("Remote AI interpretation requested.");
             }
 
@@ -650,6 +655,12 @@ namespace AIFarm.Presentation
             return requestGeneration == asyncRequestGeneration &&
                 (bootstrap == null ||
                     authoritativeStateRevision == bootstrap.AuthoritativeStateRevision);
+        }
+
+        private static IEnumerator DeferRequest(IEnumerator request)
+        {
+            yield return null;
+            yield return request;
         }
 
         private IEnumerator RequestGoalInterpretation(
@@ -859,13 +870,13 @@ namespace AIFarm.Presentation
                     $"Expression trigger {trigger} already has a pending AI request.");
             }
 
-            StartCoroutine(RequestExpression(
+            StartCoroutine(DeferRequest(RequestExpression(
                 trigger,
                 context,
                 generationContext,
                 interrupt,
                 asyncRequestGeneration,
-                CaptureAuthoritativeStateRevision()));
+                CaptureAuthoritativeStateRevision())));
             return ActionResult.Success("Remote NPC utterance requested.");
         }
 
@@ -895,7 +906,7 @@ namespace AIFarm.Presentation
             }
 
             reflectionRequestPending = true;
-            StartCoroutine(RequestReflection(
+            StartCoroutine(DeferRequest(RequestReflection(
                 ActiveGoal,
                 outcome,
                 eventSummary,
@@ -903,7 +914,7 @@ namespace AIFarm.Presentation
                 cycleNumber,
                 interrupt,
                 asyncRequestGeneration,
-                CaptureAuthoritativeStateRevision()));
+                CaptureAuthoritativeStateRevision())));
             return ActionResult.Success("Remote NPC reflection requested.");
         }
 

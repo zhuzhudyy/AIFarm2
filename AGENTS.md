@@ -2,9 +2,9 @@
 
 ## Scope and Current Phase
 
-This repository is a new Unity AI-farming demonstration. `origin_requirements.md` is the product brief: a player will eventually issue natural-language requests to an AI NPC that plans and performs sowing, watering, fertilizing, weeding, and harvesting. Future work also includes time, inventory, dialogue, character state, and expressive feedback.
+This repository is a Unity AI-farming town. `origin_requirements.md` is the original product brief. The implemented demo includes resident-targeted natural-language tasks, autonomous life, agriculture, fishing, fruit gathering, simulation time, shared inventory, dialogue, and persistence. Current integration results and known limits are recorded in `Docs/TOWN_REPAIR_REPORT.md`.
 
-The current phase is repository setup only. Unless a later task explicitly expands scope, do not modify scenes, create gameplay scripts, import assets, install packages, or implement features. Keep baseline changes limited to documentation and repository configuration.
+The current phase is implementation and integration of a playable multi-resident AI town. Changes may include gameplay, editable scenes and prefabs, UI, the Python gateway, persistence, and regression tests. Preserve the current Unity/URP/NavMesh stack. Verify actual scene execution as well as domain tests, and label real upstream verification separately from controlled contract tests and fallback.
 
 ## Project Structure & Module Organization
 
@@ -22,17 +22,17 @@ Unity.exe -batchmode -nographics -projectPath ".\My project" -quit -logFile -
 git status --short --ignored
 ```
 
-The first command opens the project; the second checks import and script compilation; the third verifies ignored caches. No automated player build exists. Do not install or update packages merely to validate the baseline.
+The first command opens the project; the second checks import and script compilation; the third verifies ignored caches. Build the desktop player with `AIFarm/Build Windows Town` and launch with `Tools/RunTown.ps1`. Do not install or update packages merely for validation.
 
 ## Coding and Testing Conventions
 
 When implementation begins, use four-space C# indentation and Allman braces. Use `PascalCase` for types and methods, `camelCase` for locals and parameters, and `[SerializeField] private` for Inspector fields. Keep editor-only code in `Editor/` directories and match MonoBehaviour filenames to class names.
 
-Unity Test Framework `1.7.0` is already declared, but no tests or coverage target exist. Place future tests in `Assets/Tests/EditMode/` or `Assets/Tests/PlayMode/`, use `*Tests.cs`, and add regression coverage with fixes.
+Unity Test Framework `1.7.0` is declared. Tests are in `Assets/AIFarm/Tests/EditMode/` and `Assets/AIFarm/Tests/PlayMode/`; use `*Tests.cs` and add regression coverage with fixes. `AIFarm/Verification` exports actual Unity result XML to `Docs/Verification/`. Run Python tests from `Server/` using its virtual environment. Real upstream success, controlled HTTP contracts, local fallback, and skipped tests are distinct results.
 
 ## Commits and Pull Requests
 
-There is no commit history yet. Use concise imperative subjects such as `docs: establish repository baseline`. Keep assets with their `.meta` files. Pull requests should state scope, validation performed, related issues, and visual evidence for later scene or UI changes. Never commit credentials for future AI services; use ignored local configuration or environment variables.
+Use concise imperative subjects such as `fix: reconnect resident decisions to actions`. Keep assets with their `.meta` files. Pull requests should state scope, validation performed, related issues, and visual evidence for scene or UI changes. Never commit credentials for AI services; use local configuration outside the repository or environment variables.
 
 ## Multi-resident invariants
 

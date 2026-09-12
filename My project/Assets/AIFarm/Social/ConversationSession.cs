@@ -131,7 +131,7 @@ namespace AIFarm.Social
     {
         public const int MinimumSentenceCount = 2;
         public const int MaximumSentenceCount = 6;
-        public const double MaximumTimeoutSeconds = 30d;
+        public const double MaximumTimeoutSeconds = 120d;
 
         private readonly List<ConversationUtterance> utterances =
             new List<ConversationUtterance>(MaximumSentenceCount);

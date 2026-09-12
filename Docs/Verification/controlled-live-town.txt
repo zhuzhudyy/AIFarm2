@@ -1,0 +1,39 @@
+resident-003 remote-executed=7 行为：Rest → location-home-xiaosui-point-01
+任务：自主生活；轮次：0
+精力 97 / 饥饿 21 / 社交 35
+决策：根据当前可执行活动选择行动。
+最近决策：第 1 日 11:07；真实模型
+下次计划：11.7s；请求：False
+会话：
+阻塞：无
+resident-002 remote-executed=6 行为：自主生活 → 
+任务：自主生活；轮次：0
+精力 99 / 饥饿 21 / 社交 35
+决策：
+最近决策：第 1 日 10:59；真实模型
+下次计划：6.1s；请求：False
+会话：
+阻塞：无
+resident-004 remote-executed=8 行为：PickFruit → fruit-1
+任务：自主生活；轮次：0
+精力 98 / 饥饿 21 / 社交 35
+决策：根据当前可执行活动选择行动。
+最近决策：第 1 日 11:01；真实模型
+下次计划：9.8s；请求：False
+会话：
+阻塞：无
+resident-001 remote-executed=7 行为：PickFruit → fruit-2
+任务：自主生活；轮次：0
+精力 98 / 饥饿 21 / 社交 35
+决策：根据当前可执行活动选择行动。
+最近决策：第 1 日 10:59；真实模型
+下次计划：4.7s；请求：False
+会话：
+阻塞：无
+CarrotSeed=6
+Water=7
+Fertilizer=7
+Carrot=0
+Fish=7
+Fruit=7
+Compost=0

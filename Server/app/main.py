@@ -29,6 +29,8 @@ from app.schemas import (
     ResidentDecisionSpec,
     ResidentReflectionRequest,
     ResidentReflectionSpec,
+    ResidentTaskRequest,
+    ResidentTaskSpec,
     UtteranceSpec,
 )
 from app.setup_ui import render_setup_page
@@ -80,6 +82,8 @@ def _require_loopback(request: Request) -> None:
 
 def _require_same_origin_csrf(request: Request) -> None:
     _require_loopback(request)
+    if request.headers.get("X-AIFarm-Client") == "unity" and not request.headers.get("origin"):
+        return
     cookie_token = request.cookies.get(_CSRF_COOKIE_NAME, "")
     header_token = request.headers.get(_CSRF_HEADER_NAME, "")
     if (
@@ -195,6 +199,15 @@ def create_app(
         _require_loopback(request)
         return runtime.status()
 
+    @application.get("/v1/gateway-config/token", include_in_schema=False)
+    async def native_config_token(request: Request) -> JSONResponse:
+        _require_loopback(request)
+        token = secrets.token_urlsafe(32)
+        response = JSONResponse({"token": token})
+        response.set_cookie(_CSRF_COOKIE_NAME, token, httponly=True, samesite="strict", max_age=900)
+        response.headers["Cache-Control"] = "no-store"
+        return response
+
     @application.post(
         "/v1/gateway-config",
         response_model=GatewayConfigSpec,
@@ -254,13 +267,17 @@ def create_app(
             "ai_request resident_id=%s operation=interpret-command",
             request.resident_id,
         )
-        response = gateway.interpret_command(request)
+        response = runtime.execute("interpret_command", request)
         logger.info(
             "ai_response resident_id=%s operation=interpret-command provider=%s",
             request.resident_id,
             gateway.name,
         )
         return response
+
+    @application.post("/v1/resident-task", response_model=ResidentTaskSpec)
+    def resident_task(request: ResidentTaskRequest) -> ResidentTaskSpec:
+        return runtime.execute("interpret_task", request)
 
     @application.post("/v1/generate-utterance", response_model=UtteranceSpec)
     def generate_utterance(request: GenerateUtteranceRequest) -> UtteranceSpec:
@@ -269,7 +286,7 @@ def create_app(
             "ai_request resident_id=%s operation=generate-utterance",
             request.resident_id,
         )
-        response = gateway.generate_utterance(request)
+        response = runtime.execute("generate_utterance", request)
         logger.info(
             "ai_response resident_id=%s operation=generate-utterance provider=%s",
             request.resident_id,
@@ -284,7 +301,7 @@ def create_app(
             "ai_request resident_id=%s operation=reflect",
             request.resident_id,
         )
-        response = gateway.reflect(request)
+        response = runtime.execute("reflect", request)
         logger.info(
             "ai_response resident_id=%s operation=reflect provider=%s",
             request.resident_id,
@@ -304,7 +321,7 @@ def create_app(
             "ai_request resident_id=%s operation=resident-decision",
             request.resident_id,
         )
-        response = gateway.decide_resident(request)
+        response = runtime.execute("decide_resident", request)
         logger.info(
             "ai_response resident_id=%s operation=resident-decision provider=%s",
             request.resident_id,
@@ -325,7 +342,7 @@ def create_app(
             request.resident_id,
             ",".join(request.participant_ids),
         )
-        response = gateway.generate_conversation_script(request)
+        response = runtime.execute("generate_conversation_script", request)
         logger.info(
             "ai_response resident_id=%s operation=conversation-script provider=%s",
             request.resident_id,
@@ -345,7 +362,7 @@ def create_app(
             "ai_request resident_id=%s operation=resident-reflection",
             request.resident_id,
         )
-        response = gateway.reflect_resident(request)
+        response = runtime.execute("reflect_resident", request)
         logger.info(
             "ai_response resident_id=%s operation=resident-reflection provider=%s",
             request.resident_id,
