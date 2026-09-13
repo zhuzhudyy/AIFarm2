@@ -4,6 +4,25 @@
 
 ## 最快开始
 
+### 下载 Windows 可玩版（无需 Unity）
+
+1. [直接下载 Windows x64 安装包](https://github.com/zhuzhudyy/AIFarm2/releases/download/v0.1.0-playable/AIFarmTown-Windows-x64.zip)，或到 [Release 页面](https://github.com/zhuzhudyy/AIFarm2/releases/tag/v0.1.0-playable) 的 **Assets** 下载 `AIFarmTown-Windows-x64.zip`。GitHub 自动生成的 **Source code** 是源码，不是游戏安装包。
+2. **完整解压 ZIP**，进入 `AIFarmTown` 文件夹，双击 **AIFarmTown.exe**。不要在压缩包内直接运行，也不要只复制 EXE；同目录的 `AIFarmTown_Data`、DLL 和运行库必须保留。
+3. 无需安装 Unity。未配置模型时，居民使用本地规则自主生活；可选择居民，输入 `钓鱼`、`摘果`、`持续照料全部九块农田` 或 `停止`，点击 **SUBMIT**。
+
+安装包约 72 MB，包含 Windows 64 位游戏、网关源码和中文说明 `开始游戏.txt`，不包含 Python 运行时、个人存档或 API Key。Release 提供 `SHA256SUMS.txt` 用于校验下载文件。
+
+**可选：连接真实 AI。** 安装 Python 3.11 或更新版本并加入 PATH，在解压后的 `AIFarmTown` 文件夹打开 PowerShell，执行：
+
+```powershell
+python -m venv Server/.venv
+.\Server\.venv\Scripts\python.exe -m pip install -r Server/requirements.txt
+```
+
+完成后重新启动 `AIFarmTown.exe`，在 **API SETUP** 填写自己的模型服务地址、模型名和服务所需的 API Key，点击 **测试并应用**。本地 Python 网关地址默认保持 `http://127.0.0.1:8000`；上游模型地址填写在单独的 **Base URL / Endpoint** 字段。未连接成功时仍可使用本地规则玩法。
+
+当前发布为 Development 演示版。已做 EXE 无图形启动检查，完整桌面渲染与交互尚未单独验收；真实商业模型尚未验证成功。启动日志中仍有 NavMesh 初始化和网络取消/超时提示，详细验证范围见 [验收记录](Docs/TOWN_REPAIR_REPORT.md)。
+
 ### Unity 编辑器
 
 1. 安装 Unity **6000.5.10f1**（Windows 构建支持也建议安装）。
